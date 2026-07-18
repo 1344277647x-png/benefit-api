@@ -4,8 +4,8 @@
 
 ## 仓库与镜像
 
-- GitHub 仓库：`https://github.com/X73-111/benefit-api`
-- GHCR 镜像：`ghcr.io/x73-111/benefit-api`
+- GitHub 仓库：`https://github.com/1344277647x-png/benefit-api`
+- GHCR 镜像：`ghcr.io/1344277647x-png/benefit-api`
 - 持续更新标签：`latest`
 - 固定版本标签：`sha-<提交短哈希>`
 
@@ -13,7 +13,7 @@
 
 ## 首次发布
 
-1. 在 GitHub 创建公开仓库 `X73-111/benefit-api`。
+1. 在 GitHub 创建公开仓库 `1344277647x-png/benefit-api`。
 2. 将本地 `main` 分支推送到该仓库。
 3. 在仓库的 Actions 页面等待 `Publish Benefit API image` 成功。
 4. 打开 GitHub Packages 中的 `benefit-api`，将 Package visibility 设置为 Public。
@@ -30,7 +30,7 @@
 ```yaml
 services:
   new-api:
-    image: ghcr.io/x73-111/benefit-api:sha-abcdef0
+    image: ghcr.io/1344277647x-png/benefit-api:sha-abcdef0
 ```
 
 进入现有 Compose 目录后执行：

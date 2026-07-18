@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IMAGE_NAME: ghcr.io/x73-111/benefit-api
+  IMAGE_NAME: ghcr.io/1344277647x-png/benefit-api
 
 jobs:
   verify:
