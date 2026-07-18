@@ -25,6 +25,7 @@ type TopUp struct {
 }
 
 const (
+	PaymentMethodAlipayNative = "alipay_native"
 	PaymentMethodStripe       = "stripe"
 	PaymentMethodCreem        = "creem"
 	PaymentMethodWaffo        = "waffo"
@@ -33,6 +34,7 @@ const (
 )
 
 const (
+	PaymentProviderAlipay       = "alipay_native"
 	PaymentProviderEpay         = "epay"
 	PaymentProviderStripe       = "stripe"
 	PaymentProviderCreem        = "creem"
@@ -43,6 +45,7 @@ const (
 
 var (
 	ErrPaymentMethodMismatch = errors.New("payment method mismatch")
+	ErrPaymentAmountMismatch = errors.New("payment amount mismatch")
 	ErrTopUpNotFound         = errors.New("topup not found")
 	ErrTopUpStatusInvalid    = errors.New("topup status invalid")
 )
@@ -104,6 +107,73 @@ func UpdatePendingTopUpStatus(tradeNo string, expectedPaymentProvider string, ta
 		topUp.Status = targetStatus
 		return tx.Save(topUp).Error
 	})
+}
+
+func CompleteAlipayTopUp(tradeNo string, totalAmount string, callerIp string) error {
+	if tradeNo == "" {
+		return errors.New("未提供支付单号")
+	}
+
+	paidAmount, err := decimal.NewFromString(totalAmount)
+	if err != nil || paidAmount.LessThanOrEqual(decimal.Zero) {
+		return ErrPaymentAmountMismatch
+	}
+
+	refCol := "`trade_no`"
+	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
+		refCol = `"trade_no"`
+	}
+
+	var completed bool
+	var userId int
+	var quotaToAdd int
+	var payMoney float64
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		topUp := &TopUp{}
+		if err := lockForUpdate(tx).Where(refCol+" = ?", tradeNo).First(topUp).Error; err != nil {
+			return ErrTopUpNotFound
+		}
+		if topUp.PaymentProvider != PaymentProviderAlipay || topUp.PaymentMethod != PaymentMethodAlipayNative {
+			return ErrPaymentMethodMismatch
+		}
+
+		expectedAmount := decimal.NewFromFloat(topUp.Money).Round(2)
+		if !paidAmount.Round(2).Equal(expectedAmount) {
+			return ErrPaymentAmountMismatch
+		}
+		if topUp.Status == common.TopUpStatusSuccess {
+			return nil
+		}
+		if topUp.Status != common.TopUpStatusPending {
+			return ErrTopUpStatusInvalid
+		}
+
+		quotaToAdd = int(decimal.NewFromInt(topUp.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).IntPart())
+		if quotaToAdd <= 0 {
+			return errors.New("无效的充值额度")
+		}
+
+		topUp.CompleteTime = common.GetTimestamp()
+		topUp.Status = common.TopUpStatusSuccess
+		if err := tx.Save(topUp).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).Update("quota", gorm.Expr("quota + ?", quotaToAdd)).Error; err != nil {
+			return err
+		}
+
+		completed = true
+		userId = topUp.UserId
+		payMoney = topUp.Money
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if completed {
+		RecordTopupLog(userId, fmt.Sprintf("使用支付宝充值成功，充值金额: %v，支付金额：%.2f", logger.FormatQuota(quotaToAdd), payMoney), callerIp, PaymentMethodAlipayNative, PaymentProviderAlipay)
+	}
+	return nil
 }
 
 func Recharge(referenceId string, customerId string, callerIp string) (err error) {

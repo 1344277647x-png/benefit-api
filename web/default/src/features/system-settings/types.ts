@@ -114,6 +114,7 @@ export type SiteSettings = {
   Footer: string
   About: string
   HomePageContent: string
+  DocsContent: string
   ServerAddress: string
   'legal.user_agreement': string
   'legal.privacy_policy': string
@@ -284,6 +285,11 @@ export type BillingSettings = {
   EpayKey: string
   Price: number
   MinTopUp: number
+  AlipayEnabled: boolean
+  AlipayAppId: string
+  AlipayPrivateKey: string
+  AlipayPublicKey: string
+  AlipaySandbox: boolean
   CustomCallbackAddress: string
   PayMethods: string
   'payment_setting.amount_options': string

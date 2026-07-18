@@ -25,11 +25,13 @@ import {
   calculateStripeAmount,
   calculateWaffoPancakeAmount,
   requestPayment,
+  requestAlipayPayment,
   requestStripePayment,
   isApiSuccess,
 } from '../api'
 import {
   isStripePayment,
+  isAlipayNativePayment,
   isWaffoPancakePayment,
   submitPaymentForm,
 } from '../lib'
@@ -83,17 +85,21 @@ export function usePayment() {
         setProcessing(true)
 
         const isStripe = isStripePayment(paymentType)
+        const isAlipayNative = isAlipayNativePayment(paymentType)
         const amount = Math.floor(topupAmount)
 
+        const paymentRequest = {
+          amount,
+          payment_method: paymentType,
+        }
         const response = isStripe
           ? await requestStripePayment({
               amount,
               payment_method: 'stripe',
             })
-          : await requestPayment({
-              amount,
-              payment_method: paymentType,
-            })
+          : isAlipayNative
+            ? await requestAlipayPayment(paymentRequest)
+            : await requestPayment(paymentRequest)
 
         if (!isApiSuccess(response)) {
           toast.error(response.message || i18next.t('Payment request failed'))
@@ -101,14 +107,23 @@ export function usePayment() {
         }
 
         // Handle Stripe payment
-        if (isStripe && response.data?.pay_link) {
-          window.open(response.data.pay_link as string, '_blank')
+        const stripePayLink = (response.data as { pay_link?: string } | undefined)
+          ?.pay_link
+        if (isStripe && stripePayLink) {
+          window.open(stripePayLink, '_blank')
           toast.success(i18next.t('Redirecting to payment page...'))
           return true
         }
 
+        const alipayPayUrl = (response.data as { pay_url?: string } | undefined)
+          ?.pay_url
+        if (isAlipayNative && alipayPayUrl) {
+          window.location.assign(alipayPayUrl)
+          return true
+        }
+
         // Handle non-Stripe payment
-        if (!isStripe && response.data) {
+        if (!isStripe && !isAlipayNative && response.data) {
           const url = (response as unknown as { url?: string }).url
           if (url) {
             submitPaymentForm(url, response.data)

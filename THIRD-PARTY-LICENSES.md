@@ -45,6 +45,7 @@ Transitive dependencies should be audited before a final external release.
 | backend     | production  | Go        | `github.com/samber/lo`                                | `v1.52.0`                            | MIT                                                |
 | backend     | production  | Go        | `github.com/shirou/gopsutil`                          | `v3.21.11+incompatible`              | BSD-3-Clause                                       |
 | backend     | production  | Go        | `github.com/shopspring/decimal`                       | `v1.4.0`                             | MIT                                                |
+| backend     | production  | Go        | `github.com/smartwalle/alipay/v3`                     | `v3.2.30`                            | MIT                                                |
 | backend     | production  | Go        | `github.com/stretchr/testify`                         | `v1.11.1`                            | MIT                                                |
 | backend     | production  | Go        | `github.com/stripe/stripe-go/v81`                     | `v81.4.0`                            | MIT                                                |
 | backend     | production  | Go        | `github.com/tcolgate/mp3`                             | `v0.0.0-20170426193717-e79c5a46d300` | MIT                                                |
@@ -372,4 +373,3 @@ this software, either in source code form or as a compiled binary, for any
 purpose, commercial or non-commercial, and by any means.
 
 For more information, please refer to https://unlicense.org/
-

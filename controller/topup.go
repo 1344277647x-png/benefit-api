@@ -24,10 +24,19 @@ import (
 func GetTopUpInfo(c *gin.Context) {
 	complianceConfirmed := operation_setting.IsPaymentComplianceConfirmed()
 
-	// 获取支付方式
-	payMethods := operation_setting.PayMethods
-	if !complianceConfirmed {
-		payMethods = []map[string]string{}
+	// Only expose Epay methods when the Epay gateway is fully configured.
+	payMethods := make([]map[string]string, 0, len(operation_setting.PayMethods)+4)
+	if complianceConfirmed && isEpayTopUpEnabled() {
+		payMethods = append(payMethods, operation_setting.PayMethods...)
+	}
+
+	if isAlipayTopUpEnabled() {
+		payMethods = append(payMethods, map[string]string{
+			"name":      "支付宝",
+			"icon":      "SiAlipay",
+			"type":      model.PaymentMethodAlipayNative,
+			"min_topup": strconv.FormatInt(getMinTopup(), 10),
+		})
 	}
 
 	// 如果启用了 Stripe 支付，添加到支付方法列表
@@ -97,6 +106,7 @@ func GetTopUpInfo(c *gin.Context) {
 
 	data := gin.H{
 		"enable_online_topup":              isEpayTopUpEnabled(),
+		"enable_alipay_topup":              isAlipayTopUpEnabled(),
 		"enable_stripe_topup":              isStripeTopUpEnabled(),
 		"enable_creem_topup":               isCreemTopUpEnabled(),
 		"enable_waffo_topup":               enableWaffo,

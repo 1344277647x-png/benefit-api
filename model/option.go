@@ -20,6 +20,73 @@ type Option struct {
 	Value string `json:"value"`
 }
 
+const DefaultDocsContent = `## 快速开始
+
+Benefit API 提供 OpenAI 兼容接口。完成以下配置后即可开始调用：
+
+1. 注册并登录 Benefit API。
+2. 在控制台创建 API 密钥。
+3. 在客户端中填写 API 地址、API 密钥和可用模型名称。
+
+## API 地址
+
+` + "```text" + `
+https://xbenefitapi.xyz/v1
+` + "```" + `
+
+## 创建密钥
+
+登录后前往控制台的“令牌”页面，创建并妥善保存 API 密钥。密钥只应保存在可信客户端或服务端环境变量中，不要发布到公开代码仓库。
+
+## OpenAI SDK
+
+` + "```python" + `
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://xbenefitapi.xyz/v1",
+    api_key="YOUR_API_KEY",
+)
+
+response = client.chat.completions.create(
+    model="YOUR_MODEL",
+    messages=[{"role": "user", "content": "你好"}],
+)
+
+print(response.choices[0].message.content)
+` + "```" + `
+
+## Codex
+
+- API 请求地址填写 ` + "`https://xbenefitapi.xyz/v1`" + `。
+- 使用控制台创建的 API 密钥。
+- 模型名称必须与模型广场或控制台中显示的名称一致。
+
+## Cherry Studio
+
+1. 新增 OpenAI 兼容服务商。
+2. API 地址填写 ` + "`https://xbenefitapi.xyz/v1`" + `。
+3. 填写 API 密钥并选择可用模型。
+4. 保存后先执行连接测试，再开始对话。
+
+## 在线充值
+
+登录后进入“钱包”页面选择充值金额和支付方式。支付完成后请等待异步通知入账，不要重复提交同一订单。
+
+## 常见问题
+
+### 请求返回未授权
+
+确认 API 密钥完整、未过期，并使用 ` + "`Authorization: Bearer YOUR_API_KEY`" + ` 请求头。
+
+### 找不到模型
+
+检查模型名称是否与控制台显示完全一致，并确认令牌允许访问对应模型分组。
+
+### 流式请求中断
+
+确认基础地址包含 ` + "`/v1`" + `。如果问题仍存在，请记录请求时间和模型名称后联系管理员。`
+
 func AllOption() ([]*Option, error) {
 	var options []*Option
 	var err error
@@ -69,6 +136,7 @@ func InitOptionMap() {
 	common.OptionMap["Notice"] = ""
 	common.OptionMap["About"] = ""
 	common.OptionMap["HomePageContent"] = ""
+	common.OptionMap["DocsContent"] = DefaultDocsContent
 	common.OptionMap["Footer"] = common.Footer
 	common.OptionMap["SystemName"] = common.SystemName
 	common.OptionMap["Logo"] = common.Logo
@@ -83,6 +151,11 @@ func InitOptionMap() {
 	common.OptionMap["Price"] = strconv.FormatFloat(operation_setting.Price, 'f', -1, 64)
 	common.OptionMap["USDExchangeRate"] = strconv.FormatFloat(operation_setting.USDExchangeRate, 'f', -1, 64)
 	common.OptionMap["MinTopUp"] = strconv.Itoa(operation_setting.MinTopUp)
+	common.OptionMap["AlipayEnabled"] = strconv.FormatBool(setting.AlipayEnabled)
+	common.OptionMap["AlipayAppId"] = setting.AlipayAppId
+	common.OptionMap["AlipayPrivateKey"] = setting.AlipayPrivateKey
+	common.OptionMap["AlipayPublicKey"] = setting.AlipayPublicKey
+	common.OptionMap["AlipaySandbox"] = strconv.FormatBool(setting.AlipaySandbox)
 	common.OptionMap["StripeMinTopUp"] = strconv.Itoa(setting.StripeMinTopUp)
 	common.OptionMap["StripeApiSecret"] = setting.StripeApiSecret
 	common.OptionMap["StripeWebhookSecret"] = setting.StripeWebhookSecret
@@ -277,7 +350,7 @@ func updateOptionMap(key string, value string) (err error) {
 			common.ImageDownloadPermission = intValue
 		}
 	}
-	if strings.HasSuffix(key, "Enabled") || key == "DefaultCollapseSidebar" || key == "DefaultUseAutoGroup" || key == "SMTPForceAuthLogin" || key == "SMTPInsecureSkipVerify" {
+	if strings.HasSuffix(key, "Enabled") || key == "AlipaySandbox" || key == "DefaultCollapseSidebar" || key == "DefaultUseAutoGroup" || key == "SMTPForceAuthLogin" || key == "SMTPInsecureSkipVerify" {
 		boolValue := value == "true"
 		switch key {
 		case "PasswordRegisterEnabled":
@@ -364,6 +437,10 @@ func updateOptionMap(key string, value string) (err error) {
 			setting.DefaultUseAutoGroup = boolValue
 		case "ExposeRatioEnabled":
 			ratio_setting.SetExposeRatioEnabled(boolValue)
+		case "AlipayEnabled":
+			setting.AlipayEnabled = boolValue
+		case "AlipaySandbox":
+			setting.AlipaySandbox = boolValue
 		}
 	}
 	switch key {
@@ -404,6 +481,12 @@ func updateOptionMap(key string, value string) (err error) {
 		operation_setting.USDExchangeRate, _ = strconv.ParseFloat(value, 64)
 	case "MinTopUp":
 		operation_setting.MinTopUp, _ = strconv.Atoi(value)
+	case "AlipayAppId":
+		setting.AlipayAppId = value
+	case "AlipayPrivateKey":
+		setting.AlipayPrivateKey = value
+	case "AlipayPublicKey":
+		setting.AlipayPublicKey = value
 	case "StripeApiSecret":
 		setting.StripeApiSecret = value
 	case "StripeWebhookSecret":

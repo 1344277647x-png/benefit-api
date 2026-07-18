@@ -28,6 +28,7 @@ import { NoticeSection } from '../maintenance/notice-section'
 import { SidebarModulesSection } from '../maintenance/sidebar-modules-section'
 import type { SiteSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { DocumentationSection } from './documentation-section'
 
 const SITE_SECTIONS = [
   {
@@ -51,6 +52,13 @@ const SITE_SECTIONS = [
           },
         }}
       />
+    ),
+  },
+  {
+    id: 'documentation',
+    titleKey: 'Docs',
+    build: (settings: SiteSettings) => (
+      <DocumentationSection defaultValue={settings.DocsContent ?? ''} />
     ),
   },
   {

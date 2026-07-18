@@ -75,6 +75,10 @@ export function isStripePayment(paymentType: string): boolean {
   return paymentType === PAYMENT_TYPES.STRIPE
 }
 
+export function isAlipayNativePayment(paymentType: string): boolean {
+  return paymentType === PAYMENT_TYPES.ALIPAY_NATIVE
+}
+
 /**
  * Check if payment method is Waffo Pancake
  *
@@ -97,6 +101,10 @@ export function getDefaultPaymentType(topupInfo: TopupInfo | null): string {
   // Return first available payment method or default
   if (topupInfo.pay_methods?.length > 0) {
     return topupInfo.pay_methods[0].type
+  }
+
+  if (topupInfo.enable_alipay_topup) {
+    return PAYMENT_TYPES.ALIPAY_NATIVE
   }
 
   if (topupInfo.enable_stripe_topup) {
@@ -123,6 +131,10 @@ export function getMinTopupAmount(topupInfo: TopupInfo | null): number {
   }
 
   if (topupInfo.enable_online_topup) {
+    return topupInfo.min_topup
+  }
+
+  if (topupInfo.enable_alipay_topup) {
     return topupInfo.min_topup
   }
 

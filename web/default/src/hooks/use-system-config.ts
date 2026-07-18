@@ -67,6 +67,11 @@ export function mapStatusDataToConfig(
 ): Partial<SystemConfig> {
   if (!data) return {}
 
+  const systemName = data.system_name || DEFAULT_SYSTEM_NAME
+  const logo =
+    data.logo ||
+    (systemName === 'Benefit API' ? '/benefit-api-logo.svg' : DEFAULT_LOGO)
+
   const quotaDisplayType =
     (data.quota_display_type as CurrencyDisplayType | undefined) ??
     DEFAULT_CURRENCY_CONFIG.quotaDisplayType
@@ -93,8 +98,8 @@ export function mapStatusDataToConfig(
   }
 
   return {
-    systemName: data.system_name || DEFAULT_SYSTEM_NAME,
-    logo: data.logo || DEFAULT_LOGO,
+    systemName,
+    logo,
     footerHtml: data.footer_html,
     demoSiteEnabled: data.demo_site_enabled,
     displayTokenStatEnabled: data.display_token_stat_enabled,
