@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,6 +18,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import {
+  ArrowRight,
   CreditCard,
   Gauge,
   KeyRound,
@@ -28,6 +30,7 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import { AnimateInView } from '@/components/animate-in-view'
+import { Button } from '@/components/ui/button'
 
 interface FeaturesProps {
   className?: string
@@ -96,9 +99,9 @@ export function Features(_props: FeaturesProps) {
   ]
 
   return (
-    <section className='relative z-10 px-6 py-20 md:py-24'>
-      <div className='mx-auto max-w-6xl'>
-        <AnimateInView className='mb-12 max-w-xl'>
+    <section className='benefit-apple-shell relative z-10 pt-20 md:pt-24'>
+      <div className='mx-auto max-w-6xl px-5'>
+        <AnimateInView className='mx-auto max-w-2xl text-center'>
           <p className='text-muted-foreground mb-3 text-xs font-medium uppercase'>
             {t('Why Benefit API')}
           </p>
@@ -107,17 +110,17 @@ export function Features(_props: FeaturesProps) {
           </h2>
         </AnimateInView>
 
-        <div className='grid gap-4 md:grid-cols-3'>
+        <div className='border-border/60 mt-12 grid border-y md:grid-cols-3 md:divide-x'>
           {features.map((f, i) => {
             const Icon = f.icon
             return (
               <AnimateInView
                 key={f.id}
                 delay={i * 100}
-                animation='scale-in'
-                className='bg-card border-border/60 rounded-[8px] border p-6 shadow-sm md:p-7'
+                animation='fade-up'
+                className='border-border/60 border-b px-1 py-8 last:border-b-0 md:border-b-0 md:px-8'
               >
-                <div className='bg-muted/70 mb-5 flex size-9 items-center justify-center rounded-[8px]'>
+                <div className='bg-muted/70 mb-5 flex size-11 items-center justify-center rounded-[8px] border'>
                   <Icon className={`size-5 ${f.className}`} />
                 </div>
                 <h3 className='text-base font-semibold'>{f.title}</h3>
@@ -141,8 +144,35 @@ export function Features(_props: FeaturesProps) {
             )
           })}
         </div>
+      </div>
 
-        <div className='mt-14 grid grid-cols-1 gap-8 border-t pt-10 sm:grid-cols-2 md:grid-cols-4'>
+      <div className='bg-foreground text-background mt-20'>
+        <div className='mx-auto grid max-w-6xl gap-8 px-5 py-14 md:grid-cols-[minmax(0,1fr)_auto] md:items-end md:py-16'>
+          <AnimateInView className='max-w-3xl'>
+            <p className='text-background/65 text-xs font-medium uppercase'>
+              {t('Pay only for usage')}
+            </p>
+            <h2 className='mt-3 text-3xl leading-tight font-semibold md:text-5xl'>
+              {t('Spend less on access. Build more.')}
+            </h2>
+            <p className='text-background/70 mt-5 max-w-2xl text-sm leading-relaxed md:text-base'>
+              {t(
+                'Recharge online, choose the model you need, and review every charge in the console.'
+              )}
+            </p>
+          </AnimateInView>
+          <Button
+            className='benefit-liquid-inverse hover:bg-background/30 h-12 w-fit rounded-full px-6 font-semibold'
+            render={<Link to='/pricing' />}
+          >
+            {t('View Pricing')}
+            <ArrowRight className='ml-1.5 size-4' />
+          </Button>
+        </div>
+      </div>
+
+      <div className='mx-auto max-w-6xl px-5 py-16 md:py-20'>
+        <div className='grid grid-cols-1 gap-8 sm:grid-cols-2 md:grid-cols-4'>
           {additionalFeatures.map((f, i) => (
             <AnimateInView
               key={f.title}

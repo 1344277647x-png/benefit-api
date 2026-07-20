@@ -142,6 +142,39 @@ export function PublicHeader(props: PublicHeaderProps) {
     navigate({ to: '/sign-in', search: { redirect } })
   }, [authPromptTarget?.href, navigate])
 
+  let logoContent: React.ReactNode
+  if (loading) {
+    logoContent = <Skeleton className='size-full rounded-lg' />
+  } else if (customLogo) {
+    logoContent = customLogo
+  } else {
+    logoContent = (
+      <HeaderLogo
+        src={systemLogo}
+        loading={loading}
+        logoLoaded={logoLoaded}
+        className='size-full rounded-lg object-contain'
+      />
+    )
+  }
+
+  let authControl: React.ReactNode
+  if (loading) {
+    authControl = <Skeleton className='h-8 w-20 rounded-[8px]' />
+  } else if (isAuthenticated) {
+    authControl = <ProfileDropdown />
+  } else {
+    authControl = (
+      <Button
+        size='sm'
+        className='benefit-liquid-primary h-8 rounded-[8px] px-3.5 text-xs font-medium'
+        render={<Link to='/sign-in' />}
+      >
+        {t('Sign in')}
+      </Button>
+    )
+  }
+
   const handleNavLinkClick = useCallback(
     (
       event: React.MouseEvent<HTMLAnchorElement>,
@@ -175,20 +208,19 @@ export function PublicHeader(props: PublicHeaderProps) {
 
   return (
     <>
-      <header className='pointer-events-none fixed inset-x-0 top-0 z-50'>
+      <header className='benefit-apple-shell pointer-events-none fixed inset-x-0 top-0 z-50'>
         <div
           className={cn(
-            'pointer-events-auto mx-auto transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
-            scrolled ? 'max-w-[52rem] px-3 pt-3' : 'max-w-7xl px-4 pt-0 md:px-6'
+            'pointer-events-auto mx-auto px-3 pt-3 transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]',
+            scrolled ? 'max-w-[58rem]' : 'max-w-6xl'
           )}
         >
           <nav
             className={cn(
-              'flex items-center justify-between transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
-              scrolled
-                ? 'bg-background/60 ring-border/50 h-12 rounded-2xl pr-1.5 pl-4 shadow-[0_2px_16px_-6px_rgba(0,0,0,0.08),0_0_0_0.5px_rgba(0,0,0,0.02)] ring-[0.5px] backdrop-blur-2xl dark:shadow-[0_2px_16px_-6px_rgba(0,0,0,0.4)]'
-                : 'h-16 px-2'
+              'benefit-liquid-glass flex items-center justify-between rounded-[8px] px-3 transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]',
+              scrolled ? 'h-12' : 'h-14'
             )}
+            aria-label={t('Main navigation')}
           >
             {/* Logo */}
             <Link
@@ -196,32 +228,21 @@ export function PublicHeader(props: PublicHeaderProps) {
               className='group flex shrink-0 items-center gap-2.5'
             >
               <div className='flex size-7 shrink-0 items-center justify-center transition-all duration-300 group-hover:scale-105'>
-                {loading ? (
-                  <Skeleton className='size-full rounded-lg' />
-                ) : customLogo ? (
-                  customLogo
-                ) : (
-                  <HeaderLogo
-                    src={systemLogo}
-                    loading={loading}
-                    logoLoaded={logoLoaded}
-                    className='size-full rounded-lg object-contain'
-                  />
-                )}
+                {logoContent}
               </div>
-              <span className='text-sm font-semibold tracking-tight'>
+              <span className='text-sm font-semibold'>
                 {loading ? <Skeleton className='h-4 w-16' /> : displaySiteName}
               </span>
             </Link>
 
             {/* Desktop nav */}
             <div className='hidden items-center gap-0.5 sm:flex'>
-              {links.map((link, i) => {
+              {links.map((link) => {
                 const isActive = pathname === link.href
                 if (link.external) {
                   return (
                     <a
-                      key={i}
+                      key={`${link.href}-${link.title}`}
                       href={link.href}
                       target='_blank'
                       rel='noopener noreferrer'
@@ -229,7 +250,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                       tabIndex={link.disabled ? -1 : undefined}
                       onClick={(event) => handleNavLinkClick(event, link)}
                       className={cn(
-                        'text-muted-foreground hover:text-foreground rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors duration-200',
+                        'text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground rounded-[8px] px-3 py-2 text-[13px] font-medium transition-colors duration-200',
                         link.disabled && 'pointer-events-none opacity-50'
                       )}
                     >
@@ -239,15 +260,16 @@ export function PublicHeader(props: PublicHeaderProps) {
                 }
                 return (
                   <Link
-                    key={i}
+                    key={`${link.href}-${link.title}`}
                     to={link.href}
                     disabled={link.disabled}
                     onClick={(event) => handleNavLinkClick(event, link)}
+                    aria-current={isActive ? 'page' : undefined}
                     className={cn(
-                      'rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors duration-200',
+                      'rounded-[8px] px-3 py-2 text-[13px] font-medium transition-colors duration-200',
                       isActive
-                        ? 'text-foreground'
-                        : 'text-muted-foreground hover:text-foreground',
+                        ? 'bg-foreground/[0.07] text-foreground'
+                        : 'text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground',
                       link.disabled && 'pointer-events-none opacity-50'
                     )}
                   >
@@ -280,19 +302,7 @@ export function PublicHeader(props: PublicHeaderProps) {
               {showAuthButtons && (
                 <>
                   <div className='bg-border/40 mx-1 h-4 w-px' />
-                  {loading ? (
-                    <Skeleton className='h-8 w-20 rounded-lg' />
-                  ) : isAuthenticated ? (
-                    <ProfileDropdown />
-                  ) : (
-                    <Button
-                      size='sm'
-                      className='h-8 rounded-lg px-3.5 text-xs font-medium'
-                      render={<Link to='/sign-in' />}
-                    >
-                      {t('Sign in')}
-                    </Button>
-                  )}
+                  {authControl}
                 </>
               )}
             </div>
@@ -307,9 +317,11 @@ export function PublicHeader(props: PublicHeaderProps) {
                 type='button'
                 variant='ghost'
                 size='icon'
-                className='size-9'
+                className='size-11 rounded-[8px]'
                 onClick={() => setMobileOpen((v) => !v)}
                 aria-label={t('Toggle navigation menu')}
+                aria-expanded={mobileOpen}
+                aria-controls='benefit-mobile-navigation'
               >
                 <div className='relative size-4'>
                   <span
@@ -339,23 +351,30 @@ export function PublicHeader(props: PublicHeaderProps) {
 
       {/* Mobile full-screen overlay */}
       <div
+        id='benefit-mobile-navigation'
+        aria-hidden={!mobileOpen}
         className={cn(
-          'bg-background/98 fixed inset-0 z-40 backdrop-blur-2xl transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] sm:pointer-events-none sm:hidden',
+          'benefit-apple-shell benefit-liquid-glass fixed inset-x-3 top-3 bottom-3 z-40 rounded-[8px] transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)] sm:pointer-events-none sm:hidden',
           mobileOpen
             ? 'pointer-events-auto opacity-100'
             : 'pointer-events-none opacity-0'
         )}
       >
         <div className='flex h-full flex-col justify-between px-8 pt-20 pb-10'>
-          <nav className='flex flex-col gap-1'>
+          <nav
+            className='flex flex-col gap-1'
+            aria-label={t('Main navigation')}
+          >
             {links.map((link, i) => {
               const isActive = pathname === link.href
               const linkClassName = cn(
-                'flex items-center gap-3 py-3 text-base font-medium tracking-tight transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]',
+                'flex min-h-12 items-center gap-3 rounded-[8px] px-3 py-3 text-base font-medium transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]',
                 mobileOpen
                   ? 'translate-y-0 opacity-100'
                   : 'translate-y-4 opacity-0',
-                isActive ? 'text-foreground' : 'text-muted-foreground',
+                isActive
+                  ? 'bg-foreground/[0.07] text-foreground'
+                  : 'text-muted-foreground',
                 link.disabled && 'pointer-events-none opacity-50'
               )
               const transitionStyle = {
@@ -364,12 +383,12 @@ export function PublicHeader(props: PublicHeaderProps) {
               if (link.external) {
                 return (
                   <a
-                    key={i}
+                    key={`${link.href}-${link.title}`}
                     href={link.href}
                     target='_blank'
                     rel='noopener noreferrer'
                     aria-disabled={link.disabled}
-                    tabIndex={link.disabled ? -1 : undefined}
+                    tabIndex={!mobileOpen || link.disabled ? -1 : undefined}
                     onClick={(event) => handleNavLinkClick(event, link, true)}
                     className={linkClassName}
                     style={transitionStyle}
@@ -380,10 +399,12 @@ export function PublicHeader(props: PublicHeaderProps) {
               }
               return (
                 <Link
-                  key={i}
+                  key={`${link.href}-${link.title}`}
                   to={link.href}
                   disabled={link.disabled}
                   onClick={(event) => handleNavLinkClick(event, link, true)}
+                  aria-current={isActive ? 'page' : undefined}
+                  tabIndex={mobileOpen ? undefined : -1}
                   className={linkClassName}
                   style={transitionStyle}
                 >
@@ -406,7 +427,8 @@ export function PublicHeader(props: PublicHeaderProps) {
               <Link
                 to={isAuthenticated ? '/dashboard' : '/sign-in'}
                 onClick={() => setMobileOpen(false)}
-                className='bg-foreground text-background inline-flex h-10 items-center justify-center rounded-lg text-sm font-medium transition-opacity hover:opacity-90 active:opacity-80'
+                tabIndex={mobileOpen ? undefined : -1}
+                className='benefit-liquid-primary inline-flex h-12 items-center justify-center rounded-[8px] text-sm font-medium transition-opacity hover:opacity-90 active:opacity-80'
               >
                 {isAuthenticated ? t('Go to Dashboard') : t('Sign in')}
               </Link>
@@ -437,7 +459,7 @@ export function PublicHeader(props: PublicHeaderProps) {
           </>
         }
       >
-        <div className='bg-muted/40 text-muted-foreground rounded-lg px-3 py-2 text-sm'>
+        <div className='bg-muted/40 text-muted-foreground rounded-[8px] px-3 py-2 text-sm'>
           {t('Redirecting to sign in in {{seconds}} seconds.', {
             seconds: authPromptSecondsLeft,
           })}

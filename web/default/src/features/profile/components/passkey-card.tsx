@@ -272,7 +272,7 @@ export function PasskeyCard({ loading: pageLoading }: PasskeyCardProps) {
 
               {!enabled && (
                 <Button
-                  className='w-full sm:w-auto xl:w-full 2xl:w-auto'
+                  className='h-11 w-full sm:h-8 sm:w-auto xl:w-full 2xl:w-auto'
                   onClick={handleRegister}
                   disabled={!supported || registering}
                 >
@@ -291,7 +291,7 @@ export function PasskeyCard({ loading: pageLoading }: PasskeyCardProps) {
                     render={
                       <Button
                         variant='destructive'
-                        className='flex-1'
+                        className='h-11 flex-1 sm:h-8'
                         disabled={removing}
                       />
                     }

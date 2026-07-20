@@ -1220,10 +1220,8 @@ func EmailBind(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
 		return
 	}
-	session := sessions.Default(c)
-	id := session.Get("id")
 	user := model.User{
-		Id: id.(int),
+		Id: c.GetInt("id"),
 	}
 	err := user.FillUserById()
 	if err != nil {

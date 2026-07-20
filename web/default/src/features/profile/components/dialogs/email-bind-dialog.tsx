@@ -61,14 +61,15 @@ export function EmailBindDialog({
   })
 
   const handleSendCode = async () => {
-    if (!email || !email.includes('@')) {
+    const normalizedEmail = email.trim()
+    if (!normalizedEmail || !normalizedEmail.includes('@')) {
       toast.error(t('Please enter a valid email address'))
       return
     }
 
     try {
       setSendingCode(true)
-      const response = await sendEmailVerification(email)
+      const response = await sendEmailVerification(normalizedEmail)
 
       if (response.success) {
         toast.success(t('Verification code sent! Please check your email.'))
@@ -76,7 +77,7 @@ export function EmailBindDialog({
       } else {
         toast.error(response.message || t('Failed to send verification code'))
       }
-    } catch (_error) {
+    } catch {
       toast.error(t('Failed to send verification code'))
     } finally {
       setSendingCode(false)
@@ -84,14 +85,16 @@ export function EmailBindDialog({
   }
 
   const handleBind = async () => {
-    if (!email || !code) {
+    const normalizedEmail = email.trim()
+    const normalizedCode = code.trim()
+    if (!normalizedEmail || !normalizedCode) {
       toast.error(t('Please enter email and verification code'))
       return
     }
 
     try {
       setLoading(true)
-      const response = await bindEmail(email, code)
+      const response = await bindEmail(normalizedEmail, normalizedCode)
 
       if (response.success) {
         toast.success(t('Email bound successfully!'))
@@ -104,7 +107,7 @@ export function EmailBindDialog({
       } else {
         toast.error(response.message || t('Failed to bind email'))
       }
-    } catch (_error) {
+    } catch {
       toast.error(t('Failed to bind email'))
     } finally {
       setLoading(false)
@@ -123,11 +126,18 @@ export function EmailBindDialog({
     }
   }
 
+  let sendButtonLabel = t('Send')
+  if (isActive) {
+    sendButtonLabel = `${secondsLeft}s`
+  } else if (sendingCode) {
+    sendButtonLabel = t('Sending...')
+  }
+
   return (
     <Dialog
       open={open}
       onOpenChange={handleOpenChange}
-      title={t('Bind Email')}
+      title={currentEmail ? t('Change Email') : t('Bind Email')}
       description={
         currentEmail
           ? t('Current email: {{email}}. Enter a new email to change.', {
@@ -135,7 +145,8 @@ export function EmailBindDialog({
             })
           : t('Bind an email address to your account.')
       }
-      contentClassName='sm:max-w-md'
+      contentClassName='benefit-email-bind-dialog sm:max-w-md'
+      headerClassName='pr-10'
       contentHeight='auto'
       bodyClassName='space-y-4'
       footer={
@@ -145,6 +156,7 @@ export function EmailBindDialog({
             variant='outline'
             onClick={() => handleOpenChange(false)}
             disabled={loading}
+            className='h-11 rounded-[8px]'
           >
             {t('Cancel')}
           </Button>
@@ -152,6 +164,7 @@ export function EmailBindDialog({
             type='button'
             onClick={handleBind}
             disabled={loading || !email || !code}
+            className='h-11 rounded-[8px]'
           >
             {loading && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
             {loading ? t('Binding...') : t('Bind Email')}
@@ -165,10 +178,12 @@ export function EmailBindDialog({
           <Input
             id='email'
             type='email'
+            autoComplete='email'
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder={t('Enter your email')}
-            disabled={loading}
+            disabled={loading || sendingCode}
+            className='h-11 rounded-[8px]'
           />
         </div>
 
@@ -182,18 +197,17 @@ export function EmailBindDialog({
               placeholder={t('Enter code')}
               disabled={loading}
               maxLength={6}
+              autoComplete='one-time-code'
+              className='h-11 rounded-[8px]'
             />
             <Button
               type='button'
               variant='outline'
               onClick={handleSendCode}
               disabled={sendingCode || isActive || !email}
+              className='h-11 w-24 shrink-0 rounded-[8px]'
             >
-              {isActive
-                ? `${secondsLeft}s`
-                : sendingCode
-                  ? t('Sending...')
-                  : t('Send')}
+              {sendButtonLabel}
             </Button>
           </div>
         </div>

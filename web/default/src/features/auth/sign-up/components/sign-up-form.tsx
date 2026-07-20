@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -172,7 +172,7 @@ export function SignUpForm({
       } else {
         toast.error(res?.message || t('Failed to create account'))
       }
-    } catch (_error) {
+    } catch {
       // Errors are handled by global interceptor
     } finally {
       setIsLoading(false)
@@ -216,11 +216,20 @@ export function SignUpForm({
       } else {
         toast.error(res?.message || t('Login failed'))
       }
-    } catch (_error) {
+    } catch {
       toast.error(t('Login failed'))
     } finally {
       setIsWeChatSubmitting(false)
     }
+  }
+
+  let verificationAction: ReactNode
+  if (isActive) {
+    verificationAction = t('Resend ({{seconds}}s)', { seconds: secondsLeft })
+  } else if (isSendingCode) {
+    verificationAction = <Loader2 className='h-4 w-4 animate-spin' />
+  } else {
+    verificationAction = t('Send code')
   }
 
   return (
@@ -323,13 +332,7 @@ export function SignUpForm({
                 }
                 onClick={handleSendVerificationCode}
               >
-                {isActive ? (
-                  t('Resend ({{seconds}}s)', { seconds: secondsLeft })
-                ) : isSendingCode ? (
-                  <Loader2 className='h-4 w-4 animate-spin' />
-                ) : (
-                  t('Send code')
-                )}
+                {verificationAction}
               </Button>
             </div>
           </>
@@ -355,7 +358,7 @@ export function SignUpForm({
         {/* Submit Button */}
         <Button
           type='submit'
-          className='mt-2 w-full justify-center gap-2'
+          className='benefit-liquid-primary mt-2 h-12 w-full justify-center gap-2 rounded-[8px]'
           disabled={
             isLoading ||
             (requiresLegalConsent && !agreedToLegal) ||

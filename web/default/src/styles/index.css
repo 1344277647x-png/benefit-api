@@ -85,6 +85,422 @@ For commercial licensing, please contact support@quantumnous.com
   }
 }
 
+/* Benefit API: Apple HIG-inspired materials, scoped to branded surfaces. */
+.benefit-apple-shell,
+.benefit-apple-shell * {
+  letter-spacing: 0;
+}
+
+.benefit-liquid-glass,
+.benefit-liquid-glass-clear,
+.benefit-liquid-primary,
+.benefit-liquid-inverse {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.benefit-liquid-glass {
+  border: 1px solid color-mix(in oklch, var(--foreground) 12%, transparent);
+  background-color: color-mix(
+    in oklch,
+    var(--background) 96%,
+    var(--foreground)
+  );
+  box-shadow:
+    0 18px 48px -32px color-mix(in oklch, var(--foreground) 42%, transparent),
+    inset 0 1px 0 color-mix(in oklch, var(--background) 78%, transparent);
+}
+
+.benefit-liquid-glass-clear {
+  border: 1px solid color-mix(in oklch, var(--foreground) 11%, transparent);
+  background-color: color-mix(
+    in oklch,
+    var(--background) 92%,
+    var(--foreground)
+  );
+  box-shadow: inset 0 1px 0
+    color-mix(in oklch, var(--background) 76%, transparent);
+}
+
+.benefit-liquid-primary {
+  border: 1px solid color-mix(in oklch, white 32%, var(--primary));
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow:
+    0 14px 32px -20px color-mix(in oklch, var(--primary) 78%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 0.28);
+}
+
+.benefit-liquid-inverse {
+  border: 1px solid color-mix(in oklch, var(--background) 34%, transparent);
+  background-color: color-mix(in oklch, var(--background) 92%, transparent);
+  color: var(--foreground);
+  box-shadow: inset 0 1px 0
+    color-mix(in oklch, var(--background) 48%, transparent);
+}
+
+.benefit-solid-surface {
+  border: 1px solid color-mix(in oklch, var(--foreground) 11%, transparent);
+  background-color: color-mix(
+    in oklch,
+    var(--background) 97%,
+    var(--foreground)
+  );
+  box-shadow: 0 24px 60px -42px
+    color-mix(in oklch, var(--foreground) 52%, transparent);
+}
+
+.benefit-auth-stage {
+  background-color: color-mix(in oklch, var(--background) 96%, var(--muted));
+}
+
+.benefit-auth-panel input[data-slot='form-control'],
+.benefit-auth-panel input[data-slot='input'] {
+  height: 48px;
+  min-height: 48px;
+  border-radius: 8px;
+  padding-inline: 14px;
+  background-color: color-mix(in oklch, var(--muted) 42%, var(--background));
+}
+
+.benefit-auth-panel [data-slot='button'].absolute {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+}
+
+.benefit-auth-panel [data-slot='button']:not(.absolute) {
+  min-height: 44px;
+  border-radius: 8px;
+}
+
+.benefit-email-bind-dialog [data-slot='dialog-close'] {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  border-radius: 8px;
+}
+
+.benefit-product-frame {
+  border: 1px solid color-mix(in oklch, var(--foreground) 13%, transparent);
+  background-color: color-mix(
+    in oklch,
+    var(--background) 97%,
+    var(--foreground)
+  );
+  box-shadow: 0 28px 70px -46px
+    color-mix(in oklch, var(--foreground) 62%, transparent);
+}
+
+.benefit-liquid-toolbar {
+  border-bottom: 1px solid
+    color-mix(in oklch, var(--foreground) 11%, transparent);
+  background-color: color-mix(in oklch, var(--muted) 54%, var(--background));
+}
+
+/* Benefit API: real-time 3D scene and transparent depth controls. */
+.benefit-hero-3d {
+  isolation: isolate;
+  perspective: 1400px;
+  background-color: color-mix(in oklch, var(--background) 97%, var(--muted));
+}
+
+.benefit-hero-3d-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.benefit-hero-3d-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0.7;
+  filter: saturate(1.08) contrast(1.04);
+}
+
+.light .benefit-hero-3d-canvas {
+  opacity: 0.58;
+}
+
+.benefit-hero-3d-canvas[data-webgl-state='unavailable'] {
+  display: none;
+}
+
+.benefit-hero-3d-content {
+  text-shadow: 0 1px 18px
+    color-mix(in oklch, var(--background) 82%, transparent);
+}
+
+.benefit-button-3d:not(.absolute):not(.fixed):not(.sticky) {
+  position: relative;
+}
+
+.benefit-button-3d {
+  isolation: isolate;
+  border-color: color-mix(in oklch, var(--foreground) 17%, transparent);
+  background-color: color-mix(in oklch, var(--background) 54%, transparent);
+  box-shadow:
+    0 14px 28px -20px color-mix(in oklch, black 58%, transparent),
+    0 5px 12px -9px color-mix(in oklch, var(--foreground) 36%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 0.24),
+    inset 0 -1px 0 color-mix(in oklch, var(--foreground) 12%, transparent);
+  translate: 0 0;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.benefit-button-3d::after {
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  border-radius: inherit;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18);
+  pointer-events: none;
+  content: '';
+}
+
+.benefit-button-3d-primary {
+  border-color: color-mix(in oklch, white 30%, var(--primary));
+  background-color: color-mix(in oklch, var(--primary) 72%, transparent);
+}
+
+.benefit-button-3d-clear {
+  background-color: color-mix(in oklch, var(--background) 58%, transparent);
+}
+
+.benefit-button-3d-soft {
+  background-color: color-mix(in oklch, var(--secondary) 62%, transparent);
+}
+
+.benefit-button-3d-ghost {
+  border-color: transparent;
+  background-color: color-mix(in oklch, var(--background) 18%, transparent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.11);
+}
+
+.benefit-button-3d-danger {
+  border-color: color-mix(in oklch, var(--destructive) 38%, transparent);
+  background-color: color-mix(in oklch, var(--destructive) 18%, transparent);
+}
+
+.benefit-button-3d-link {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.benefit-button-3d-link::after {
+  display: none;
+}
+
+.benefit-3d-overlay,
+[data-slot='alert-dialog-overlay'],
+[data-slot='drawer-overlay'] {
+  background-color: rgb(0 0 0 / 0.2);
+  -webkit-backdrop-filter: blur(10px) saturate(118%);
+  backdrop-filter: blur(10px) saturate(118%);
+}
+
+.benefit-3d-surface,
+.benefit-3d-popup,
+[data-slot='alert-dialog-content'],
+[data-slot='combobox-content'],
+[data-slot='context-menu-content'],
+[data-slot='context-menu-sub-content'],
+[data-slot='drawer-content'],
+[data-slot='hover-card-content'],
+[data-slot='menubar-content'],
+[data-slot='menubar-sub-content'] {
+  border: 1px solid color-mix(in oklch, var(--foreground) 18%, transparent);
+  background-color: color-mix(
+    in oklch,
+    var(--background) 94%,
+    var(--foreground)
+  );
+  box-shadow:
+    0 44px 90px -34px rgb(0 0 0 / 0.58),
+    0 18px 42px -30px color-mix(in oklch, var(--foreground) 48%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 0.28),
+    inset 0 -1px 0 color-mix(in oklch, var(--foreground) 12%, transparent);
+  transform-style: preserve-3d;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.benefit-3d-surface[data-slot='dialog-content'][data-open],
+.benefit-3d-popup[data-open],
+[data-slot='alert-dialog-content'][data-open],
+[data-slot='combobox-content'][data-open],
+[data-slot='context-menu-content'][data-open],
+[data-slot='context-menu-sub-content'][data-open],
+[data-slot='hover-card-content'][data-open],
+[data-slot='menubar-content'][data-open],
+[data-slot='menubar-sub-content'][data-open] {
+  animation: benefit-surface-3d-in 260ms cubic-bezier(0.2, 0.75, 0.2, 1);
+}
+
+@keyframes benefit-surface-3d-in {
+  from {
+    opacity: 0;
+    filter: blur(5px);
+    translate: 0 12px -40px;
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    translate: 0 0 0;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .benefit-button-3d:not(:disabled):not(.benefit-button-3d-link):hover {
+    border-color: color-mix(in oklch, var(--foreground) 26%, transparent);
+    box-shadow:
+      0 20px 34px -22px color-mix(in oklch, black 62%, transparent),
+      0 8px 18px -12px color-mix(in oklch, var(--primary) 42%, transparent),
+      inset 0 1px 0 rgb(255 255 255 / 0.34),
+      inset 0 -1px 0 color-mix(in oklch, var(--foreground) 14%, transparent);
+    translate: 0 -2px 10px;
+  }
+}
+
+.benefit-button-3d:not(:disabled):not(.benefit-button-3d-link):active {
+  box-shadow:
+    0 8px 16px -13px rgb(0 0 0 / 0.56),
+    inset 0 2px 4px color-mix(in oklch, black 18%, transparent),
+    inset 0 -1px 0 rgb(255 255 255 / 0.18);
+  translate: 0 1px 0;
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .benefit-liquid-glass {
+    background-color: color-mix(in oklch, var(--background) 76%, transparent);
+    -webkit-backdrop-filter: blur(28px) saturate(145%);
+    backdrop-filter: blur(28px) saturate(145%);
+  }
+
+  .benefit-liquid-glass-clear {
+    background-color: color-mix(in oklch, var(--background) 62%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(135%);
+    backdrop-filter: blur(18px) saturate(135%);
+  }
+
+  .benefit-liquid-primary {
+    background-color: color-mix(in oklch, var(--primary) 88%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    backdrop-filter: blur(18px) saturate(140%);
+  }
+
+  .benefit-liquid-inverse {
+    background-color: color-mix(in oklch, var(--background) 22%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(135%);
+    backdrop-filter: blur(18px) saturate(135%);
+  }
+
+  .benefit-liquid-toolbar {
+    background-color: color-mix(in oklch, var(--background) 66%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(135%);
+    backdrop-filter: blur(18px) saturate(135%);
+  }
+
+  .benefit-button-3d {
+    -webkit-backdrop-filter: blur(18px) saturate(142%);
+    backdrop-filter: blur(18px) saturate(142%);
+  }
+
+  .benefit-3d-surface,
+  .benefit-3d-popup,
+  [data-slot='alert-dialog-content'],
+  [data-slot='combobox-content'],
+  [data-slot='context-menu-content'],
+  [data-slot='context-menu-sub-content'],
+  [data-slot='drawer-content'],
+  [data-slot='hover-card-content'],
+  [data-slot='menubar-content'],
+  [data-slot='menubar-sub-content'] {
+    background-color: color-mix(in oklch, var(--background) 72%, transparent);
+    -webkit-backdrop-filter: blur(30px) saturate(155%);
+    backdrop-filter: blur(30px) saturate(155%);
+  }
+}
+
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+  .benefit-liquid-glass,
+  .benefit-liquid-glass-clear {
+    border-color: color-mix(in oklch, var(--foreground) 32%, transparent);
+    background-color: var(--background);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .benefit-liquid-primary {
+    background-color: var(--primary);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .benefit-liquid-inverse {
+    background-color: var(--background);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .benefit-liquid-toolbar {
+    background-color: var(--background);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .benefit-button-3d,
+  .benefit-3d-surface,
+  .benefit-3d-popup,
+  [data-slot='alert-dialog-content'],
+  [data-slot='combobox-content'],
+  [data-slot='context-menu-content'],
+  [data-slot='context-menu-sub-content'],
+  [data-slot='drawer-content'],
+  [data-slot='hover-card-content'],
+  [data-slot='menubar-content'],
+  [data-slot='menubar-sub-content'] {
+    border-color: color-mix(in oklch, var(--foreground) 34%, transparent);
+    background-color: var(--background);
+    box-shadow: 0 8px 20px -16px rgb(0 0 0 / 0.5);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .benefit-button-3d-primary {
+    background-color: var(--primary);
+  }
+
+  .benefit-hero-3d-canvas {
+    opacity: 0.18;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .benefit-button-3d,
+  .benefit-3d-surface,
+  .benefit-3d-popup,
+  [data-slot='alert-dialog-content'],
+  [data-slot='combobox-content'],
+  [data-slot='context-menu-content'],
+  [data-slot='context-menu-sub-content'],
+  [data-slot='drawer-content'],
+  [data-slot='hover-card-content'],
+  [data-slot='menubar-content'],
+  [data-slot='menubar-sub-content'] {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+    translate: 0 0 0 !important;
+  }
+}
+
 /* Vercel Geist-style skeleton shimmer */
 .skeleton-shimmer {
   background: linear-gradient(

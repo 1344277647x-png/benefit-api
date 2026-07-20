@@ -16,21 +16,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { CherryStudio } from '@lobehub/icons'
 import { Link } from '@tanstack/react-router'
 import {
   ArrowRight,
   BookOpen,
   CircleDollarSign,
-  Route,
-  ShieldCheck,
+  Gauge,
+  Layers3,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { useStatus } from '@/hooks/use-status'
 
-import { HeroTerminalDemo } from '../hero-terminal-demo'
+import { Hero3DScene } from '../hero-3d-scene'
 
 interface HeroProps {
   className?: string
@@ -50,7 +49,7 @@ export function Hero(props: HeroProps) {
       return (
         <Button
           variant='outline'
-          className='group border-border/50 hover:border-border hover:bg-muted/50 inline-flex h-11 items-center gap-1.5 rounded-lg px-5 text-sm font-medium'
+          className='benefit-liquid-glass-clear group hover:bg-background/80 inline-flex h-12 items-center gap-1.5 rounded-full px-5 text-sm font-medium'
           render={
             <a href={docsUrl} target='_blank' rel='noopener noreferrer' />
           }
@@ -63,7 +62,7 @@ export function Hero(props: HeroProps) {
     return (
       <Button
         variant='outline'
-        className='group border-border/50 hover:border-border hover:bg-muted/50 inline-flex h-11 items-center gap-1.5 rounded-lg px-5 text-sm font-medium'
+        className='benefit-liquid-glass-clear group hover:bg-background/80 inline-flex h-12 items-center gap-1.5 rounded-full px-5 text-sm font-medium'
         render={<Link to={docsUrl} />}
       >
         <BookOpen className='text-muted-foreground/80 group-hover:text-foreground size-4 transition-colors duration-200' />
@@ -74,63 +73,72 @@ export function Hero(props: HeroProps) {
 
   const serviceSignals = [
     {
-      icon: Route,
-      label: t('OpenAI-compatible access'),
+      icon: Layers3,
+      label: t('One endpoint, many models'),
       className: 'text-teal-600 dark:text-teal-400',
-    },
-    {
-      icon: ShieldCheck,
-      label: t('Stable request routing'),
-      className: 'text-sky-600 dark:text-sky-400',
     },
     {
       icon: CircleDollarSign,
       label: t('Pay only for usage'),
       className: 'text-amber-600 dark:text-amber-400',
     },
+    {
+      icon: Gauge,
+      label: t('Usage and balance stay visible'),
+      className: 'text-sky-600 dark:text-sky-400',
+    },
   ]
 
   return (
-    <section className='relative z-10 overflow-hidden border-b px-6 pt-24 pb-12 md:pt-28 md:pb-16'>
-      <div className='mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 lg:grid-cols-12 lg:gap-10'>
-        <div className='flex flex-col items-start text-left lg:col-span-6'>
+    <section className='benefit-apple-shell benefit-hero-3d relative z-10 overflow-hidden border-b px-5 pt-28 pb-16 sm:pt-32 md:pt-36 md:pb-20'>
+      <Hero3DScene />
+      <div
+        aria-hidden='true'
+        className='border-border/25 pointer-events-none absolute inset-y-0 left-1/2 z-[1] w-full max-w-6xl -translate-x-1/2 border-x'
+      />
+      <div
+        aria-hidden='true'
+        className='border-border/20 pointer-events-none absolute inset-x-0 top-[58%] z-[1] border-t'
+      />
+      <div className='relative z-[2] mx-auto max-w-6xl'>
+        <div className='benefit-hero-3d-content mx-auto flex max-w-4xl flex-col items-center text-center'>
           <div
-            className='landing-animate-fade-up mb-5 inline-flex items-center gap-2 text-xs font-semibold text-teal-700 opacity-0 dark:text-teal-300'
+            className='benefit-liquid-glass-clear landing-animate-fade-up inline-flex min-h-8 items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium text-teal-700 dark:text-teal-300'
             style={{ animationDelay: '0ms' }}
           >
-            <span className='size-2 rounded-full bg-teal-500 shadow-[0_0_0_4px_rgba(20,184,166,0.12)]' />
+            <span className='size-1.5 rounded-full bg-teal-500' />
             <span>{t('Unified AI access, ready for production')}</span>
           </div>
 
           <h1
-            className='landing-animate-fade-up text-4xl leading-[1.08] font-bold opacity-0 md:text-5xl'
+            className='landing-animate-fade-up mt-5 text-5xl leading-none font-semibold sm:text-6xl md:text-7xl'
             style={{ animationDelay: '60ms' }}
           >
             Benefit API
           </h1>
           <p
-            className='landing-animate-fade-up mt-4 max-w-xl text-xl leading-snug font-semibold opacity-0 md:text-2xl'
+            className='landing-animate-fade-up mt-5 max-w-3xl text-2xl leading-tight font-semibold md:text-4xl'
             style={{ animationDelay: '90ms' }}
           >
-            {t('One endpoint for every AI workflow')}
+            {t('More models. Lower access cost.')}
           </p>
           <p
-            className='landing-animate-fade-up text-muted-foreground/80 mt-5 max-w-xl text-base leading-relaxed opacity-0 md:text-[15px]'
+            className='landing-animate-fade-up text-muted-foreground mt-5 max-w-2xl text-base leading-relaxed md:text-lg'
             style={{ animationDelay: '120ms' }}
           >
             {t(
-              'Connect OpenAI-compatible clients to one clear base URL, manage keys and quota in one place, and keep every request visible.'
+              'One OpenAI-compatible address connects leading models. Pay by actual usage, with balance and billing always visible.'
             )}
           </p>
 
           <div
-            className='landing-animate-fade-up mt-8 flex flex-wrap items-center gap-3 opacity-0'
+            className='landing-animate-fade-up mt-7 flex w-full flex-col items-center justify-center gap-3 sm:w-auto sm:flex-row'
             style={{ animationDelay: '180ms' }}
           >
             {props.isAuthenticated ? (
               <>
                 <Button
-                  className='group h-11 rounded-lg px-5 text-sm font-medium'
+                  className='benefit-liquid-primary group h-12 w-full rounded-full px-6 text-sm font-semibold sm:w-auto'
                   render={<Link to='/dashboard' />}
                 >
                   {t('Go to Dashboard')}
@@ -141,7 +149,7 @@ export function Hero(props: HeroProps) {
             ) : (
               <>
                 <Button
-                  className='group h-11 rounded-lg px-5 text-sm font-medium'
+                  className='benefit-liquid-primary group h-12 w-full rounded-full px-6 text-sm font-semibold sm:w-auto'
                   render={<Link to='/sign-up' />}
                 >
                   {t('Get Started')}
@@ -149,7 +157,7 @@ export function Hero(props: HeroProps) {
                 </Button>
                 <Button
                   variant='outline'
-                  className='border-border/50 hover:border-border hover:bg-muted/50 h-11 rounded-lg px-5 text-sm font-medium'
+                  className='benefit-liquid-glass-clear hover:bg-background/80 h-12 w-full rounded-full px-6 text-sm font-medium sm:w-auto'
                   render={<Link to='/pricing' />}
                 >
                   {t('View Pricing')}
@@ -160,7 +168,7 @@ export function Hero(props: HeroProps) {
           </div>
 
           <div
-            className='landing-animate-fade-up mt-9 grid w-full max-w-xl gap-3 opacity-0 sm:grid-cols-3'
+            className='landing-animate-fade-up mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-3'
             style={{ animationDelay: '240ms' }}
           >
             {serviceSignals.map((signal) => {
@@ -168,42 +176,13 @@ export function Hero(props: HeroProps) {
               return (
                 <div key={signal.label} className='flex items-center gap-2'>
                   <Icon className={`size-4 shrink-0 ${signal.className}`} />
-                  <span className='text-muted-foreground text-xs leading-snug'>
+                  <span className='text-muted-foreground text-xs leading-none'>
                     {signal.label}
                   </span>
                 </div>
               )
             })}
           </div>
-
-          <div
-            className='landing-animate-fade-up mt-8 flex items-center gap-3 opacity-0'
-            style={{ animationDelay: '280ms' }}
-          >
-            <span className='text-muted-foreground text-xs'>
-              {t('Works with')}
-            </span>
-            <a
-              href='https://cherry-ai.com'
-              target='_blank'
-              rel='noopener noreferrer'
-              className='text-foreground/80 hover:text-foreground flex items-center gap-1.5 text-xs font-medium transition-colors'
-            >
-              <CherryStudio.Color size={18} className='shrink-0' />
-              <span>Cherry Studio</span>
-            </a>
-            <span aria-hidden className='bg-border h-4 w-px' />
-            <span className='text-foreground/70 text-xs font-medium'>
-              OpenAI SDK
-            </span>
-          </div>
-        </div>
-
-        <div
-          className='landing-animate-fade-up flex w-full justify-center opacity-0 lg:col-span-6'
-          style={{ animationDelay: '320ms' }}
-        >
-          <HeroTerminalDemo />
         </div>
       </div>
     </section>

@@ -31,30 +31,38 @@ export function AuthLayout({ children }: AuthLayoutProps) {
   const { systemName, logo, loading } = useSystemConfig()
 
   return (
-    <div className='relative grid h-svh max-w-none'>
+    <div className='benefit-apple-shell benefit-auth-stage relative min-h-svh overflow-hidden'>
+      <div
+        aria-hidden='true'
+        className='border-border/35 pointer-events-none absolute inset-y-0 left-1/2 w-full max-w-6xl -translate-x-1/2 border-x'
+      />
+      <div
+        aria-hidden='true'
+        className='border-border/25 pointer-events-none absolute inset-x-0 top-[28%] border-t'
+      />
       <Link
         to='/'
-        className='absolute top-4 left-4 z-10 flex items-center gap-2 transition-opacity hover:opacity-80 sm:top-8 sm:left-8'
+        className='benefit-liquid-glass absolute top-4 left-4 z-10 flex min-h-11 items-center gap-2.5 rounded-full px-3 transition-opacity hover:opacity-85 sm:top-6 sm:left-6'
       >
-        <div className='relative h-8 w-8'>
+        <div className='relative size-8'>
           {loading ? (
-            <Skeleton className='absolute inset-0 rounded-full' />
+            <Skeleton className='absolute inset-0 rounded-lg' />
           ) : (
             <img
               src={logo}
-              alt={t('Logo')}
-              className='h-8 w-8 rounded-full object-cover'
+              alt={systemName || t('Logo')}
+              className='size-8 rounded-[8px] object-contain'
             />
           )}
         </div>
         {loading ? (
           <Skeleton className='h-6 w-24' />
         ) : (
-          <h1 className='text-xl font-medium'>{systemName}</h1>
+          <h1 className='text-base font-semibold'>{systemName}</h1>
         )}
       </Link>
-      <div className='container flex items-center pt-16 sm:pt-0'>
-        <div className='mx-auto flex w-full flex-col justify-center space-y-2 px-4 py-8 sm:w-[480px] sm:p-8'>
+      <div className='relative flex min-h-svh items-center px-4 pt-24 pb-8 sm:px-6 sm:pt-20'>
+        <div className='benefit-auth-panel benefit-solid-surface mx-auto flex w-full max-w-[460px] flex-col justify-center space-y-2 rounded-[8px] px-5 py-8 sm:px-9 sm:py-10'>
           {children}
         </div>
       </div>

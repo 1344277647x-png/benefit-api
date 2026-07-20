@@ -113,6 +113,7 @@ Transitive dependencies should be audited before a final external release.
 | web/default | production  | npm       | `streamdown`                                          | `2.5.0`                              | Apache-2.0                                         |
 | web/default | production  | npm       | `tailwind-merge`                                      | `3.5.0`                              | MIT                                                |
 | web/default | production  | npm       | `tailwindcss`                                         | `4.2.2`                              | MIT                                                |
+| web/default | production  | npm       | `three`                                               | `0.185.1`                            | MIT                                                |
 | web/default | production  | npm       | `tokenlens`                                           | `1.3.1`                              | MIT                                                |
 | web/default | production  | npm       | `tw-animate-css`                                      | `1.4.0`                              | MIT                                                |
 | web/default | production  | npm       | `use-stick-to-bottom`                                 | `1.1.3`                              | MIT                                                |
@@ -130,6 +131,7 @@ Transitive dependencies should be audited before a final external release.
 | web/default | development | npm       | `@types/node`                                         | `25.6.0`                             | MIT                                                |
 | web/default | development | npm       | `@types/react`                                        | `19.2.14`                            | MIT                                                |
 | web/default | development | npm       | `@types/react-dom`                                    | `19.2.3`                             | MIT                                                |
+| web/default | development | npm       | `@types/three`                                        | `0.185.1`                            | MIT                                                |
 | web/default | development | npm       | `@xyflow/react`                                       | `12.10.2`                            | MIT                                                |
 | web/default | development | npm       | `embla-carousel-react`                                | `8.6.0`                              | MIT                                                |
 | web/default | development | npm       | `eslint`                                              | `10.2.0`                             | MIT                                                |

@@ -83,7 +83,7 @@ export function ForgotPasswordForm({
       } else {
         toast.error(res?.message || t('Failed to send reset email'))
       }
-    } catch (_error) {
+    } catch {
       // Errors are handled by global interceptor
     } finally {
       setIsLoading(false)
@@ -113,7 +113,7 @@ export function ForgotPasswordForm({
 
         <Button
           type='submit'
-          className='mt-2'
+          className='benefit-liquid-primary mt-2 h-12 rounded-[8px]'
           disabled={isLoading || isActive || !turnstileReady}
         >
           {isActive

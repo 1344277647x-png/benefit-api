@@ -36,7 +36,7 @@ export function CTA(props: CTAProps) {
   }
 
   return (
-    <section className='relative z-10 overflow-hidden px-6 py-20 md:py-24'>
+    <section className='benefit-apple-shell bg-muted/15 relative z-10 overflow-hidden border-b px-6 py-20 md:py-24'>
       <AnimateInView
         className='mx-auto max-w-2xl text-center'
         animation='scale-in'
@@ -49,14 +49,17 @@ export function CTA(props: CTAProps) {
             'Create a key, connect your preferred client, and keep usage and billing under control.'
           )}
         </p>
-        <div className='mt-8 flex items-center justify-center gap-3'>
-          <Button className='group rounded-lg' render={<Link to='/sign-up' />}>
+        <div className='mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row'>
+          <Button
+            className='benefit-liquid-primary group h-12 w-full rounded-full px-6 sm:w-auto'
+            render={<Link to='/sign-up' />}
+          >
             {t('Get Started')}
             <ArrowRight className='ml-1 size-3.5 transition-transform duration-200 group-hover:translate-x-0.5' />
           </Button>
           <Button
             variant='outline'
-            className='border-border/50 hover:border-border hover:bg-muted/50 rounded-lg'
+            className='benefit-liquid-glass-clear hover:bg-background/80 h-12 w-full rounded-full px-6 sm:w-auto'
             render={<Link to='/pricing' />}
           >
             {t('View Pricing')}

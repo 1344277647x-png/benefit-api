@@ -34,7 +34,7 @@ jobs:
 
       - name: Check Go formatting
         run: |
-          test -z "$(gofmt -l controller/misc.go controller/misc_docs_test.go model/option.go router/api-router.go)"
+          test -z "$(gofmt -l controller/misc.go controller/misc_docs_test.go controller/user.go model/option.go model/user_update_test.go router/api-router.go router/api_router_email_bind_test.go)"
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -55,7 +55,35 @@ jobs:
             src/features/system-settings/site/section-registry.tsx \
             src/features/system-settings/types.ts \
             src/hooks/use-top-nav-links.ts \
-            src/features/home/components/sections/hero.tsx
+            src/features/home/components/sections/hero.tsx \
+            src/features/home/components/sections/stats.tsx \
+            src/features/home/components/sections/features.tsx \
+            src/features/home/components/sections/cta.tsx \
+            src/features/home/components/sections/how-it-works.tsx \
+            src/features/home/components/sections/product-preview.tsx \
+            src/features/home/components/hero-terminal-demo.tsx \
+            src/features/home/components/hero-3d-scene.tsx \
+            src/features/home/components/index.ts \
+            src/features/home/index.tsx \
+            src/components/layout/components/public-header.tsx \
+            src/components/ui/button.tsx \
+            src/components/ui/command.tsx \
+            src/components/ui/dialog.tsx \
+            src/components/ui/dropdown-menu.tsx \
+            src/components/ui/popover.tsx \
+            src/components/ui/select.tsx \
+            src/components/ui/sheet.tsx \
+            src/features/auth/auth-layout.tsx \
+            src/features/auth/forgot-password/components/forgot-password-form.tsx \
+            src/features/auth/forgot-password/index.tsx \
+            src/features/auth/sign-in/components/user-auth-form.tsx \
+            src/features/auth/sign-in/index.tsx \
+            src/features/auth/sign-up/components/sign-up-form.tsx \
+            src/features/auth/sign-up/index.tsx \
+            src/features/profile/components/dialogs/email-bind-dialog.tsx \
+            src/features/profile/components/passkey-card.tsx \
+            src/features/profile/components/tabs/account-bindings-tab.tsx \
+            src/features/profile/components/two-fa-card.tsx
           ../node_modules/.bin/oxfmt -c .oxfmtrc.json --check \
             src/features/docs \
             src/routes/docs \
@@ -65,6 +93,35 @@ jobs:
             src/features/system-settings/types.ts \
             src/hooks/use-top-nav-links.ts \
             src/features/home/components/sections/hero.tsx \
+            src/features/home/components/sections/stats.tsx \
+            src/features/home/components/sections/features.tsx \
+            src/features/home/components/sections/cta.tsx \
+            src/features/home/components/sections/how-it-works.tsx \
+            src/features/home/components/sections/product-preview.tsx \
+            src/features/home/components/hero-terminal-demo.tsx \
+            src/features/home/components/hero-3d-scene.tsx \
+            src/features/home/components/index.ts \
+            src/features/home/index.tsx \
+            src/components/layout/components/public-header.tsx \
+            src/components/ui/button.tsx \
+            src/components/ui/command.tsx \
+            src/components/ui/dialog.tsx \
+            src/components/ui/dropdown-menu.tsx \
+            src/components/ui/popover.tsx \
+            src/components/ui/select.tsx \
+            src/components/ui/sheet.tsx \
+            src/features/auth/auth-layout.tsx \
+            src/features/auth/forgot-password/components/forgot-password-form.tsx \
+            src/features/auth/forgot-password/index.tsx \
+            src/features/auth/sign-in/components/user-auth-form.tsx \
+            src/features/auth/sign-in/index.tsx \
+            src/features/auth/sign-up/components/sign-up-form.tsx \
+            src/features/auth/sign-up/index.tsx \
+            src/features/profile/components/dialogs/email-bind-dialog.tsx \
+            src/features/profile/components/passkey-card.tsx \
+            src/features/profile/components/tabs/account-bindings-tab.tsx \
+            src/features/profile/components/two-fa-card.tsx \
+            src/styles/index.css \
             src/i18n/locales/*.json
           bun run build
 

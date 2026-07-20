@@ -16,7 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Mail, Shield, Send, Link2, Unlink } from 'lucide-react'
+import {
+  KeyRound,
+  Link2,
+  LogIn,
+  Mail,
+  Send,
+  Shield,
+  Unlink,
+} from 'lucide-react'
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SiGithub, SiWechat, SiLinux } from 'react-icons/si'
@@ -154,15 +162,6 @@ export function AccountBindingsTab({
 
     return [
       {
-        id: 'email',
-        label: t('Email'),
-        icon: Mail,
-        value: profile.email,
-        isBound: Boolean(profile.email),
-        isEnabled: true,
-        onBind: () => dialogs.open('email'),
-      },
-      {
         id: 'wechat',
         label: t('WeChat'),
         icon: SiWechat as React.ComponentType<{ className?: string }>,
@@ -263,50 +262,107 @@ export function AccountBindingsTab({
 
   if (!profile || loading) return null
 
+  const emailIsBound = Boolean(profile.email)
+
   return (
     <>
-      <div className='grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3'>
-        {bindings.map((binding) => (
-          <div
-            key={binding.id}
-            className='flex items-center justify-between gap-2.5 rounded-lg border p-2.5 sm:gap-3 sm:p-3'
-          >
-            <div className='flex min-w-0 items-center gap-2.5 sm:gap-3'>
-              <div className='bg-muted shrink-0 rounded-md p-1.5 sm:p-2'>
-                <binding.icon className='h-4 w-4' />
+      <section className='bg-muted/25 rounded-[8px] border p-4 sm:p-5'>
+        <div className='flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between'>
+          <div className='flex min-w-0 items-start gap-3'>
+            <div className='bg-success/10 text-success flex size-10 shrink-0 items-center justify-center rounded-lg'>
+              <Mail className='size-5' aria-hidden='true' />
+            </div>
+            <div className='min-w-0 pt-0.5'>
+              <div className='flex flex-wrap items-center gap-2'>
+                <h3 className='text-sm font-semibold'>
+                  {t('Email sign-in and recovery')}
+                </h3>
+                <StatusBadge
+                  label={emailIsBound ? t('Bound') : t('Optional')}
+                  variant={emailIsBound ? 'success' : 'neutral'}
+                  copyable={false}
+                />
               </div>
-              <div className='min-w-0'>
-                <div className='flex items-center gap-1.5'>
-                  <p className='text-sm font-medium'>{binding.label}</p>
-                  {binding.isBound && (
-                    <StatusBadge
-                      label={t('Bound')}
-                      variant='success'
-                      copyable={false}
-                    />
-                  )}
-                </div>
-                <p className='text-muted-foreground truncate text-xs'>
-                  {binding.value || t('Not bound')}
-                </p>
+              <p className='text-muted-foreground mt-1 text-xs leading-relaxed break-all'>
+                {emailIsBound
+                  ? profile.email
+                  : t(
+                      'Binding is optional. Username sign-in remains available.'
+                    )}
+              </p>
+              <div className='text-muted-foreground mt-3 grid gap-2 text-xs sm:grid-cols-2 sm:gap-x-5'>
+                <span className='flex items-center gap-1.5'>
+                  <LogIn className='size-3.5 shrink-0' aria-hidden='true' />
+                  {t('Sign in with email and your existing password')}
+                </span>
+                <span className='flex items-center gap-1.5'>
+                  <KeyRound className='size-3.5 shrink-0' aria-hidden='true' />
+                  {t('Recover your password by email')}
+                </span>
               </div>
             </div>
-            <Button
-              variant='outline'
-              size='sm'
-              className='h-7 shrink-0 px-2.5 text-xs'
-              onClick={binding.onBind}
-              disabled={binding.isBound && binding.id !== 'email'}
-            >
-              {binding.isBound
-                ? binding.id === 'email'
-                  ? t('Change')
-                  : t('Bound')
-                : t('Bind')}
-            </Button>
           </div>
-        ))}
-      </div>
+          <Button
+            variant={emailIsBound ? 'outline' : 'default'}
+            size='sm'
+            className='min-h-11 w-full shrink-0 rounded-[8px] px-4 sm:w-auto'
+            onClick={() => dialogs.open('email')}
+          >
+            {emailIsBound ? t('Change Email') : t('Bind Email')}
+          </Button>
+        </div>
+      </section>
+
+      {bindings.length > 0 && (
+        <section className='pt-5 sm:pt-6'>
+          <div>
+            <h3 className='text-sm font-semibold'>
+              {t('Other sign-in methods')}
+            </h3>
+            <p className='text-muted-foreground mt-1 text-xs'>
+              {t('Connect another verified sign-in method to your account.')}
+            </p>
+          </div>
+          <div className='bg-background mt-3 divide-y overflow-hidden rounded-[8px] border'>
+            {bindings.map((binding) => (
+              <div
+                key={binding.id}
+                className='flex min-h-14 items-center justify-between gap-3 px-3 py-3 sm:px-4'
+              >
+                <div className='flex min-w-0 items-center gap-3'>
+                  <div className='bg-muted flex size-8 shrink-0 items-center justify-center rounded-md'>
+                    <binding.icon className='size-4' aria-hidden='true' />
+                  </div>
+                  <div className='min-w-0'>
+                    <div className='flex items-center gap-1.5'>
+                      <p className='text-sm font-medium'>{binding.label}</p>
+                      {binding.isBound && (
+                        <StatusBadge
+                          label={t('Bound')}
+                          variant='success'
+                          copyable={false}
+                        />
+                      )}
+                    </div>
+                    <p className='text-muted-foreground truncate text-xs'>
+                      {binding.value || t('Not bound')}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  className='min-h-10 shrink-0 rounded-[8px] px-3 text-xs'
+                  onClick={binding.onBind}
+                  disabled={binding.isBound}
+                >
+                  {binding.isBound ? t('Bound') : t('Bind')}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Custom OAuth Bindings */}
       {customProviders && customProviders.length > 0 && (
@@ -324,7 +380,7 @@ export function AccountBindingsTab({
               return (
                 <div
                   key={provider.id}
-                  className='flex items-center justify-between gap-2.5 rounded-lg border p-2.5 sm:gap-3 sm:p-3'
+                  className='bg-background flex min-h-14 items-center justify-between gap-2.5 rounded-[8px] border p-3 sm:gap-3'
                 >
                   <div className='flex min-w-0 items-center gap-2.5 sm:gap-3'>
                     <div className='bg-muted shrink-0 rounded-md p-1.5 sm:p-2'>
@@ -352,7 +408,7 @@ export function AccountBindingsTab({
                     <Button
                       variant='ghost'
                       size='sm'
-                      className='text-destructive h-7 shrink-0 px-2.5 text-xs'
+                      className='text-destructive min-h-10 shrink-0 rounded-[8px] px-2.5 text-xs'
                       onClick={() => setUnbindTarget(binding)}
                     >
                       <Unlink className='mr-1 h-3 w-3' />
@@ -362,7 +418,7 @@ export function AccountBindingsTab({
                     <Button
                       variant='outline'
                       size='sm'
-                      className='h-7 shrink-0 px-2.5 text-xs'
+                      className='min-h-10 shrink-0 rounded-[8px] px-2.5 text-xs'
                       onClick={() => handleBindCustomOAuth(provider)}
                     >
                       {t('Bind')}

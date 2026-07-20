@@ -46,7 +46,7 @@ export function HowItWorks() {
   ]
 
   return (
-    <section className='border-border/40 bg-muted/10 relative z-10 border-y px-6 py-20 md:py-24'>
+    <section className='benefit-apple-shell border-border/40 bg-muted/10 relative z-10 border-y px-6 py-20 md:py-24'>
       <div className='mx-auto max-w-6xl'>
         <AnimateInView className='mb-16 text-center md:mb-20'>
           <p className='text-muted-foreground mb-3 text-xs font-medium uppercase'>
@@ -66,7 +66,7 @@ export function HowItWorks() {
               className='relative flex flex-col items-center text-center'
             >
               <div className='relative mb-6'>
-                <div className='text-muted-foreground border-border/50 bg-background flex size-16 items-center justify-center rounded-[8px] border transition-colors'>
+                <div className='text-muted-foreground border-border/50 bg-background flex size-16 items-center justify-center rounded-[8px] border shadow-sm transition-colors'>
                   {step.icon}
                 </div>
                 <div className='bg-foreground text-background absolute -top-2 -right-2 flex size-6 items-center justify-center rounded-full text-xs font-bold'>
