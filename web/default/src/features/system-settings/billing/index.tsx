@@ -110,6 +110,13 @@ const defaultBillingSettings: BillingSettings = {
   'checkin_setting.enabled': false,
   'checkin_setting.min_quota': 1000,
   'checkin_setting.max_quota': 10000,
+  'referral_setting.enabled': false,
+  'referral_setting.minimum_topup_quota': 5000000,
+  'referral_setting.reward_rate_basis_points': 300,
+  'referral_setting.invitee_bonus_quota': 250000,
+  'referral_setting.per_invitee_cap_quota': 2500000,
+  'referral_setting.monthly_cap_quota': 25000000,
+  'referral_setting.settlement_delay_hours': 72,
 }
 
 export function BillingSettings() {

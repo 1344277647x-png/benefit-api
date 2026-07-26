@@ -334,6 +334,23 @@ export type BillingSettings = {
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number
+  'referral_setting.enabled': boolean
+  'referral_setting.minimum_topup_quota': number
+  'referral_setting.reward_rate_basis_points': number
+  'referral_setting.invitee_bonus_quota': number
+  'referral_setting.per_invitee_cap_quota': number
+  'referral_setting.monthly_cap_quota': number
+  'referral_setting.settlement_delay_hours': number
+}
+
+export type ReferralOptionsUpdateRequest = {
+  enabled: boolean
+  minimum_topup_quota: number
+  reward_rate_basis_points: number
+  invitee_bonus_quota: number
+  per_invitee_cap_quota: number
+  monthly_cap_quota: number
+  settlement_delay_hours: number
 }
 
 export type OperationsSettings = {

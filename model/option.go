@@ -1,6 +1,7 @@
 package model
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -299,6 +300,17 @@ func UpdateOption(key string, value string) error {
 // is touched — safe for callers that must commit a set of related options
 // atomically (e.g. payment gateway binding).
 func UpdateOptionsBulk(values map[string]string) error {
+	return updateOptionsBulk(values, "")
+}
+
+// UpdateOptionsBulkWithActivationKey persists all values in one transaction,
+// then applies the activation flag last in memory. Financial settings remain
+// disabled while the rest of the new configuration is being applied.
+func UpdateOptionsBulkWithActivationKey(values map[string]string, activationKey string) error {
+	return updateOptionsBulk(values, activationKey)
+}
+
+func updateOptionsBulk(values map[string]string, activationKey string) error {
 	if len(values) == 0 {
 		return nil
 	}
@@ -318,8 +330,26 @@ func UpdateOptionsBulk(values map[string]string) error {
 	if err != nil {
 		return err
 	}
-	for k, v := range values {
-		if err := updateOptionMap(k, v); err != nil {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		if key != activationKey {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	if target, ok := values[activationKey]; activationKey != "" && ok {
+		if err := updateOptionMap(activationKey, "false"); err != nil {
+			return err
+		}
+		for _, key := range keys {
+			if err := updateOptionMap(key, values[key]); err != nil {
+				return err
+			}
+		}
+		return updateOptionMap(activationKey, target)
+	}
+	for _, key := range keys {
+		if err := updateOptionMap(key, values[key]); err != nil {
 			return err
 		}
 	}

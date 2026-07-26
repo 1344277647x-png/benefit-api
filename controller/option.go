@@ -42,6 +42,37 @@ func isPositiveOptionValue(value string) bool {
 	return err == nil && floatValue > 0
 }
 
+func validateReferralOption(key string, value string) error {
+	if !strings.HasPrefix(key, "referral_setting.") {
+		return nil
+	}
+	if key == "referral_setting.enabled" {
+		if value != "true" && value != "false" {
+			return fmt.Errorf("邀请返利开关值无效")
+		}
+		return nil
+	}
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed < 0 {
+		return fmt.Errorf("邀请返利配置必须是非负整数")
+	}
+	switch key {
+	case "referral_setting.reward_rate_basis_points":
+		if parsed > operation_setting.MaxReferralRewardRateBasisPoints {
+			return fmt.Errorf("邀请返利比例不能超过 100%%")
+		}
+	case "referral_setting.settlement_delay_hours":
+		if parsed > operation_setting.MaxReferralSettlementDelayHours {
+			return fmt.Errorf("邀请返利结算延迟不能超过 720 小时")
+		}
+	default:
+		if parsed > common.MaxQuota {
+			return fmt.Errorf("邀请返利额度超过系统上限")
+		}
+	}
+	return nil
+}
+
 func collectModelNamesFromOptionValue(raw string, modelNames map[string]struct{}) {
 	if strings.TrimSpace(raw) == "" {
 		return
@@ -117,6 +148,52 @@ type OptionUpdateRequest struct {
 	Value any    `json:"value"`
 }
 
+type ReferralOptionsUpdateRequest struct {
+	Enabled               bool `json:"enabled"`
+	MinimumTopupQuota     int  `json:"minimum_topup_quota"`
+	RewardRateBasisPoints int  `json:"reward_rate_basis_points"`
+	InviteeBonusQuota     int  `json:"invitee_bonus_quota"`
+	PerInviteeCapQuota    int  `json:"per_invitee_cap_quota"`
+	MonthlyCapQuota       int  `json:"monthly_cap_quota"`
+	SettlementDelayHours  int  `json:"settlement_delay_hours"`
+}
+
+func UpdateReferralOptions(c *gin.Context) {
+	var request ReferralOptionsUpdateRequest
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		common.ApiErrorMsg(c, "无效的邀请返利配置")
+		return
+	}
+	if request.Enabled && !operation_setting.IsPaymentComplianceConfirmed() {
+		common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
+		return
+	}
+
+	values := map[string]string{
+		"referral_setting.enabled":                  strconv.FormatBool(request.Enabled),
+		"referral_setting.minimum_topup_quota":      strconv.Itoa(request.MinimumTopupQuota),
+		"referral_setting.reward_rate_basis_points": strconv.Itoa(request.RewardRateBasisPoints),
+		"referral_setting.invitee_bonus_quota":      strconv.Itoa(request.InviteeBonusQuota),
+		"referral_setting.per_invitee_cap_quota":    strconv.Itoa(request.PerInviteeCapQuota),
+		"referral_setting.monthly_cap_quota":        strconv.Itoa(request.MonthlyCapQuota),
+		"referral_setting.settlement_delay_hours":   strconv.Itoa(request.SettlementDelayHours),
+	}
+	for key, value := range values {
+		if err := validateReferralOption(key, value); err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+	}
+	if err := model.UpdateOptionsBulkWithActivationKey(values, "referral_setting.enabled"); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAudit(c, "option.referral.update", map[string]interface{}{
+		"keys": len(values),
+	})
+	common.ApiSuccess(c, nil)
+}
+
 func UpdateOption(c *gin.Context) {
 	var option OptionUpdateRequest
 	err := common.DecodeJson(c.Request.Body, &option)
@@ -143,11 +220,20 @@ func UpdateOption(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
 			return
 		}
+	case "referral_setting.enabled":
+		if option.Value == "true" && !operation_setting.IsPaymentComplianceConfirmed() {
+			common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
+			return
+		}
 	default:
 		if isPaymentComplianceOptionKey(option.Key) {
 			common.ApiErrorMsg(c, "合规确认字段不允许通过通用设置接口修改")
 			return
 		}
+	}
+	if err := validateReferralOption(option.Key, option.Value.(string)); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
 	}
 	switch option.Key {
 	case "GitHubOAuthEnabled":

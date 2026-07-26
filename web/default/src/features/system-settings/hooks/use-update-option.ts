@@ -20,8 +20,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { toast } from 'sonner'
 
-import { updateSystemOption } from '../api'
-import type { UpdateOptionRequest } from '../types'
+import { updateReferralOptions, updateSystemOption } from '../api'
+import type {
+  ReferralOptionsUpdateRequest,
+  UpdateOptionRequest,
+} from '../types'
 
 // Configuration keys that require status refresh
 const STATUS_RELATED_KEYS = [
@@ -63,6 +66,27 @@ export function useUpdateOption() {
       } else {
         toast.error(data.message || i18next.t('Failed to update setting'))
       }
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || i18next.t('Failed to update setting'))
+    },
+  })
+}
+
+export function useUpdateReferralOptions() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (request: ReferralOptionsUpdateRequest) => {
+      const data = await updateReferralOptions(request)
+      if (!data.success) {
+        throw new Error(data.message || i18next.t('Failed to update setting'))
+      }
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system-options'] })
+      toast.success(i18next.t('Setting updated successfully'))
     },
     onError: (error: Error) => {
       toast.error(error.message || i18next.t('Failed to update setting'))

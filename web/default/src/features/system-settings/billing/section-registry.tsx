@@ -25,6 +25,7 @@ import { PaymentSettingsSection } from '../integrations/payment-settings-section
 import { RatioSettingsCard } from '../models/ratio-settings-card'
 import type { BillingSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { ReferralSettingsSection } from './referral-settings-section'
 
 const getModelDefaults = (settings: BillingSettings) => ({
   ModelPrice: settings.ModelPrice,
@@ -202,6 +203,30 @@ const BILLING_SECTIONS = [
           minQuota: settings['checkin_setting.min_quota'],
           maxQuota: settings['checkin_setting.max_quota'],
         }}
+      />
+    ),
+  },
+  {
+    id: 'referral',
+    titleKey: 'Referral Settings',
+    build: (settings: BillingSettings) => (
+      <ReferralSettingsSection
+        defaultValues={{
+          enabled: settings['referral_setting.enabled'],
+          minimumTopupQuota: settings['referral_setting.minimum_topup_quota'],
+          rewardRateBasisPoints:
+            settings['referral_setting.reward_rate_basis_points'],
+          inviteeBonusQuota: settings['referral_setting.invitee_bonus_quota'],
+          perInviteeCapQuota:
+            settings['referral_setting.per_invitee_cap_quota'],
+          monthlyCapQuota: settings['referral_setting.monthly_cap_quota'],
+          settlementDelayHours:
+            settings['referral_setting.settlement_delay_hours'],
+        }}
+        complianceConfirmed={
+          (settings['payment_setting.compliance_confirmed'] ?? false) &&
+          settings['payment_setting.compliance_terms_version'] === 'v1'
+        }
       />
     ),
   },

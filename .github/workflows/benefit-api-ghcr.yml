@@ -34,7 +34,7 @@ jobs:
 
       - name: Check Go formatting
         run: |
-          test -z "$(gofmt -l controller/misc.go controller/misc_docs_test.go controller/user.go model/option.go model/user_update_test.go router/api-router.go router/api_router_email_bind_test.go)"
+          test -z "$(gofmt -l controller/misc.go controller/misc_docs_test.go controller/option.go controller/referral.go controller/referral_test.go controller/topup.go controller/user.go model/main.go model/option.go model/referral.go model/referral_test.go model/task_cas_test.go model/topup.go model/user.go model/user_update_test.go router/api-router.go router/api_router_email_bind_test.go setting/operation_setting/referral_setting.go)"
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -83,7 +83,21 @@ jobs:
             src/features/profile/components/dialogs/email-bind-dialog.tsx \
             src/features/profile/components/passkey-card.tsx \
             src/features/profile/components/tabs/account-bindings-tab.tsx \
-            src/features/profile/components/two-fa-card.tsx
+            src/features/profile/components/two-fa-card.tsx \
+            src/features/profile/components/sidebar-modules-card.tsx \
+            src/features/referrals \
+            src/routes/_authenticated/referrals \
+            src/features/system-settings/api.ts \
+            src/features/system-settings/billing/index.tsx \
+            src/features/system-settings/billing/section-registry.tsx \
+            src/features/system-settings/billing/referral-settings-section.tsx \
+            src/features/system-settings/hooks/use-update-option.ts \
+            src/features/system-settings/maintenance/config.ts \
+            src/features/system-settings/maintenance/sidebar-modules-section.tsx \
+            src/features/wallet/index.tsx \
+            src/hooks/use-sidebar-config.ts \
+            src/hooks/use-sidebar-data.ts \
+            src/routeTree.gen.ts
           ../node_modules/.bin/oxfmt -c .oxfmtrc.json --check \
             src/features/docs \
             src/routes/docs \
@@ -121,6 +135,20 @@ jobs:
             src/features/profile/components/passkey-card.tsx \
             src/features/profile/components/tabs/account-bindings-tab.tsx \
             src/features/profile/components/two-fa-card.tsx \
+            src/features/profile/components/sidebar-modules-card.tsx \
+            src/features/referrals \
+            src/routes/_authenticated/referrals \
+            src/features/system-settings/api.ts \
+            src/features/system-settings/billing/index.tsx \
+            src/features/system-settings/billing/section-registry.tsx \
+            src/features/system-settings/billing/referral-settings-section.tsx \
+            src/features/system-settings/hooks/use-update-option.ts \
+            src/features/system-settings/maintenance/config.ts \
+            src/features/system-settings/maintenance/sidebar-modules-section.tsx \
+            src/features/wallet/index.tsx \
+            src/hooks/use-sidebar-config.ts \
+            src/hooks/use-sidebar-data.ts \
+            src/routeTree.gen.ts \
             src/styles/index.css \
             src/i18n/locales/*.json
           bun run build
