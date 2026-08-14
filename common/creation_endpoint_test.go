@@ -31,3 +31,12 @@ func TestGetEndpointTypesIncludesVideoCapability(t *testing.T) {
 		})
 	}
 }
+
+func TestGetEndpointTypesIncludesGPTImageVersions(t *testing.T) {
+	for _, model := range []string{"gpt-image-1", "gpt-image-2", "4K gpt-image-2"} {
+		t.Run(model, func(t *testing.T) {
+			endpoints := GetEndpointTypesByChannelType(constant.ChannelTypeOpenAI, model)
+			assert.Contains(t, endpoints, constant.EndpointTypeImageGeneration)
+		})
+	}
+}
