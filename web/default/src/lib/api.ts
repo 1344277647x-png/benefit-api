@@ -32,6 +32,55 @@ declare module 'axios' {
 
 export type ApiRequestConfig = AxiosRequestConfig
 
+type ApiErrorRecord = Record<string, unknown>
+
+function isApiErrorRecord(value: unknown): value is ApiErrorRecord {
+  return typeof value === 'object' && value !== null
+}
+
+function messageFromApiPayload(payload: unknown): string | undefined {
+  if (typeof payload === 'string') {
+    const message = payload.trim()
+    return message && !message.startsWith('<') ? message : undefined
+  }
+  if (!isApiErrorRecord(payload)) return undefined
+
+  if (typeof payload.message === 'string' && payload.message.trim()) {
+    return payload.message.trim()
+  }
+  if (typeof payload.error === 'string' && payload.error.trim()) {
+    return payload.error.trim()
+  }
+  if (isApiErrorRecord(payload.error)) {
+    const nested = messageFromApiPayload(payload.error)
+    if (nested) return nested
+  }
+  if (isApiErrorRecord(payload.data)) {
+    const nested = messageFromApiPayload(payload.data)
+    if (nested) return nested
+  }
+  return undefined
+}
+
+export function getApiErrorMessage(
+  error: unknown,
+  fallback = t('Request failed')
+): string {
+  if (isApiErrorRecord(error)) {
+    const response = isApiErrorRecord(error.response) ? error.response : null
+    if (response) {
+      const message = messageFromApiPayload(response.data)
+      if (message) return message
+    }
+    const message = messageFromApiPayload(error)
+    if (message) return message
+    if (typeof error.message === 'string' && error.message.trim()) {
+      return error.message.trim()
+    }
+  }
+  return fallback
+}
+
 // ============================================================================
 // Axios Instance Configuration
 // ============================================================================
@@ -65,7 +114,8 @@ api.get = ((url: string, config: ApiRequestConfig = {}) => {
   const key = `${url}?${params}`
 
   // Return existing in-flight request if available
-  if (inFlightGet.has(key)) return inFlightGet.get(key)!
+  const existingRequest = inFlightGet.get(key)
+  if (existingRequest) return existingRequest
 
   // Create new request and clean up after completion
   const req = originalGet(url, config).finally(() => inFlightGet.delete(key))
@@ -113,8 +163,7 @@ api.interceptors.response.use(
       }
     } else if (!skip) {
       // Other errors: show error message from response or default
-      const msg =
-        error?.response?.data?.message || error?.message || t('Request failed')
+      const msg = getApiErrorMessage(error)
       toast.error(msg)
     }
     return Promise.reject(error)

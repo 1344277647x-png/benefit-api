@@ -4,6 +4,7 @@ import "github.com/QuantumNous/new-api/setting/config"
 
 type ChannelHealthSetting struct {
 	Enabled                      bool `json:"enabled"`
+	RefreshIntervalSeconds       int  `json:"refresh_interval_seconds"`
 	WindowMinutes                int  `json:"window_minutes"`
 	DelayedThresholdMilliseconds int  `json:"delayed_threshold_ms"`
 	FailureStreakThreshold       int  `json:"failure_streak_threshold"`
@@ -15,6 +16,7 @@ type ChannelHealthSetting struct {
 
 var channelHealthSetting = ChannelHealthSetting{
 	Enabled:                      true,
+	RefreshIntervalSeconds:       15,
 	WindowMinutes:                5,
 	DelayedThresholdMilliseconds: 10_000,
 	FailureStreakThreshold:       5,
@@ -30,6 +32,11 @@ func init() {
 
 func GetSetting() ChannelHealthSetting {
 	setting := channelHealthSetting
+	if setting.RefreshIntervalSeconds < 5 {
+		setting.RefreshIntervalSeconds = 5
+	} else if setting.RefreshIntervalSeconds > 300 {
+		setting.RefreshIntervalSeconds = 300
+	}
 	if setting.WindowMinutes < 1 {
 		setting.WindowMinutes = 1
 	} else if setting.WindowMinutes > 60 {

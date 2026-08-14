@@ -231,6 +231,7 @@ export function CreationSettingsSection({
 const healthSchema = z.object({
   channel_health_setting: z.object({
     enabled: z.boolean(),
+    refresh_interval_seconds: z.coerce.number().int().min(5).max(300),
     window_minutes: z.coerce.number().int().min(1).max(60),
     delayed_threshold_ms: z.coerce.number().int().min(100).max(3600000),
     failure_streak_threshold: z.coerce.number().int().min(1).max(100),
@@ -246,6 +247,7 @@ type HealthFormValues = z.output<typeof healthSchema>
 
 type FlatHealthDefaults = {
   'channel_health_setting.enabled': boolean
+  'channel_health_setting.refresh_interval_seconds': number
   'channel_health_setting.window_minutes': number
   'channel_health_setting.delayed_threshold_ms': number
   'channel_health_setting.failure_streak_threshold': number
@@ -259,6 +261,8 @@ function healthFormDefaults(defaults: FlatHealthDefaults): HealthFormInput {
   return {
     channel_health_setting: {
       enabled: defaults['channel_health_setting.enabled'],
+      refresh_interval_seconds:
+        defaults['channel_health_setting.refresh_interval_seconds'],
       window_minutes: defaults['channel_health_setting.window_minutes'],
       delayed_threshold_ms:
         defaults['channel_health_setting.delayed_threshold_ms'],
@@ -277,6 +281,8 @@ function healthFormDefaults(defaults: FlatHealthDefaults): HealthFormInput {
 function normalizeHealthValues(values: HealthFormValues): FlatHealthDefaults {
   return {
     'channel_health_setting.enabled': values.channel_health_setting.enabled,
+    'channel_health_setting.refresh_interval_seconds':
+      values.channel_health_setting.refresh_interval_seconds,
     'channel_health_setting.window_minutes':
       values.channel_health_setting.window_minutes,
     'channel_health_setting.delayed_threshold_ms':
@@ -369,6 +375,16 @@ export function ChannelHealthSettingsSection({
           />
           <NumberField
             control={form.control}
+            name='channel_health_setting.refresh_interval_seconds'
+            label={t('Health refresh interval (seconds)')}
+            description={t(
+              'Controls how often health pages refresh. Data comes from real requests and manual channel tests; no automatic paid probe is sent.'
+            )}
+            min={5}
+            max={300}
+          />
+          <NumberField
+            control={form.control}
             name='channel_health_setting.window_minutes'
             label={t('Health window (minutes)')}
             min={1}
@@ -429,12 +445,14 @@ function NumberField<
   control,
   name,
   label,
+  description,
   min,
   max,
 }: {
   control: Control<TFieldValues>
   name: TName
   label: string
+  description?: string
   min: number
   max: number
 }) {
@@ -454,6 +472,7 @@ function NumberField<
               {...safeNumberFieldProps(field)}
             />
           </FormControl>
+          {description && <FormDescription>{description}</FormDescription>}
           <FormMessage />
         </FormItem>
       )}

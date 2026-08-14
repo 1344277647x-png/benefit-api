@@ -391,6 +391,7 @@ export type OperationsSettings = {
   'creation_setting.max_system_storage_mb': number
   'creation_setting.max_pending_video_jobs': number
   'channel_health_setting.enabled': boolean
+  'channel_health_setting.refresh_interval_seconds': number
   'channel_health_setting.window_minutes': number
   'channel_health_setting.delayed_threshold_ms': number
   'channel_health_setting.failure_streak_threshold': number

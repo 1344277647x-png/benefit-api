@@ -5386,12 +5386,17 @@
     "Concurrent video jobs per user": "单个用户视频并发任务数",
     "Enable channel health tracking": "启用渠道健康监测",
     "Aggregate real traffic and channel tests into health states.": "将真实流量和渠道测试汇总为健康状态。",
+    "Health refresh interval (seconds)": "健康状态刷新间隔（秒）",
+    "Controls how often health pages refresh. Data comes from real requests and manual channel tests; no automatic paid probe is sent.": "控制健康页面的刷新频率。数据来自真实请求和手动渠道测试，不会自动发起付费探测。",
+    "Channel health tracking is disabled.": "渠道健康监测已关闭。",
     "Health window (minutes)": "健康统计窗口（分钟）",
     "Delayed threshold (ms)": "延迟阈值（毫秒）",
     "Failure streak threshold": "连续失败阈值",
     "Minimum samples": "最小样本数",
     "Unavailable error rate (%)": "不可用错误率（%）",
     "Stale after (minutes)": "无样本多久标记为过期（分钟）",
-    "Health history retention (days)": "健康历史保留天数"
+    "Health history retention (days)": "健康历史保留天数",
+    "Rolling five-minute view; refreshes every {{seconds}} seconds": "滚动 5 分钟窗口，每 {{seconds}} 秒刷新",
+    "Updates every {{seconds}} seconds": "每 {{seconds}} 秒更新"
   }
 }

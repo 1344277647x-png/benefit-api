@@ -14,14 +14,18 @@ import (
 )
 
 func GetChannelHealth(c *gin.Context) {
+	setting := channel_health_setting.GetSetting()
 	views, err := service.GetChannelHealthViews(time.Now())
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	common.ApiSuccess(c, gin.H{
-		"items":        views,
-		"refreshed_at": time.Now().Unix(),
+		"items":                    views,
+		"enabled":                  setting.Enabled,
+		"window_minutes":           setting.WindowMinutes,
+		"refresh_interval_seconds": setting.RefreshIntervalSeconds,
+		"refreshed_at":             time.Now().Unix(),
 	})
 }
 
@@ -48,13 +52,16 @@ func GetChannelHealthHistory(c *gin.Context) {
 }
 
 func GetPublicChannelHealth(c *gin.Context) {
+	setting := channel_health_setting.GetSetting()
 	items, err := service.GetPublicModelHealth(time.Now())
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	common.ApiSuccess(c, gin.H{
-		"items":        items,
-		"refreshed_at": time.Now().Unix(),
+		"items":                    items,
+		"enabled":                  setting.Enabled,
+		"refresh_interval_seconds": setting.RefreshIntervalSeconds,
+		"refreshed_at":             time.Now().Unix(),
 	})
 }

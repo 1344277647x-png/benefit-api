@@ -40,3 +40,10 @@ func TestGetEndpointTypesIncludesGPTImageVersions(t *testing.T) {
 		})
 	}
 }
+
+func TestIsGPTImageGenerationModelHandlesAliases(t *testing.T) {
+	for _, model := range []string{"gpt-image-1", "GPT-IMAGE-2", "  4K gpt-image-2  "} {
+		assert.True(t, IsGPTImageGenerationModel(model), model)
+	}
+	assert.False(t, IsGPTImageGenerationModel("gpt-4o"))
+}

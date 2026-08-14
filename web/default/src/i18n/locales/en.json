@@ -5386,12 +5386,17 @@
     "Concurrent video jobs per user": "Concurrent video jobs per user",
     "Enable channel health tracking": "Enable channel health tracking",
     "Aggregate real traffic and channel tests into health states.": "Aggregate real traffic and channel tests into health states.",
+    "Health refresh interval (seconds)": "Health refresh interval (seconds)",
+    "Controls how often health pages refresh. Data comes from real requests and manual channel tests; no automatic paid probe is sent.": "Controls how often health pages refresh. Data comes from real requests and manual channel tests; no automatic paid probe is sent.",
+    "Channel health tracking is disabled.": "Channel health tracking is disabled.",
     "Health window (minutes)": "Health window (minutes)",
     "Delayed threshold (ms)": "Delayed threshold (ms)",
     "Failure streak threshold": "Failure streak threshold",
     "Minimum samples": "Minimum samples",
     "Unavailable error rate (%)": "Unavailable error rate (%)",
     "Stale after (minutes)": "Stale after (minutes)",
-    "Health history retention (days)": "Health history retention (days)"
+    "Health history retention (days)": "Health history retention (days)",
+    "Rolling five-minute view; refreshes every {{seconds}} seconds": "Rolling five-minute view; refreshes every {{seconds}} seconds",
+    "Updates every {{seconds}} seconds": "Updates every {{seconds}} seconds"
   }
 }

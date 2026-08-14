@@ -35,6 +35,8 @@ export interface PublicHealthResponse {
   message?: string
   data?: {
     items: PublicModelHealth[]
+    enabled?: boolean
+    refresh_interval_seconds?: number
     refreshed_at: number
   }
 }
@@ -61,6 +63,9 @@ export interface ChannelHealthResponse {
   message?: string
   data?: {
     items: ChannelHealthView[]
+    enabled?: boolean
+    window_minutes?: number
+    refresh_interval_seconds?: number
     refreshed_at: number
   }
 }

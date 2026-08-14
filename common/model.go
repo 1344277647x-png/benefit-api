@@ -37,7 +37,13 @@ func IsOpenAIResponseOnlyModel(modelName string) bool {
 
 func IsImageGenerationModel(modelName string) bool {
 	modelName = strings.ToLower(modelName)
+	if IsGPTImageGenerationModel(modelName) {
+		return true
+	}
 	for _, m := range ImageGenerationModels {
+		if m == "gpt-image-" {
+			continue
+		}
 		if strings.Contains(modelName, m) {
 			return true
 		}
@@ -46,6 +52,12 @@ func IsImageGenerationModel(modelName string) bool {
 		}
 	}
 	return false
+}
+
+// IsGPTImageGenerationModel recognizes the whole GPT Image family, including
+// provider aliases such as "4K gpt-image-2".
+func IsGPTImageGenerationModel(modelName string) bool {
+	return strings.Contains(strings.ToLower(strings.TrimSpace(modelName)), "gpt-image-")
 }
 
 func IsGeminiImageGenerationModel(modelName string) bool {

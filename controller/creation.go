@@ -385,7 +385,10 @@ func creationErrorCode(status int) string {
 }
 
 func creationErrorMessage(body []byte, fallback string) string {
-	message := strings.TrimSpace(string(body))
+	message := extractCreationErrorMessage(body)
+	if message == "" {
+		message = strings.TrimSpace(string(body))
+	}
 	if message == "" {
 		return fallback
 	}
@@ -393,4 +396,25 @@ func creationErrorMessage(body []byte, fallback string) string {
 		message = message[:1000]
 	}
 	return fmt.Sprintf("%s: %s", fallback, message)
+}
+
+func extractCreationErrorMessage(body []byte) string {
+	var payload map[string]any
+	if err := common.Unmarshal(body, &payload); err != nil {
+		return ""
+	}
+	if message, ok := payload["message"].(string); ok && strings.TrimSpace(message) != "" {
+		return strings.TrimSpace(message)
+	}
+	if value, ok := payload["error"]; ok {
+		if message, ok := value.(string); ok && strings.TrimSpace(message) != "" {
+			return strings.TrimSpace(message)
+		}
+		if object, ok := value.(map[string]any); ok {
+			if message, ok := object["message"].(string); ok && strings.TrimSpace(message) != "" {
+				return strings.TrimSpace(message)
+			}
+		}
+	}
+	return ""
 }

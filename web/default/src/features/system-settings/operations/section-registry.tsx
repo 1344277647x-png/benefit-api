@@ -94,6 +94,8 @@ const OPERATIONS_SECTIONS = [
         defaultValues={{
           'channel_health_setting.enabled':
             settings['channel_health_setting.enabled'],
+          'channel_health_setting.refresh_interval_seconds':
+            settings['channel_health_setting.refresh_interval_seconds'],
           'channel_health_setting.window_minutes':
             settings['channel_health_setting.window_minutes'],
           'channel_health_setting.delayed_threshold_ms':

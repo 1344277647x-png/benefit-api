@@ -114,10 +114,21 @@ export function ChannelHealthPanel() {
   const query = useQuery({
     queryKey: ['channel-health'],
     queryFn: getChannelHealth,
-    refetchInterval: 15_000,
+    refetchInterval: (currentQuery) => {
+      const data = currentQuery.state.data?.data
+      if (data?.enabled === false) return false
+      const seconds = data?.refresh_interval_seconds
+      return (typeof seconds === 'number' && seconds >= 5 ? seconds : 15) * 1000
+    },
     staleTime: 10_000,
     retry: false,
   })
+  const settings = query.data?.data
+  const enabled = settings?.enabled !== false
+  const refreshSeconds =
+    typeof settings?.refresh_interval_seconds === 'number'
+      ? settings.refresh_interval_seconds
+      : 15
   const items = query.data?.data?.items ?? []
   let content: ReactNode
   if (query.isLoading) {
@@ -135,6 +146,13 @@ export function ChannelHealthPanel() {
         {query.data?.message || t('Unable to load channel health.')}
       </CardContent>
     )
+  } else if (!enabled) {
+    content = (
+      <CardContent className='text-muted-foreground flex items-center gap-2 py-6 text-sm'>
+        <Activity className='size-4' />
+        {t('Channel health tracking is disabled.')}
+      </CardContent>
+    )
   } else if (items.length === 0) {
     content = (
       <CardContent className='text-muted-foreground py-6 text-center text-sm'>
@@ -143,22 +161,24 @@ export function ChannelHealthPanel() {
     )
   } else {
     content = (
-      <CardContent className='overflow-x-auto p-0'>
-        <div className='bg-muted/30 text-muted-foreground grid min-w-[700px] grid-cols-[72px_minmax(180px,1fr)_110px_100px_100px_90px] gap-3 border-b px-3 py-2 text-[11px] font-medium tracking-wide uppercase'>
-          <span>{t('Channel')}</span>
-          <span>{t('Model')}</span>
-          <span>{t('Status')}</span>
-          <span>{t('Latency')}</span>
-          <span>{t('First byte')}</span>
-          <span>{t('Success')}</span>
+      <CardContent className='overflow-auto p-0'>
+        <div className='max-h-80 min-w-[700px] overflow-y-auto sm:max-h-96'>
+          <div className='bg-muted/95 text-muted-foreground sticky top-0 z-10 grid grid-cols-[72px_minmax(180px,1fr)_110px_100px_100px_90px] gap-3 border-b px-3 py-2 text-[11px] font-medium tracking-wide uppercase backdrop-blur'>
+            <span>{t('Channel')}</span>
+            <span>{t('Model')}</span>
+            <span>{t('Status')}</span>
+            <span>{t('Latency')}</span>
+            <span>{t('First byte')}</span>
+            <span>{t('Success')}</span>
+          </div>
+          {items.map((item) => (
+            <HealthRow
+              key={`${item.channel_id}:${item.model}`}
+              item={item}
+              t={t}
+            />
+          ))}
         </div>
-        {items.map((item) => (
-          <HealthRow
-            key={`${item.channel_id}:${item.model}`}
-            item={item}
-            t={t}
-          />
-        ))}
       </CardContent>
     )
   }
@@ -171,18 +191,25 @@ export function ChannelHealthPanel() {
             {t('Channel health')}
           </CardTitle>
           <p className='text-muted-foreground mt-1 text-xs'>
-            {t('Rolling five-minute view; refreshes every 15 seconds')}
+            {t(
+              'Rolling five-minute view; refreshes every {{seconds}} seconds',
+              {
+                seconds: refreshSeconds,
+              }
+            )}
           </p>
         </div>
-        <Button
-          variant='ghost'
-          size='icon-sm'
-          onClick={() => void query.refetch()}
-          disabled={query.isFetching}
-          aria-label={t('Refresh')}
-        >
-          <RefreshCw className={query.isFetching ? 'animate-spin' : ''} />
-        </Button>
+        {enabled && (
+          <Button
+            variant='ghost'
+            size='icon-sm'
+            onClick={() => void query.refetch()}
+            disabled={query.isFetching}
+            aria-label={t('Refresh')}
+          >
+            <RefreshCw className={query.isFetching ? 'animate-spin' : ''} />
+          </Button>
+        )}
       </CardHeader>
       {content}
     </Card>

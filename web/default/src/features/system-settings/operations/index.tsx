@@ -64,6 +64,7 @@ const defaultOperationsSettings: OperationsSettings = {
   'creation_setting.max_system_storage_mb': 10240,
   'creation_setting.max_pending_video_jobs': 2,
   'channel_health_setting.enabled': true,
+  'channel_health_setting.refresh_interval_seconds': 15,
   'channel_health_setting.window_minutes': 5,
   'channel_health_setting.delayed_threshold_ms': 10000,
   'channel_health_setting.failure_streak_threshold': 5,

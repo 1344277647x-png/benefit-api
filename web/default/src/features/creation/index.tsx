@@ -61,6 +61,7 @@ import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { getApiErrorMessage } from '@/lib/api'
 import { formatTimestamp } from '@/lib/format'
 
 import {
@@ -408,9 +409,7 @@ export function Creation() {
       await queryClient.invalidateQueries({ queryKey: ['creation-jobs'] })
       toast.success(t('Generation request submitted.'))
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : t('Generation request failed.')
-      )
+      toast.error(getApiErrorMessage(error, t('Generation request failed.')))
     } finally {
       setIsSubmitting(false)
     }
@@ -426,7 +425,7 @@ export function Creation() {
       await queryClient.invalidateQueries({ queryKey: ['creation-jobs'] })
       toast.success(t('Deleted'))
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t('Delete failed.'))
+      toast.error(getApiErrorMessage(error, t('Delete failed.')))
     }
   }
 
@@ -442,7 +441,7 @@ export function Creation() {
         queryKey: ['creation-job', job.id],
       })
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t('Retry failed.'))
+      toast.error(getApiErrorMessage(error, t('Retry failed.')))
     }
   }
 

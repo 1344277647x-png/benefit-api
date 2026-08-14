@@ -42,6 +42,7 @@ export async function uploadCreationAsset(
   form.append('file', file, file.name)
   const response = await api.post('/api/creation/uploads', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    skipErrorHandler: true,
   })
   return response.data
 }
@@ -49,14 +50,18 @@ export async function uploadCreationAsset(
 export async function createImage(
   payload: CreationImagePayload
 ): Promise<CreationApiResponse<GenerationJob>> {
-  const response = await api.post('/pg/creation/images', payload)
+  const response = await api.post('/pg/creation/images', payload, {
+    skipErrorHandler: true,
+  })
   return response.data
 }
 
 export async function createVideo(
   payload: CreationVideoPayload
 ): Promise<CreationApiResponse<GenerationJob>> {
-  const response = await api.post('/pg/creation/videos', payload)
+  const response = await api.post('/pg/creation/videos', payload, {
+    skipErrorHandler: true,
+  })
   return response.data
 }
 

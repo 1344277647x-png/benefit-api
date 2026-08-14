@@ -95,10 +95,20 @@ export function PublicChannelHealth() {
   const query = useQuery({
     queryKey: ['public-channel-health'],
     queryFn: getPublicChannelHealth,
-    refetchInterval: 30_000,
+    refetchInterval: (currentQuery) => {
+      const data = currentQuery.state.data?.data
+      if (data?.enabled === false) return false
+      const seconds = data?.refresh_interval_seconds
+      return (typeof seconds === 'number' && seconds >= 5 ? seconds : 30) * 1000
+    },
     staleTime: 15_000,
     retry: 1,
   })
+  const enabled = query.data?.data?.enabled !== false
+  const refreshSeconds =
+    typeof query.data?.data?.refresh_interval_seconds === 'number'
+      ? query.data.data.refresh_interval_seconds
+      : 30
   const items = query.data?.data?.items ?? []
   const refreshedAt = query.data?.data?.refreshed_at
   let statusContent: ReactNode
@@ -115,6 +125,15 @@ export function PublicChannelHealth() {
       <Card>
         <CardContent className='text-muted-foreground py-12 text-center text-sm'>
           {t('Status data is temporarily unavailable.')}
+        </CardContent>
+      </Card>
+    )
+  } else if (!enabled) {
+    statusContent = (
+      <Card>
+        <CardContent className='text-muted-foreground flex items-center justify-center gap-2 py-12 text-center text-sm'>
+          <Activity className='size-4' />
+          {t('Channel health tracking is disabled.')}
         </CardContent>
       </Card>
     )
@@ -154,15 +173,17 @@ export function PublicChannelHealth() {
               )}
             </p>
           </div>
-          <Button
-            variant='outline'
-            size='sm'
-            onClick={() => void query.refetch()}
-            disabled={query.isFetching}
-          >
-            <RefreshCw className={query.isFetching ? 'animate-spin' : ''} />
-            {t('Refresh')}
-          </Button>
+          {enabled && (
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={() => void query.refetch()}
+              disabled={query.isFetching}
+            >
+              <RefreshCw className={query.isFetching ? 'animate-spin' : ''} />
+              {t('Refresh')}
+            </Button>
+          )}
         </header>
 
         {statusContent}
@@ -170,7 +191,9 @@ export function PublicChannelHealth() {
         {refreshedAt && (
           <p className='text-muted-foreground text-center text-xs'>
             {t('Last checked')} {formatTimestampRelative(refreshedAt)} ·{' '}
-            {t('Updates every 30 seconds')}
+            {t('Updates every {{seconds}} seconds', {
+              seconds: refreshSeconds,
+            })}
           </p>
         )}
       </div>
