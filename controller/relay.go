@@ -600,6 +600,17 @@ func RelayTask(c *gin.Context) {
 		}
 	}
 
+	if taskErr == nil {
+		gopool.Go(func() {
+			perfmetrics.RecordRelaySample(relayInfo, true, 0)
+		})
+	} else {
+		relayInfo.LastError = types.NewErrorWithStatusCode(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode)
+		gopool.Go(func() {
+			perfmetrics.RecordRelaySample(relayInfo, false, 0)
+		})
+	}
+
 	if taskErr != nil {
 		respondTaskError(c, taskErr)
 	}

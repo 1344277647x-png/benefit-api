@@ -383,6 +383,21 @@ export type OperationsSettings = {
   'perf_metrics_setting.flush_interval': number
   'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min'
   'perf_metrics_setting.retention_days': number
+  'creation_setting.enabled': boolean
+  'creation_setting.retention_days': number
+  'creation_setting.max_image_mb': number
+  'creation_setting.max_video_mb': number
+  'creation_setting.max_user_storage_mb': number
+  'creation_setting.max_system_storage_mb': number
+  'creation_setting.max_pending_video_jobs': number
+  'channel_health_setting.enabled': boolean
+  'channel_health_setting.window_minutes': number
+  'channel_health_setting.delayed_threshold_ms': number
+  'channel_health_setting.failure_streak_threshold': number
+  'channel_health_setting.minimum_samples': number
+  'channel_health_setting.unavailable_error_rate_percent': number
+  'channel_health_setting.stale_after_minutes': number
+  'channel_health_setting.retention_days': number
 }
 
 export type SecuritySettings = {

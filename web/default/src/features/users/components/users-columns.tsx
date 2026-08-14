@@ -31,7 +31,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { formatQuota, formatTimestamp } from '@/lib/format'
+import { formatCompactNumber, formatQuota, formatTimestamp } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import {
@@ -228,6 +228,42 @@ export function useUsersColumns(): ColumnDef<User>[] {
       },
       size: 170,
       meta: { mobileOrder: 40 },
+    },
+    {
+      id: 'usage_tokens',
+      header: t('Tokens'),
+      cell: ({ row }) => {
+        const summary = row.original.usage_summary
+        return (
+          <span className='font-medium tabular-nums'>
+            {formatCompactNumber(summary?.token_used ?? 0)}
+          </span>
+        )
+      },
+      size: 100,
+      meta: { mobileOrder: 45 },
+    },
+    {
+      id: 'usage_requests',
+      header: t('Requests'),
+      cell: ({ row }) => (
+        <span className='font-medium tabular-nums'>
+          {formatCompactNumber(row.original.usage_summary?.request_count ?? 0)}
+        </span>
+      ),
+      size: 105,
+      meta: { mobileOrder: 46, mobileHidden: true },
+    },
+    {
+      id: 'usage_quota',
+      header: t('Spend'),
+      cell: ({ row }) => (
+        <span className='text-sm font-medium tabular-nums'>
+          {formatQuota(row.original.usage_summary?.consumed_quota ?? 0)}
+        </span>
+      ),
+      size: 120,
+      meta: { mobileHidden: true },
     },
     {
       accessorKey: 'group',

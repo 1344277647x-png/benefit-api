@@ -28,6 +28,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { ChannelHealthPanel } from '@/features/channel-health'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -97,6 +98,7 @@ export function Channels() {
           <ChannelsPrimaryButtons />
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
+          <ChannelHealthPanel />
           <ChannelsTable />
         </SectionPageLayout.Content>
       </SectionPageLayout>

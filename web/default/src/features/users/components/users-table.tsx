@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -27,6 +28,7 @@ import {
   DataTablePage,
   useDataTable,
 } from '@/components/data-table'
+import { Input } from '@/components/ui/input'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 
@@ -53,6 +55,27 @@ export function UsersTable() {
   const columns = useUsersColumns()
   const { refreshTrigger } = useUsers()
   const isMobile = useMediaQuery('(max-width: 640px)')
+  const [usageRange, setUsageRange] = useState<UsageRange>('lifetime')
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd] = useState('')
+
+  const usageParams = useMemo(() => {
+    const now = Math.floor(Date.now() / 1000)
+    if (usageRange === 'lifetime') return {}
+    if (usageRange === 'custom') {
+      const start = customStart
+        ? Math.floor(new Date(`${customStart}T00:00:00`).getTime() / 1000)
+        : undefined
+      const end = customEnd
+        ? Math.floor(new Date(`${customEnd}T23:59:59`).getTime() / 1000)
+        : undefined
+      return { usage_start: start, usage_end: end }
+    }
+    let days = 30
+    if (usageRange === '24h') days = 1
+    else if (usageRange === '7d') days = 7
+    return { usage_start: now - days * 86400, usage_end: now }
+  }, [customEnd, customStart, usageRange])
 
   const {
     globalFilter,
@@ -95,6 +118,9 @@ export function UsersTable() {
       statusFilter,
       roleFilter,
       groupFilter,
+      usageRange,
+      usageParams.usage_start,
+      usageParams.usage_end,
       refreshTrigger,
     ],
     queryFn: async () => {
@@ -114,8 +140,9 @@ export function UsersTable() {
               status: statusFilter[0] ?? '',
               role: roleFilter[0] ?? '',
               group: groupFilter,
+              ...usageParams,
             })
-          : await getUsers(params)
+          : await getUsers({ ...params, ...usageParams })
 
       if (!result.success) {
         toast.error(
@@ -177,6 +204,49 @@ export function UsersTable() {
       applyHeaderSize
       toolbarProps={{
         searchPlaceholder: t('Filter by username, name or email...'),
+        additionalSearch: (
+          <div className='flex flex-wrap items-center gap-1.5'>
+            <select
+              value={usageRange}
+              onChange={(event) =>
+                setUsageRange(event.target.value as UsageRange)
+              }
+              className='border-input bg-background h-8 rounded-lg border px-2 text-xs outline-none'
+              aria-label={t('Usage range')}
+            >
+              <option value='24h'>{t('Last 24 hours')}</option>
+              <option value='7d'>{t('Last 7 days')}</option>
+              <option value='30d'>{t('Last 30 days')}</option>
+              <option value='lifetime'>{t('All time')}</option>
+              <option value='custom'>{t('Custom range')}</option>
+            </select>
+            {usageRange === 'custom' && (
+              <>
+                <Input
+                  type='date'
+                  value={customStart}
+                  onChange={(event) => setCustomStart(event.target.value)}
+                  className='h-8 w-[132px] text-xs'
+                  aria-label={t('Start date')}
+                />
+                <Input
+                  type='date'
+                  value={customEnd}
+                  onChange={(event) => setCustomEnd(event.target.value)}
+                  className='h-8 w-[132px] text-xs'
+                  aria-label={t('End date')}
+                />
+              </>
+            )}
+          </div>
+        ),
+        hasAdditionalFilters:
+          usageRange !== 'lifetime' || Boolean(customStart || customEnd),
+        onReset: () => {
+          setUsageRange('lifetime')
+          setCustomStart('')
+          setCustomEnd('')
+        },
         filters: [
           {
             columnId: 'status',
@@ -192,14 +262,13 @@ export function UsersTable() {
           },
         ],
       }}
-      getRowClassName={(row, { isMobile }) =>
-        isDisabledUserRow(row.original)
-          ? isMobile
-            ? DISABLED_ROW_MOBILE
-            : DISABLED_ROW_DESKTOP
-          : undefined
-      }
+      getRowClassName={(row, { isMobile }) => {
+        if (!isDisabledUserRow(row.original)) return undefined
+        return isMobile ? DISABLED_ROW_MOBILE : DISABLED_ROW_DESKTOP
+      }}
       bulkActions={<DataTableBulkActions table={table} />}
     />
   )
 }
+
+type UsageRange = '24h' | '7d' | '30d' | 'lifetime' | 'custom'

@@ -25,6 +25,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/channel_health_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -201,6 +202,10 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 			relayFormat = types.RelayFormatRerank
 		case constant.EndpointTypeImageGeneration:
 			relayFormat = types.RelayFormatOpenAIImage
+		case constant.EndpointTypeGeminiImage:
+			relayFormat = types.RelayFormatGemini
+		case constant.EndpointTypeOpenAIVideo:
+			relayFormat = types.RelayFormatTask
 		case constant.EndpointTypeEmbeddings:
 			relayFormat = types.RelayFormatEmbedding
 		default:
@@ -214,6 +219,9 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		}
 		if c.Request.URL.Path == "/v1/images/generations" {
 			relayFormat = types.RelayFormatOpenAIImage
+		}
+		if c.Request.URL.Path == "/v1/videos" {
+			relayFormat = types.RelayFormatTask
 		}
 		if c.Request.URL.Path == "/v1/messages" {
 			relayFormat = types.RelayFormatClaude
@@ -712,6 +720,24 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 				N:      lo.ToPtr(uint(1)),
 				Size:   "1024x1024",
 			}
+		case constant.EndpointTypeGeminiImage:
+			return &dto.GeminiChatRequest{
+				Contents: []dto.GeminiChatContent{{
+					Role:  "user",
+					Parts: []dto.GeminiPart{{Text: "a cute cat"}},
+				}},
+				GenerationConfig: dto.GeminiChatGenerationConfig{
+					ResponseModalities: []string{"IMAGE"},
+				},
+			}
+		case constant.EndpointTypeOpenAIVideo:
+			return &dto.VideoRequest{
+				Model:    model,
+				Prompt:   "a slow camera move through a neon garden",
+				Duration: 5,
+				Width:    1280,
+				Height:   720,
+			}
 		case constant.EndpointTypeJinaRerank:
 			// 返回 RerankRequest
 			return &dto.RerankRequest{
@@ -858,6 +884,8 @@ func TestChannel(c *gin.Context) {
 		requestCtx = c.Request.Context()
 	}
 	result := testChannel(requestCtx, channel, testUserID, testModel, endpointType, isStream)
+	milliseconds := time.Since(tik).Milliseconds()
+	recordChannelTestHealth(channel, result, milliseconds)
 	if result.localErr != nil {
 		resp := gin.H{
 			"success": false,
@@ -870,8 +898,6 @@ func TestChannel(c *gin.Context) {
 		c.JSON(http.StatusOK, resp)
 		return
 	}
-	tok := time.Now()
-	milliseconds := tok.Sub(tik).Milliseconds()
 	go channel.UpdateResponseTime(milliseconds)
 	consumedTime := float64(milliseconds) / 1000.0
 	if result.newAPIError != nil {
@@ -927,6 +953,7 @@ func performChannelTests(ctx context.Context, channels []*model.Channel, testUse
 		result := testChannel(ctx, channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
 		tok := time.Now()
 		milliseconds := tok.Sub(tik).Milliseconds()
+		recordChannelTestHealth(channel, result, milliseconds)
 		if ctx != nil && ctx.Err() != nil {
 			break
 		}
@@ -984,6 +1011,45 @@ func performChannelTests(ctx context.Context, channels []*model.Channel, testUse
 		report(total, total) // mark complete only when the full set was tested
 	}
 	return summary
+}
+
+func recordChannelTestHealth(channel *model.Channel, result testResult, latencyMs int64) {
+	if !channel_health_setting.GetSetting().Enabled || channel == nil || result.context == nil {
+		return
+	}
+	modelName := common.GetContextKeyString(result.context, constant.ContextKeyOriginalModel)
+	if modelName == "" {
+		return
+	}
+	sample := model.ChannelHealthSample{
+		ChannelID:    channel.Id,
+		ModelName:    modelName,
+		EndpointType: model.ChannelHealthEndpoint(result.context.Request.URL.Path),
+		SampledAt:    time.Now().Unix(),
+		Success:      result.localErr == nil && result.newAPIError == nil,
+		LatencyMs:    latencyMs,
+	}
+	if !sample.Success {
+		if result.newAPIError == nil {
+			sample.HTTPStatus = 0
+			sample.ErrorClass = "network"
+		} else {
+			sample.HTTPStatus = result.newAPIError.StatusCode
+			if !model.IsChannelHealthFailureStatus(sample.HTTPStatus) {
+				return
+			}
+			sample.ErrorCode = string(result.newAPIError.GetErrorCode())
+			sample.ErrorClass = "upstream"
+			if sample.HTTPStatus == http.StatusTooManyRequests {
+				sample.ErrorClass = "rate_limit"
+			} else if sample.HTTPStatus <= 0 {
+				sample.ErrorClass = "network"
+			}
+		}
+	}
+	if err := model.RecordChannelHealthSample(sample); err != nil {
+		common.SysError("record channel test health: " + err.Error())
+	}
 }
 
 // runChannelTestTask runs one synchronous channel test cycle for the system task

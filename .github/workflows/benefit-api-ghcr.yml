@@ -30,11 +30,62 @@ jobs:
           cache: true
 
       - name: Test backend
-        run: go test ./controller ./model ./router ./setting/... -count=1
+        run: go test ./common ./controller ./model ./router ./service ./setting/... -count=1
 
       - name: Check Go formatting
         run: |
-          test -z "$(gofmt -l controller/misc.go controller/misc_docs_test.go controller/option.go controller/referral.go controller/referral_test.go controller/topup.go controller/user.go model/main.go model/option.go model/referral.go model/referral_test.go model/task_cas_test.go model/topup.go model/user.go model/user_update_test.go router/api-router.go router/api_router_email_bind_test.go setting/operation_setting/referral_setting.go)"
+          formatted_files=(
+            common/creation_endpoint_test.go
+            common/endpoint_defaults.go
+            common/endpoint_type.go
+            common/model.go
+            constant/endpoint_type.go
+            controller/channel-test.go
+            controller/channel_health.go
+            controller/creation.go
+            controller/creation_relay.go
+            controller/creation_worker.go
+            controller/misc.go
+            controller/misc_docs_test.go
+            controller/option.go
+            controller/referral.go
+            controller/referral_test.go
+            controller/relay.go
+            controller/topup.go
+            controller/user.go
+            dto/creation.go
+            dto/video.go
+            main.go
+            middleware/creation.go
+            model/channel_health.go
+            model/channel_health_test.go
+            model/generation.go
+            model/main.go
+            model/option.go
+            model/referral.go
+            model/referral_test.go
+            model/task_cas_test.go
+            model/topup.go
+            model/user.go
+            model/user_update_test.go
+            model/user_usage.go
+            pkg/perf_metrics/metrics.go
+            relay/common/relay_info.go
+            router/api-router.go
+            router/api_router_email_bind_test.go
+            router/channel-router.go
+            router/relay-router.go
+            service/channel_affinity_usage_cache_test.go
+            service/channel_health.go
+            service/channel_health_test.go
+            service/generation_asset.go
+            service/generation_asset_test.go
+            service/task_billing_test.go
+            setting/channel_health_setting/config.go
+            setting/creation_setting/config.go
+            setting/operation_setting/referral_setting.go
+          )
+          test -z "$(gofmt -l "${formatted_files[@]}")"
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -87,6 +138,11 @@ jobs:
             src/features/profile/components/sidebar-modules-card.tsx \
             src/features/referrals \
             src/routes/_authenticated/referrals \
+            src/context/theme-provider.tsx \
+            src/features/channel-health \
+            src/features/channels/api.ts \
+            src/features/channels/index.tsx \
+            src/features/creation \
             src/features/system-settings/api.ts \
             src/features/system-settings/billing/index.tsx \
             src/features/system-settings/billing/section-registry.tsx \
@@ -94,9 +150,18 @@ jobs:
             src/features/system-settings/hooks/use-update-option.ts \
             src/features/system-settings/maintenance/config.ts \
             src/features/system-settings/maintenance/sidebar-modules-section.tsx \
+            src/features/system-settings/operations/ai-operations-settings-section.tsx \
+            src/features/system-settings/operations/index.tsx \
+            src/features/system-settings/operations/section-registry.tsx \
+            src/features/users/api.ts \
+            src/features/users/components/users-columns.tsx \
+            src/features/users/components/users-table.tsx \
+            src/features/users/types.ts \
             src/features/wallet/index.tsx \
             src/hooks/use-sidebar-config.ts \
             src/hooks/use-sidebar-data.ts \
+            src/routes/_authenticated/creation \
+            src/routes/status \
             src/routeTree.gen.ts
           ../node_modules/.bin/oxfmt -c .oxfmtrc.json --check \
             src/features/docs \
@@ -138,6 +203,11 @@ jobs:
             src/features/profile/components/sidebar-modules-card.tsx \
             src/features/referrals \
             src/routes/_authenticated/referrals \
+            src/context/theme-provider.tsx \
+            src/features/channel-health \
+            src/features/channels/api.ts \
+            src/features/channels/index.tsx \
+            src/features/creation \
             src/features/system-settings/api.ts \
             src/features/system-settings/billing/index.tsx \
             src/features/system-settings/billing/section-registry.tsx \
@@ -145,9 +215,18 @@ jobs:
             src/features/system-settings/hooks/use-update-option.ts \
             src/features/system-settings/maintenance/config.ts \
             src/features/system-settings/maintenance/sidebar-modules-section.tsx \
+            src/features/system-settings/operations/ai-operations-settings-section.tsx \
+            src/features/system-settings/operations/index.tsx \
+            src/features/system-settings/operations/section-registry.tsx \
+            src/features/users/api.ts \
+            src/features/users/components/users-columns.tsx \
+            src/features/users/components/users-table.tsx \
+            src/features/users/types.ts \
             src/features/wallet/index.tsx \
             src/hooks/use-sidebar-config.ts \
             src/hooks/use-sidebar-data.ts \
+            src/routes/_authenticated/creation \
+            src/routes/status \
             src/routeTree.gen.ts \
             src/styles/index.css \
             src/i18n/locales/*.json

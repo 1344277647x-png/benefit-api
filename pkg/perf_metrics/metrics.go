@@ -11,7 +11,9 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/channel_health_setting"
 	"github.com/QuantumNous/new-api/setting/perf_metrics_setting"
+	"github.com/bytedance/gopkg/util/gopool"
 )
 
 var hotBuckets sync.Map
@@ -51,6 +53,44 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 		Success:      success,
 		OutputTokens: outputTokens,
 		GenerationMs: generationMs,
+	})
+	recordChannelHealth(info, success, latencyMs, ttftMs, hasTtft)
+}
+
+func recordChannelHealth(info *relaycommon.RelayInfo, success bool, latencyMs int64, ttftMs int64, hasTTFT bool) {
+	if !channel_health_setting.GetSetting().Enabled || info == nil || info.ChannelMeta == nil || info.ChannelId <= 0 || info.OriginModelName == "" {
+		return
+	}
+	sample := model.ChannelHealthSample{
+		ChannelID:    info.ChannelId,
+		ModelName:    info.OriginModelName,
+		EndpointType: model.ChannelHealthEndpoint(info.RequestURLPath),
+		SampledAt:    time.Now().Unix(),
+		Success:      success,
+		LatencyMs:    latencyMs,
+		TTFTMs:       ttftMs,
+		HasTTFT:      hasTTFT,
+	}
+	if !success {
+		if info.LastError == nil {
+			return
+		}
+		sample.HTTPStatus = info.LastError.StatusCode
+		if !model.IsChannelHealthFailureStatus(sample.HTTPStatus) {
+			return
+		}
+		sample.ErrorCode = string(info.LastError.GetErrorCode())
+		sample.ErrorClass = "upstream"
+		if sample.HTTPStatus == 429 {
+			sample.ErrorClass = "rate_limit"
+		} else if sample.HTTPStatus <= 0 {
+			sample.ErrorClass = "network"
+		}
+	}
+	gopool.Go(func() {
+		if err := model.RecordChannelHealthSample(sample); err != nil {
+			common.SysError("record channel health: " + err.Error())
+		}
 	})
 }
 

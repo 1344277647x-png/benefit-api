@@ -50,6 +50,8 @@ func TestMain(m *testing.M) {
 		&UserSubscription{},
 		&UserOAuthBinding{},
 		&PerfMetric{},
+		&ChannelHealthSnapshot{},
+		&ChannelHealthBucket{},
 		&SystemInstance{},
 		&SystemTask{},
 		&SystemTaskLock{},
@@ -79,6 +81,8 @@ func truncateTables(t *testing.T) {
 		DB.Exec("DELETE FROM user_subscriptions")
 		DB.Exec("DELETE FROM user_oauth_bindings")
 		DB.Exec("DELETE FROM perf_metrics")
+		DB.Exec("DELETE FROM channel_health_buckets")
+		DB.Exec("DELETE FROM channel_health_snapshots")
 		DB.Exec("DELETE FROM system_instances")
 		DB.Exec("DELETE FROM system_task_locks")
 		DB.Exec("DELETE FROM system_tasks")

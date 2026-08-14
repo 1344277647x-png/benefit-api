@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -307,6 +308,10 @@ func GetAllUsers(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if err := attachUserUsageSummaries(c, users); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(users)
@@ -336,11 +341,75 @@ func SearchUsers(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if err := attachUserUsageSummaries(c, users); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(users)
 	common.ApiSuccess(c, pageInfo)
 	return
+}
+
+func attachUserUsageSummaries(c *gin.Context, users []*model.User) error {
+	userIDs := make([]int, 0, len(users))
+	for _, user := range users {
+		if user != nil {
+			userIDs = append(userIDs, user.Id)
+		}
+	}
+	startTimestamp, endTimestamp, lifetime, err := userUsageRange(c)
+	if err != nil {
+		return err
+	}
+	summaries, err := model.GetUsersUsageSummaries(userIDs, startTimestamp, endTimestamp)
+	if err != nil {
+		return err
+	}
+	var pending map[int]model.UserUsageSummary
+	if lifetime {
+		pending = model.GetPendingUsersUsage(userIDs)
+	}
+	for _, user := range users {
+		if user == nil {
+			continue
+		}
+		summary := summaries[user.Id]
+		if lifetime {
+			summary.RequestCount = int64(user.RequestCount) + pending[user.Id].RequestCount
+			summary.ConsumedQuota = int64(user.UsedQuota) + pending[user.Id].ConsumedQuota
+		}
+		user.UsageSummary = &summary
+	}
+	return nil
+}
+
+func userUsageRange(c *gin.Context) (int64, int64, bool, error) {
+	startValue := strings.TrimSpace(c.Query("usage_start"))
+	endValue := strings.TrimSpace(c.Query("usage_end"))
+	if startValue == "" && endValue == "" {
+		return 0, 0, true, nil
+	}
+	startTimestamp := int64(0)
+	endTimestamp := time.Now().Unix()
+	var err error
+	if startValue != "" {
+		startTimestamp, err = strconv.ParseInt(startValue, 10, 64)
+		if err != nil || startTimestamp < 0 {
+			return 0, 0, false, errors.New("usage_start must be a Unix timestamp")
+		}
+	}
+	if endValue != "" {
+		endTimestamp, err = strconv.ParseInt(endValue, 10, 64)
+		if err != nil || endTimestamp <= 0 {
+			return 0, 0, false, errors.New("usage_end must be a Unix timestamp")
+		}
+	}
+	if startTimestamp > endTimestamp {
+		return 0, 0, false, errors.New("usage_start must not be later than usage_end")
+	}
+	return startTimestamp, endTimestamp, false, nil
 }
 
 func canManageTargetRole(myRole int, targetRole int) bool {

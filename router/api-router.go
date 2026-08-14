@@ -30,6 +30,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/privacy-policy", controller.GetPrivacyPolicy)
 		apiRouter.GET("/about", controller.GetAbout)
 		apiRouter.GET("/docs", controller.GetDocsContent)
+		apiRouter.GET("/channel-health/public", controller.GetPublicChannelHealth)
 		//apiRouter.GET("/midjourney", controller.GetMidjourney)
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
 		apiRouter.GET("/pricing", middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
@@ -66,6 +67,18 @@ func SetApiRouter(router *gin.Engine) {
 
 		// Universal secure verification routes
 		apiRouter.POST("/verify", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.UniversalVerify)
+
+		creationRoute := apiRouter.Group("/creation")
+		creationRoute.Use(middleware.UserAuth())
+		{
+			creationRoute.GET("/models", controller.GetCreationModels)
+			creationRoute.POST("/uploads", controller.UploadCreationAsset)
+			creationRoute.GET("/jobs", controller.ListCreationJobs)
+			creationRoute.GET("/jobs/:id", controller.GetCreationJob)
+			creationRoute.POST("/jobs/:id/retry-archive", controller.RetryCreationArchive)
+			creationRoute.GET("/assets/:id/content", controller.GetCreationAssetContent)
+			creationRoute.DELETE("/jobs/:id", controller.DeleteCreationJob)
+		}
 
 		userRoute := apiRouter.Group("/user")
 		{

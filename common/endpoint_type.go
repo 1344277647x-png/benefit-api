@@ -1,6 +1,10 @@
 package common
 
-import "github.com/QuantumNous/new-api/constant"
+import (
+	"slices"
+
+	"github.com/QuantumNous/new-api/constant"
+)
 
 // GetEndpointTypesByChannelType 获取渠道最优先端点类型（所有的渠道都支持 OpenAI 端点）
 func GetEndpointTypesByChannelType(channelType int, modelName string) []constant.EndpointType {
@@ -40,6 +44,12 @@ func GetEndpointTypesByChannelType(channelType int, modelName string) []constant
 	if IsImageGenerationModel(modelName) {
 		// add to first
 		endpointTypes = append([]constant.EndpointType{constant.EndpointTypeImageGeneration}, endpointTypes...)
+	}
+	if (channelType == constant.ChannelTypeGemini || channelType == constant.ChannelTypeVertexAi) && IsGeminiImageGenerationModel(modelName) {
+		endpointTypes = append([]constant.EndpointType{constant.EndpointTypeGeminiImage}, endpointTypes...)
+	}
+	if IsVideoGenerationModel(modelName) && !slices.Contains(endpointTypes, constant.EndpointTypeOpenAIVideo) {
+		endpointTypes = append([]constant.EndpointType{constant.EndpointTypeOpenAIVideo}, endpointTypes...)
 	}
 	return endpointTypes
 }

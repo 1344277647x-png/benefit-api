@@ -62,6 +62,13 @@ export const userSchema = z.object({
   admin_permissions: z
     .record(z.string(), z.record(z.string(), z.boolean()))
     .optional(),
+  usage_summary: z
+    .object({
+      token_used: z.number(),
+      request_count: z.number(),
+      consumed_quota: z.number(),
+    })
+    .optional(),
 })
 export type User = z.infer<typeof userSchema>
 
@@ -81,6 +88,8 @@ export interface ApiResponse<T = unknown> {
 export interface GetUsersParams {
   p?: number
   page_size?: number
+  usage_start?: number
+  usage_end?: number
 }
 
 export interface GetUsersResponse {
@@ -101,6 +110,8 @@ export interface SearchUsersParams {
   status?: string
   p?: number
   page_size?: number
+  usage_start?: number
+  usage_end?: number
 }
 
 export interface UserFormData {

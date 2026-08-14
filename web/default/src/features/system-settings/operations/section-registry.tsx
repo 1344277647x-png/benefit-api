@@ -25,6 +25,10 @@ import { PerformanceSection } from '../maintenance/performance-section'
 import { UpdateCheckerSection } from '../maintenance/update-checker-section'
 import type { OperationsSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import {
+  ChannelHealthSettingsSection,
+  CreationSettingsSection,
+} from './ai-operations-settings-section'
 
 const OPERATIONS_SECTIONS = [
   {
@@ -55,6 +59,55 @@ const OPERATIONS_SECTIONS = [
             settings['perf_metrics_setting.bucket_time'] ?? 'hour',
           'perf_metrics_setting.retention_days':
             settings['perf_metrics_setting.retention_days'] ?? 0,
+        }}
+      />
+    ),
+  },
+  {
+    id: 'creation',
+    titleKey: 'AI Creation',
+    build: (settings: OperationsSettings) => (
+      <CreationSettingsSection
+        defaultValues={{
+          'creation_setting.enabled': settings['creation_setting.enabled'],
+          'creation_setting.retention_days':
+            settings['creation_setting.retention_days'],
+          'creation_setting.max_image_mb':
+            settings['creation_setting.max_image_mb'],
+          'creation_setting.max_video_mb':
+            settings['creation_setting.max_video_mb'],
+          'creation_setting.max_user_storage_mb':
+            settings['creation_setting.max_user_storage_mb'],
+          'creation_setting.max_system_storage_mb':
+            settings['creation_setting.max_system_storage_mb'],
+          'creation_setting.max_pending_video_jobs':
+            settings['creation_setting.max_pending_video_jobs'],
+        }}
+      />
+    ),
+  },
+  {
+    id: 'channel-health',
+    titleKey: 'Channel health',
+    build: (settings: OperationsSettings) => (
+      <ChannelHealthSettingsSection
+        defaultValues={{
+          'channel_health_setting.enabled':
+            settings['channel_health_setting.enabled'],
+          'channel_health_setting.window_minutes':
+            settings['channel_health_setting.window_minutes'],
+          'channel_health_setting.delayed_threshold_ms':
+            settings['channel_health_setting.delayed_threshold_ms'],
+          'channel_health_setting.failure_streak_threshold':
+            settings['channel_health_setting.failure_streak_threshold'],
+          'channel_health_setting.minimum_samples':
+            settings['channel_health_setting.minimum_samples'],
+          'channel_health_setting.unavailable_error_rate_percent':
+            settings['channel_health_setting.unavailable_error_rate_percent'],
+          'channel_health_setting.stale_after_minutes':
+            settings['channel_health_setting.stale_after_minutes'],
+          'channel_health_setting.retention_days':
+            settings['channel_health_setting.retention_days'],
         }}
       />
     ),

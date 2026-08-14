@@ -48,6 +48,24 @@ func IsImageGenerationModel(modelName string) bool {
 	return false
 }
 
+func IsGeminiImageGenerationModel(modelName string) bool {
+	modelName = strings.ToLower(strings.TrimSpace(modelName))
+	if !strings.Contains(modelName, "gemini") {
+		return false
+	}
+	return strings.Contains(modelName, "image") || strings.Contains(modelName, "banana")
+}
+
+func IsVideoGenerationModel(modelName string) bool {
+	modelName = strings.ToLower(strings.TrimSpace(modelName))
+	for _, marker := range []string{"veo-", "seedance-", "sora-"} {
+		if strings.Contains(modelName, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func IsOpenAITextModel(modelName string) bool {
 	modelName = strings.ToLower(modelName)
 	for _, m := range OpenAITextModels {

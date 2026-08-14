@@ -56,6 +56,21 @@ const defaultOperationsSettings: OperationsSettings = {
   'perf_metrics_setting.flush_interval': 5,
   'perf_metrics_setting.bucket_time': 'hour',
   'perf_metrics_setting.retention_days': 0,
+  'creation_setting.enabled': false,
+  'creation_setting.retention_days': 7,
+  'creation_setting.max_image_mb': 20,
+  'creation_setting.max_video_mb': 500,
+  'creation_setting.max_user_storage_mb': 1024,
+  'creation_setting.max_system_storage_mb': 10240,
+  'creation_setting.max_pending_video_jobs': 2,
+  'channel_health_setting.enabled': true,
+  'channel_health_setting.window_minutes': 5,
+  'channel_health_setting.delayed_threshold_ms': 10000,
+  'channel_health_setting.failure_streak_threshold': 5,
+  'channel_health_setting.minimum_samples': 5,
+  'channel_health_setting.unavailable_error_rate_percent': 70,
+  'channel_health_setting.stale_after_minutes': 15,
+  'channel_health_setting.retention_days': 7,
 }
 
 export function OperationsSettings() {
