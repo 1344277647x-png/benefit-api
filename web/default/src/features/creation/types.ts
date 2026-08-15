@@ -39,6 +39,7 @@ export interface CreationModel {
   display_name: string
   kind: CreationKind
   protocol: CreationProtocol
+  groups: string[]
   capabilities: CreationCapabilities
 }
 
@@ -109,6 +110,7 @@ export interface CreationJobsPage {
 export interface CreationImagePayload {
   model: string
   protocol: CreationProtocol
+  group?: string
   prompt: string
   size?: string
   aspect_ratio?: string
@@ -119,6 +121,7 @@ export interface CreationImagePayload {
 
 export interface CreationVideoPayload {
   model: string
+  group?: string
   prompt: string
   duration: number
   resolution: string

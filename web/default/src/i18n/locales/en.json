@@ -5397,6 +5397,7 @@
     "Stale after (minutes)": "Stale after (minutes)",
     "Health history retention (days)": "Health history retention (days)",
     "Rolling five-minute view; refreshes every {{seconds}} seconds": "Rolling five-minute view; refreshes every {{seconds}} seconds",
-    "Updates every {{seconds}} seconds": "Updates every {{seconds}} seconds"
+    "Updates every {{seconds}} seconds": "Updates every {{seconds}} seconds",
+    "Channel group": "Channel group"
   }
 }

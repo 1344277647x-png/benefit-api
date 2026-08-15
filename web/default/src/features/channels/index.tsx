@@ -98,8 +98,10 @@ export function Channels() {
           <ChannelsPrimaryButtons />
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
-          <ChannelHealthPanel />
-          <ChannelsTable />
+          <div className='flex h-full min-h-0 flex-col'>
+            <ChannelHealthPanel />
+            <ChannelsTable />
+          </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>
 

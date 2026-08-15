@@ -5397,6 +5397,7 @@
     "Stale after (minutes)": "无样本多久标记为过期（分钟）",
     "Health history retention (days)": "健康历史保留天数",
     "Rolling five-minute view; refreshes every {{seconds}} seconds": "滚动 5 分钟窗口，每 {{seconds}} 秒刷新",
-    "Updates every {{seconds}} seconds": "每 {{seconds}} 秒更新"
+    "Updates every {{seconds}} seconds": "每 {{seconds}} 秒更新",
+    "Channel group": "渠道分组"
   }
 }

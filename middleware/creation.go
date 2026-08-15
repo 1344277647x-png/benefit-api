@@ -13,10 +13,12 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
 )
@@ -53,6 +55,7 @@ func CreationImageRequestConvert() gin.HandlerFunc {
 		}
 		request.Model = strings.TrimSpace(request.Model)
 		request.Protocol = strings.TrimSpace(request.Protocol)
+		request.Group = strings.TrimSpace(request.Group)
 		request.Prompt = strings.TrimSpace(request.Prompt)
 		request.Size = strings.TrimSpace(request.Size)
 		request.AspectRatio = strings.TrimSpace(request.AspectRatio)
@@ -81,6 +84,12 @@ func CreationImageRequestConvert() gin.HandlerFunc {
 			abortCreationRequest(c, errors.New("unsupported image protocol"))
 			return
 		}
+		group, err := selectCreationGroup(c, request.Group)
+		if err != nil {
+			abortCreationRequestWithStatus(c, http.StatusForbidden, err)
+			return
+		}
+		request.Group = group
 
 		var reference *model.GenerationAsset
 		if request.ReferenceAssetID != "" {
@@ -99,7 +108,6 @@ func CreationImageRequestConvert() gin.HandlerFunc {
 		var body []byte
 		var contentType string
 		var path string
-		var err error
 		switch request.Protocol {
 		case "gemini-image":
 			path = "/v1beta/models/" + request.Model + ":generateContent"
@@ -148,6 +156,7 @@ func CreationVideoRequestConvert() gin.HandlerFunc {
 			return
 		}
 		request.Model = strings.TrimSpace(request.Model)
+		request.Group = strings.TrimSpace(request.Group)
 		request.Prompt = strings.TrimSpace(request.Prompt)
 		request.Resolution = strings.TrimSpace(request.Resolution)
 		request.ReferenceAssetID = strings.TrimSpace(request.ReferenceAssetID)
@@ -167,6 +176,12 @@ func CreationVideoRequestConvert() gin.HandlerFunc {
 			abortCreationRequest(c, fmt.Errorf("duration must be between 1 and %d seconds", relaycommon.MaxTaskDurationSeconds))
 			return
 		}
+		group, err := selectCreationGroup(c, request.Group)
+		if err != nil {
+			abortCreationRequestWithStatus(c, http.StatusForbidden, err)
+			return
+		}
+		request.Group = group
 
 		payload := map[string]any{
 			"model":    request.Model,
@@ -324,8 +339,39 @@ func creationVideoSize(resolution string) string {
 	}
 }
 
+func selectCreationGroup(c *gin.Context, requestedGroup string) (string, error) {
+	accountGroup := strings.TrimSpace(common.GetContextKeyString(c, constant.ContextKeyUserGroup))
+	if accountGroup == "" {
+		accountGroup = strings.TrimSpace(common.GetContextKeyString(c, constant.ContextKeyUsingGroup))
+	}
+	if accountGroup == "" {
+		return "", errors.New("user group is not available")
+	}
+
+	group := strings.TrimSpace(requestedGroup)
+	if group == "" {
+		group = accountGroup
+	}
+	if len(group) > 64 || strings.ContainsAny(group, ",\x00") {
+		return "", errors.New("invalid channel group")
+	}
+	if group != accountGroup && !service.GroupInUserUsableGroups(accountGroup, group) {
+		return "", fmt.Errorf("no access to channel group %s", group)
+	}
+	if group == "auto" || !ratio_setting.ContainsGroupRatio(group) {
+		return "", fmt.Errorf("channel group %s is not active", group)
+	}
+
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, group)
+	return group, nil
+}
+
 func abortCreationRequest(c *gin.Context, err error) {
-	c.JSON(http.StatusBadRequest, gin.H{
+	abortCreationRequestWithStatus(c, http.StatusBadRequest, err)
+}
+
+func abortCreationRequestWithStatus(c *gin.Context, status int, err error) {
+	c.JSON(status, gin.H{
 		"success": false,
 		"message": err.Error(),
 	})

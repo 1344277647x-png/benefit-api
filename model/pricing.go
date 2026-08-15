@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"sync"
@@ -115,6 +116,57 @@ func getPricingEndpointTypesForAbility(ability AbilityWithChannel, advancedCusto
 		return config.SupportedEndpointTypesForModel(ability.Model)
 	}
 	return common.GetEndpointTypesByChannelType(ability.ChannelType, ability.Model)
+}
+
+// GetEnabledModelEndpointGroups returns the channel groups that can route each
+// model through each supported endpoint. It intentionally checks the channel
+// status in addition to the ability row so stale abilities from a disabled
+// channel cannot make a model appear usable to callers such as the creation
+// center.
+func GetEnabledModelEndpointGroups() (map[string]map[constant.EndpointType][]string, error) {
+	abilities, err := GetAllEnableAbilityWithChannels()
+	if err != nil {
+		return nil, err
+	}
+	advancedCustomConfigs := loadPricingAdvancedCustomConfigs(abilities)
+	groupsByModel := make(map[string]map[constant.EndpointType]map[string]struct{})
+	for _, ability := range abilities {
+		if ability.ChannelStatus != common.ChannelStatusEnabled {
+			continue
+		}
+		group := strings.TrimSpace(ability.Group)
+		modelName := strings.TrimSpace(ability.Model)
+		if group == "" || modelName == "" {
+			continue
+		}
+		for _, endpointType := range getPricingEndpointTypesForAbility(ability, advancedCustomConfigs) {
+			endpointGroups, ok := groupsByModel[modelName]
+			if !ok {
+				endpointGroups = make(map[constant.EndpointType]map[string]struct{})
+				groupsByModel[modelName] = endpointGroups
+			}
+			groups, ok := endpointGroups[endpointType]
+			if !ok {
+				groups = make(map[string]struct{})
+				endpointGroups[endpointType] = groups
+			}
+			groups[group] = struct{}{}
+		}
+	}
+
+	result := make(map[string]map[constant.EndpointType][]string, len(groupsByModel))
+	for modelName, endpointGroups := range groupsByModel {
+		result[modelName] = make(map[constant.EndpointType][]string, len(endpointGroups))
+		for endpointType, groups := range endpointGroups {
+			values := make([]string, 0, len(groups))
+			for group := range groups {
+				values = append(values, group)
+			}
+			sort.Strings(values)
+			result[modelName][endpointType] = values
+		}
+	}
+	return result, nil
 }
 
 // loadPricingAdvancedCustomConfigs runs inside updatePricing while

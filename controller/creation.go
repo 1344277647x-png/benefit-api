@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/creation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
 )
@@ -35,6 +36,7 @@ type creationModel struct {
 	DisplayName  string                    `json:"display_name"`
 	Kind         string                    `json:"kind"`
 	Protocol     string                    `json:"protocol"`
+	Groups       []string                  `json:"groups"`
 	Capabilities creationModelCapabilities `json:"capabilities"`
 }
 
@@ -58,7 +60,11 @@ func GetCreationModels(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	models := creationModelsForUser(user)
+	models, err := creationModelsForUser(user)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	usage, err := model.GetGenerationStorageUsage(c.GetInt("id"))
 	if err != nil {
 		common.ApiError(c, err)
@@ -71,43 +77,51 @@ func GetCreationModels(c *gin.Context) {
 	})
 }
 
-func creationModelsForUser(user *model.UserBase) []creationModel {
+func creationModelsForUser(user *model.UserBase) ([]creationModel, error) {
 	if user == nil {
-		return []creationModel{}
+		return []creationModel{}, nil
 	}
 	usableGroups := service.GetUserUsableGroups(user.Group)
+	endpointGroups, err := model.GetEnabledModelEndpointGroups()
+	if err != nil {
+		return nil, err
+	}
 	models := make([]creationModel, 0)
 	for _, pricing := range model.GetPricing() {
-		usable := common.StringsContains(pricing.EnableGroup, "all")
-		if !usable {
-			for _, group := range pricing.EnableGroup {
-				if _, ok := usableGroups[group]; ok {
-					usable = true
-					break
-				}
-			}
-		}
-		if !usable {
-			continue
-		}
+		modelEndpointGroups := endpointGroups[pricing.ModelName]
+		geminiGroups := compatibleCreationGroups(
+			modelEndpointGroups[constant.EndpointTypeGeminiImage],
+			pricing.EnableGroup,
+			usableGroups,
+			user.Group,
+		)
+		imageGroups := compatibleCreationGroups(
+			modelEndpointGroups[constant.EndpointTypeImageGeneration],
+			pricing.EnableGroup,
+			usableGroups,
+			user.Group,
+		)
+		videoGroups := compatibleCreationGroups(
+			modelEndpointGroups[constant.EndpointTypeOpenAIVideo],
+			pricing.EnableGroup,
+			usableGroups,
+			user.Group,
+		)
 
-		endpointSet := make(map[constant.EndpointType]struct{}, len(pricing.SupportedEndpointTypes))
-		for _, endpoint := range pricing.SupportedEndpointTypes {
-			endpointSet[endpoint] = struct{}{}
-		}
-		if _, ok := endpointSet[constant.EndpointTypeGeminiImage]; ok {
+		if len(geminiGroups) > 0 {
 			models = append(models, creationModel{
 				ID:          pricing.ModelName,
 				DisplayName: pricing.ModelName,
 				Kind:        model.GenerationKindImage,
 				Protocol:    "gemini-image",
+				Groups:      geminiGroups,
 				Capabilities: creationModelCapabilities{
 					ReferenceImage: true,
 					MaxCount:       4,
 					AspectRatios:   []string{"1:1", "16:9", "9:16", "4:3", "3:4"},
 				},
 			})
-		} else if _, ok := endpointSet[constant.EndpointTypeImageGeneration]; ok {
+		} else if len(imageGroups) > 0 {
 			protocol := "openai-image"
 			capabilities := creationModelCapabilities{
 				ReferenceImage: true,
@@ -127,15 +141,17 @@ func creationModelsForUser(user *model.UserBase) []creationModel {
 				DisplayName:  pricing.ModelName,
 				Kind:         model.GenerationKindImage,
 				Protocol:     protocol,
+				Groups:       imageGroups,
 				Capabilities: capabilities,
 			})
 		}
-		if _, ok := endpointSet[constant.EndpointTypeOpenAIVideo]; ok {
+		if len(videoGroups) > 0 {
 			models = append(models, creationModel{
 				ID:          pricing.ModelName,
 				DisplayName: pricing.ModelName,
 				Kind:        model.GenerationKindVideo,
 				Protocol:    "openai-video",
+				Groups:      videoGroups,
 				Capabilities: creationModelCapabilities{
 					ReferenceImage: true,
 					Durations:      []int{4, 5, 6, 8, 10},
@@ -150,7 +166,55 @@ func creationModelsForUser(user *model.UserBase) []creationModel {
 		}
 		return models[i].Kind < models[j].Kind
 	})
-	return models
+	return models, nil
+}
+
+func compatibleCreationGroups(
+	endpointGroups []string,
+	pricingGroups []string,
+	usableGroups map[string]string,
+	accountGroup string,
+) []string {
+	pricingAllowsAll := common.StringsContains(pricingGroups, "all")
+	pricingGroupSet := make(map[string]struct{}, len(pricingGroups))
+	for _, group := range pricingGroups {
+		pricingGroupSet[group] = struct{}{}
+	}
+
+	seen := make(map[string]struct{}, len(endpointGroups))
+	groups := make([]string, 0, len(endpointGroups))
+	for _, group := range endpointGroups {
+		group = strings.TrimSpace(group)
+		if group == "" {
+			continue
+		}
+		if _, ok := usableGroups[group]; !ok {
+			continue
+		}
+		if !ratio_setting.ContainsGroupRatio(group) {
+			continue
+		}
+		if !pricingAllowsAll {
+			if _, ok := pricingGroupSet[group]; !ok {
+				continue
+			}
+		}
+		if _, ok := seen[group]; ok {
+			continue
+		}
+		seen[group] = struct{}{}
+		groups = append(groups, group)
+	}
+	sort.Slice(groups, func(i, j int) bool {
+		if groups[i] == accountGroup {
+			return true
+		}
+		if groups[j] == accountGroup {
+			return false
+		}
+		return groups[i] < groups[j]
+	})
+	return groups
 }
 
 func UploadCreationAsset(c *gin.Context) {

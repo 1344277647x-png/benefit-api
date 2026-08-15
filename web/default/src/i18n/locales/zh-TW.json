@@ -5254,6 +5254,7 @@
     "Markdown supports headings, lists, links, tables, and code blocks.": "Markdown 支援標題、清單、連結、表格和程式碼區塊。",
     "No content to preview.": "暫無可預覽的內容。",
     "The documentation is not configured yet.": "文件內容尚未設定。",
-    "Write your API guide in Markdown...": "使用 Markdown 編寫 API 使用文件..."
+    "Write your API guide in Markdown...": "使用 Markdown 編寫 API 使用文件...",
+    "Channel group": "渠道分組"
   }
 }

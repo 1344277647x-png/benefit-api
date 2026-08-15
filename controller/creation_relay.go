@@ -102,7 +102,7 @@ func CreationImage(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": err.Error()})
 		return
 	}
-	if !creationModelAvailable(user, request.Model, model.GenerationKindImage, request.Protocol) {
+	if !creationModelAvailable(user, request.Model, model.GenerationKindImage, request.Protocol, request.Group) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "the selected image model is not available"})
 		return
 	}
@@ -194,7 +194,7 @@ func CreationVideo(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": err.Error()})
 		return
 	}
-	if !creationModelAvailable(user, request.Model, model.GenerationKindVideo, "openai-video") {
+	if !creationModelAvailable(user, request.Model, model.GenerationKindVideo, "openai-video", request.Group) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "the selected video model is not available"})
 		return
 	}
@@ -290,11 +290,16 @@ func prepareCreationPlayground(c *gin.Context, modelName string) (*model.UserBas
 	return user, nil
 }
 
-func creationModelAvailable(user *model.UserBase, modelName string, kind string, protocol string) bool {
-	for _, candidate := range creationModelsForUser(user) {
-		if candidate.ID == modelName && candidate.Kind == kind && candidate.Protocol == protocol {
-			return true
+func creationModelAvailable(user *model.UserBase, modelName string, kind string, protocol string, group string) bool {
+	models, err := creationModelsForUser(user)
+	if err != nil {
+		return false
+	}
+	for _, candidate := range models {
+		if candidate.ID != modelName || candidate.Kind != kind || candidate.Protocol != protocol {
+			continue
 		}
+		return common.StringsContains(candidate.Groups, group)
 	}
 	return false
 }

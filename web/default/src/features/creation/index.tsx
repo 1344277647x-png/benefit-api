@@ -273,6 +273,7 @@ export function Creation() {
 
   const [kind, setKind] = useState<CreationKind>('image')
   const [modelId, setModelId] = useState('')
+  const [group, setGroup] = useState('')
   const [prompt, setPrompt] = useState('')
   const [count, setCount] = useState('1')
   const [size, setSize] = useState('')
@@ -294,6 +295,13 @@ export function Creation() {
   )
   const selectedModel =
     availableModels.find((model) => model.id === modelId) ?? availableModels[0]
+  const selectedGroups = useMemo(
+    () => selectedModel?.groups ?? [],
+    [selectedModel]
+  )
+  const selectedGroup = selectedGroups.includes(group)
+    ? group
+    : (selectedGroups[0] ?? '')
   const capabilities = selectedModel?.capabilities
   const activeJobQuery = useQuery({
     queryKey: ['creation-job', activeJobId],
@@ -310,12 +318,23 @@ export function Creation() {
   useEffect(() => {
     if (availableModels.length === 0) {
       setModelId('')
+      setGroup('')
       return
     }
     if (!availableModels.some((model) => model.id === modelId)) {
       setModelId(availableModels[0].id)
     }
   }, [availableModels, modelId])
+
+  useEffect(() => {
+    if (selectedGroups.length === 0) {
+      setGroup('')
+      return
+    }
+    if (!selectedGroups.includes(group)) {
+      setGroup(selectedGroups[0])
+    }
+  }, [group, selectedGroups])
 
   useEffect(() => {
     if (!selectedModel) return
@@ -360,7 +379,7 @@ export function Creation() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!selectedModel || !prompt.trim()) {
+    if (!selectedModel || !selectedGroup || !prompt.trim()) {
       toast.error(t('Choose a model and enter a prompt.'))
       return
     }
@@ -385,6 +404,7 @@ export function Creation() {
                 CreationProtocol,
                 'openai-video'
               >,
+              group: selectedGroup,
               prompt: prompt.trim(),
               count: Number(count) || 1,
               size: size || undefined,
@@ -394,6 +414,7 @@ export function Creation() {
             })
           : await createVideo({
               model: selectedModel.id,
+              group: selectedGroup,
               prompt: prompt.trim(),
               duration: Number(duration) || 5,
               resolution,
@@ -533,6 +554,9 @@ export function Creation() {
                       models={availableModels}
                       modelId={selectedModel?.id ?? ''}
                       setModelId={setModelId}
+                      group={selectedGroup}
+                      setGroup={setGroup}
+                      groups={selectedGroups}
                       capabilities={capabilities}
                       prompt={prompt}
                       setPrompt={setPrompt}
@@ -568,7 +592,10 @@ export function Creation() {
                       type='submit'
                       className='w-full'
                       disabled={
-                        isSubmitting || !selectedModel || !prompt.trim()
+                        isSubmitting ||
+                        !selectedModel ||
+                        !selectedGroup ||
+                        !prompt.trim()
                       }
                     >
                       {isSubmitting ? (
@@ -587,6 +614,9 @@ export function Creation() {
                       models={availableModels}
                       modelId={selectedModel?.id ?? ''}
                       setModelId={setModelId}
+                      group={selectedGroup}
+                      setGroup={setGroup}
+                      groups={selectedGroups}
                       capabilities={capabilities}
                       prompt={prompt}
                       setPrompt={setPrompt}
@@ -630,7 +660,10 @@ export function Creation() {
                       type='submit'
                       className='w-full'
                       disabled={
-                        isSubmitting || !selectedModel || !prompt.trim()
+                        isSubmitting ||
+                        !selectedModel ||
+                        !selectedGroup ||
+                        !prompt.trim()
                       }
                     >
                       {isSubmitting ? (
@@ -723,6 +756,9 @@ function CreationFormFields({
   models,
   modelId,
   setModelId,
+  group,
+  setGroup,
+  groups,
   capabilities,
   prompt,
   setPrompt,
@@ -744,6 +780,9 @@ function CreationFormFields({
   models: CreationModel[]
   modelId: string
   setModelId: (value: string) => void
+  group: string
+  setGroup: (value: string) => void
+  groups: string[]
   capabilities?: CreationCapabilities
   prompt: string
   setPrompt: (value: string) => void
@@ -781,6 +820,22 @@ function CreationFormFields({
           )}
         </NativeSelect>
       </div>
+      {groups.length > 0 ? (
+        <div className='space-y-1.5'>
+          <Label htmlFor={`${kind}-group`}>{t('Channel group')}</Label>
+          <NativeSelect
+            value={group}
+            onChange={setGroup}
+            disabled={models.length === 0}
+          >
+            {groups.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+      ) : null}
       <div className='space-y-1.5'>
         <Label htmlFor={`${kind}-prompt`}>{t('Prompt')}</Label>
         <Textarea
