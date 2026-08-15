@@ -184,6 +184,20 @@ func UserAuth() func(c *gin.Context) {
 	}
 }
 
+// SessionAwareUserAuth keeps browser-native requests (such as <img> and
+// download links) compatible with the user-id header check used by UserAuth.
+// API-token requests still need to provide New-Api-User explicitly.
+func SessionAwareUserAuth() func(c *gin.Context) {
+	return func(c *gin.Context) {
+		if c.Request.Header.Get("New-Api-User") == "" {
+			if id, ok := sessions.Default(c).Get("id").(int); ok && id > 0 {
+				c.Request.Header.Set("New-Api-User", strconv.Itoa(id))
+			}
+		}
+		UserAuth()(c)
+	}
+}
+
 func AdminAuth() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		authHelper(c, common.RoleAdminUser)

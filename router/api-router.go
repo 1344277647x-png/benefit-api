@@ -69,7 +69,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.POST("/verify", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.UniversalVerify)
 
 		creationRoute := apiRouter.Group("/creation")
-		creationRoute.Use(middleware.UserAuth())
+		creationRoute.Use(middleware.SessionAwareUserAuth())
 		{
 			creationRoute.GET("/models", controller.GetCreationModels)
 			creationRoute.POST("/uploads", controller.UploadCreationAsset)
