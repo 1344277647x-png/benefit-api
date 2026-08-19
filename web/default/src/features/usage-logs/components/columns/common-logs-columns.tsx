@@ -552,10 +552,20 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
       if (!tokenName) return null
 
       const other = parseLogOther(log.other)
-      const displayName = sensitiveVisible ? tokenName : '••••'
+      const isChannelTest = other?.is_channel_test === true
+      const isLegacyChannelTest =
+        tokenName === '模型测试' && log.content === '模型测试' && !isChannelTest
+      let displayName = sensitiveVisible ? tokenName : '••••'
+      if (isChannelTest) {
+        displayName = t('Channel model test')
+      } else if (isLegacyChannelTest) {
+        displayName = t('Historical test, group not recorded')
+      }
       let group = log.group
       if (!group) group = other?.group || ''
-      const groupRatio = getGroupRatio(other)
+      if (isChannelTest) group = other?.channel_test_group || group
+      if (isLegacyChannelTest) group = ''
+      const groupRatio = isLegacyChannelTest ? null : getGroupRatio(other)
 
       return (
         <div className='flex max-w-[200px] flex-col gap-0.5'>
@@ -565,15 +575,19 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                 <StatusBadge
                   label={displayName}
                   icon={KeyRound}
-                  copyText={sensitiveVisible ? tokenName : undefined}
+                  copyText={
+                    sensitiveVisible && !isChannelTest && !isLegacyChannelTest
+                      ? tokenName
+                      : undefined
+                  }
                   size='sm'
                   showDot={false}
                   className='border-border/60 bg-muted/30 text-foreground h-6 max-w-full gap-1.5 overflow-hidden rounded-md border px-2 py-0.5 [font-family:var(--font-body)]'
                 />
               </TooltipTrigger>
-              {sensitiveVisible && tokenName.length > 16 && (
+              {sensitiveVisible && displayName.length > 16 && (
                 <TooltipContent side='top' className='max-w-xs break-all'>
-                  {tokenName}
+                  {displayName}
                 </TooltipContent>
               )}
             </Tooltip>

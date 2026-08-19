@@ -5398,6 +5398,24 @@
     "Health history retention (days)": "Health history retention (days)",
     "Rolling five-minute view; refreshes every {{seconds}} seconds": "Rolling five-minute view; refreshes every {{seconds}} seconds",
     "Updates every {{seconds}} seconds": "Updates every {{seconds}} seconds",
-    "Channel group": "Channel group"
+    "Channel group": "Channel group",
+    "I understand": "I understand",
+    "Popup": "Popup",
+    "Show as popup": "Show as popup",
+    "Display this announcement in a site-wide popup.": "Display this announcement in a site-wide popup.",
+    "Popup frequency": "Popup frequency",
+    "Choose how often a user can see this popup.": "Choose how often a user can see this popup.",
+    "once": "Once",
+    "daily": "Daily",
+    "session": "This session",
+    "{{count}} announcements require your attention": "{{count}} announcements require your attention",
+    "Test Group": "Test Group",
+    "Usage and pricing for this test use the selected channel group.": "Usage and pricing for this test use the selected channel group.",
+    "Channel model test": "Channel model test",
+    "Historical test, group not recorded": "Historical test, group not recorded",
+    "Test Method": "Test Method",
+    "Scheduled test": "Scheduled test",
+    "Batch test": "Batch test",
+    "Manual test": "Manual test"
   }
 }

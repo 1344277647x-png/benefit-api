@@ -5255,6 +5255,24 @@
     "No content to preview.": "暫無可預覽的內容。",
     "The documentation is not configured yet.": "文件內容尚未設定。",
     "Write your API guide in Markdown...": "使用 Markdown 編寫 API 使用文件...",
-    "Channel group": "渠道分組"
+    "Channel group": "渠道分組",
+    "I understand": "我知道了",
+    "Popup": "彈窗",
+    "Show as popup": "以彈窗顯示",
+    "Display this announcement in a site-wide popup.": "在全站彈窗中顯示此公告。",
+    "Popup frequency": "彈窗頻率",
+    "Choose how often a user can see this popup.": "選擇使用者看到此彈窗的頻率。",
+    "once": "僅一次",
+    "daily": "每天一次",
+    "session": "本次工作階段",
+    "{{count}} announcements require your attention": "有 {{count}} 則公告需要查看",
+    "Test Group": "測試分組",
+    "Usage and pricing for this test use the selected channel group.": "本次測試的用量和計價使用所選渠道分組。",
+    "Channel model test": "渠道模型測試",
+    "Historical test, group not recorded": "歷史測試，分組未記錄",
+    "Test Method": "測試方式",
+    "Scheduled test": "排程測試",
+    "Batch test": "批量測試",
+    "Manual test": "手動測試"
   }
 }

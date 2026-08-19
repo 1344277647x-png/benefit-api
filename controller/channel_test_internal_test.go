@@ -3,9 +3,11 @@ package controller
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
@@ -49,6 +51,7 @@ func TestBuildTestLogOtherInjectsTieredInfo(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 
 	info := &relaycommon.RelayInfo{
+		UsingGroup: "vip",
 		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
 			BillingMode: "tiered_expr",
 			ExprString:  `tier("base", p * 2)`,
@@ -66,11 +69,116 @@ func TestBuildTestLogOtherInjectsTieredInfo(t *testing.T) {
 
 	other := buildTestLogOther(ctx, info, priceData, usage, &billingexpr.TieredResult{
 		MatchedTier: "base",
-	})
+	}, channelTestMethodManual)
 
 	require.Equal(t, "tiered_expr", other["billing_mode"])
 	require.Equal(t, "base", other["matched_tier"])
 	require.NotEmpty(t, other["expr_b64"])
+	require.Equal(t, true, other["is_channel_test"])
+	require.Equal(t, channelTestMethodManual, other["channel_test_method"])
+	require.Equal(t, "vip", other["channel_test_group"])
+}
+
+func TestResolveChannelTestGroup(t *testing.T) {
+	tests := []struct {
+		name      string
+		channel   *model.Channel
+		requested string
+		expected  string
+		wantError bool
+	}{
+		{
+			name:     "single group is selected automatically",
+			channel:  &model.Channel{Id: 1, Group: "codex-plus"},
+			expected: "codex-plus",
+		},
+		{
+			name:      "explicit configured group is selected",
+			channel:   &model.Channel{Id: 2, Group: "default, codex-plus"},
+			requested: "codex-plus",
+			expected:  "codex-plus",
+		},
+		{
+			name:     "automatic test uses first non-empty group",
+			channel:  &model.Channel{Id: 3, Group: ", vip, default, vip"},
+			expected: "vip",
+		},
+		{
+			name:     "missing channel groups fall back to default",
+			channel:  &model.Channel{Id: 4, Group: " , "},
+			expected: "default",
+		},
+		{
+			name:      "explicit default is accepted when groups are missing",
+			channel:   &model.Channel{Id: 5, Group: ""},
+			requested: "default",
+			expected:  "default",
+		},
+		{
+			name:      "unconfigured group is rejected",
+			channel:   &model.Channel{Id: 6, Group: "default,codex-plus"},
+			requested: "gpt-image-2",
+			wantError: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			group, err := resolveChannelTestGroup(test.channel, test.requested)
+			if test.wantError {
+				require.Error(t, err)
+				require.Empty(t, group)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, test.expected, group)
+		})
+	}
+}
+
+func TestApplyChannelTestGroupContextOverridesTestUserGroup(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "gpt-image-2")
+	common.SetContextKey(ctx, constant.ContextKeyUsingGroup, "gpt-image-2")
+
+	applyChannelTestGroupContext(ctx, "codex-plus")
+
+	require.Equal(t, "codex-plus", common.GetContextKeyString(ctx, constant.ContextKeyUserGroup))
+	require.Equal(t, "codex-plus", common.GetContextKeyString(ctx, constant.ContextKeyUsingGroup))
+}
+
+func TestChannelRejectsGroupNotConfiguredForChannel(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	originalMemoryCacheEnabled := common.MemoryCacheEnabled
+	common.MemoryCacheEnabled = false
+	t.Cleanup(func() {
+		common.MemoryCacheEnabled = originalMemoryCacheEnabled
+	})
+
+	channel := &model.Channel{
+		Type:   constant.ChannelTypeOpenAI,
+		Key:    "test-key",
+		Name:   "codex channel",
+		Models: "gpt-5-codex",
+		Group:  "codex-plus",
+	}
+	require.NoError(t, db.Create(channel).Error)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(channel.Id)}}
+	ctx.Request = httptest.NewRequest(
+		http.MethodGet,
+		"/api/channel/test/"+strconv.Itoa(channel.Id)+"?group=gpt-image-2",
+		nil,
+	)
+
+	TestChannel(ctx)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Contains(t, recorder.Body.String(), "gpt-image-2")
+	require.Contains(t, recorder.Body.String(), "is not configured")
 }
 
 func TestResolveChannelTestUserIDUsesRequestUser(t *testing.T) {

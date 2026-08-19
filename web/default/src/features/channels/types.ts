@@ -184,6 +184,7 @@ export interface ChannelTestResponse {
   message?: string
   error_code?: string
   time?: number
+  group?: string
   data?: {
     response_time?: number
     error?: string
@@ -291,6 +292,7 @@ export interface SearchChannelsParams {
 
 export interface ChannelTestParams {
   test_model?: string
+  group?: string
 }
 
 export interface CopyChannelParams {

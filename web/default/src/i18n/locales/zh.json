@@ -5398,6 +5398,24 @@
     "Health history retention (days)": "健康历史保留天数",
     "Rolling five-minute view; refreshes every {{seconds}} seconds": "滚动 5 分钟窗口，每 {{seconds}} 秒刷新",
     "Updates every {{seconds}} seconds": "每 {{seconds}} 秒更新",
-    "Channel group": "渠道分组"
+    "Channel group": "渠道分组",
+    "I understand": "我知道了",
+    "Popup": "弹窗",
+    "Show as popup": "以弹窗展示",
+    "Display this announcement in a site-wide popup.": "在全站弹窗中展示此公告。",
+    "Popup frequency": "弹窗频率",
+    "Choose how often a user can see this popup.": "选择用户看到此弹窗的频率。",
+    "once": "仅一次",
+    "daily": "每天一次",
+    "session": "本次会话",
+    "{{count}} announcements require your attention": "有 {{count}} 条公告需要查看",
+    "Test Group": "测试分组",
+    "Usage and pricing for this test use the selected channel group.": "本次测试的用量和计价使用所选渠道分组。",
+    "Channel model test": "渠道模型测试",
+    "Historical test, group not recorded": "历史测试，分组未记录",
+    "Test Method": "测试方式",
+    "Scheduled test": "定时测试",
+    "Batch test": "批量测试",
+    "Manual test": "手动测试"
   }
 }

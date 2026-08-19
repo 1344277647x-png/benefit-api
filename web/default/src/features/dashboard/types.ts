@@ -261,6 +261,8 @@ export interface AnnouncementItem {
   publishDate?: string
   type?: 'default' | 'ongoing' | 'success' | 'warning' | 'error'
   extra?: string
+  popupEnabled?: boolean
+  popupFrequency?: 'once' | 'daily' | 'session'
 }
 
 // ============================================================================

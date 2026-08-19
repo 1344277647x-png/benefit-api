@@ -206,6 +206,9 @@ export interface LogOtherData {
   po?: string[]
   billing_source?: string
   group?: string
+  is_channel_test?: boolean
+  channel_test_method?: 'manual' | 'manual_batch' | 'scheduled' | string
+  channel_test_group?: string
   stream_status?: {
     status?: string
     end_reason?: string

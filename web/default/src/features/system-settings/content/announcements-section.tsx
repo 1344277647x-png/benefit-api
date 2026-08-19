@@ -72,6 +72,8 @@ type Announcement = {
   publishDate: string
   type: 'default' | 'ongoing' | 'success' | 'warning' | 'error'
   extra?: string
+  popupEnabled?: boolean
+  popupFrequency?: 'once' | 'daily' | 'session'
 }
 
 type AnnouncementsSectionProps = {
@@ -90,6 +92,8 @@ const announcementSchema = z.object({
     .string()
     .max(100, 'Extra must be less than 100 characters')
     .optional(),
+  popupEnabled: z.boolean(),
+  popupFrequency: z.enum(['once', 'daily', 'session']),
 })
 
 type AnnouncementFormValues = z.infer<typeof announcementSchema>
@@ -152,6 +156,8 @@ export function AnnouncementsSection({
       publishDate: new Date().toISOString(),
       type: 'default',
       extra: '',
+      popupEnabled: true,
+      popupFrequency: 'once',
     },
   })
 
@@ -195,6 +201,8 @@ export function AnnouncementsSection({
       publishDate: new Date().toISOString(),
       type: 'default',
       extra: '',
+      popupEnabled: true,
+      popupFrequency: 'once',
     })
     setShowDialog(true)
   }
@@ -206,6 +214,8 @@ export function AnnouncementsSection({
       publishDate: announcement.publishDate,
       type: announcement.type,
       extra: announcement.extra || '',
+      popupEnabled: announcement.popupEnabled === true,
+      popupFrequency: announcement.popupFrequency || 'once',
     })
     setShowDialog(true)
   }
@@ -373,6 +383,22 @@ export function AnnouncementsSection({
                   }
                 />
               ),
+            },
+            {
+              id: 'popup',
+              header: t('Popup'),
+              cell: (announcement) =>
+                announcement.popupEnabled === true ? (
+                  <StatusBadge
+                    label={t(announcement.popupFrequency || 'once')}
+                    variant='info'
+                    copyable={false}
+                  />
+                ) : (
+                  <span className='text-muted-foreground text-xs'>
+                    {t('Disabled')}
+                  </span>
+                ),
             },
             {
               id: 'content',
@@ -562,6 +588,66 @@ export function AnnouncementsSection({
                 </FormItem>
               )}
             />
+            <div className='grid gap-3 sm:grid-cols-2'>
+              <FormField
+                control={form.control}
+                name='popupEnabled'
+                render={({ field }) => (
+                  <FormItem className='flex items-center justify-between rounded-md border p-3'>
+                    <div className='space-y-1'>
+                      <FormLabel>{t('Show as popup')}</FormLabel>
+                      <FormDescription>
+                        {t('Display this announcement in a site-wide popup.')}
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        aria-label={t('Show as popup')}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name='popupFrequency'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Popup frequency')}</FormLabel>
+                    <Select
+                      items={[
+                        { value: 'once', label: t('once') },
+                        { value: 'daily', label: t('daily') },
+                        { value: 'session', label: t('session') },
+                      ]}
+                      value={field.value}
+                      onValueChange={field.onChange}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent alignItemWithTrigger={false}>
+                        <SelectGroup>
+                          <SelectItem value='once'>{t('once')}</SelectItem>
+                          <SelectItem value='daily'>{t('daily')}</SelectItem>
+                          <SelectItem value='session'>
+                            {t('session')}
+                          </SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      {t('Choose how often a user can see this popup.')}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
             <FormField
               control={form.control}
               name='extra'

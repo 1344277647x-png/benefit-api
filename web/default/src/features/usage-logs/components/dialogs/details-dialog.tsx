@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -31,7 +32,6 @@ import {
   Info,
   LogIn,
 } from 'lucide-react'
-import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
@@ -179,7 +179,9 @@ function getUsageBillingPathLabel(
   }
 }
 
-function isUsageBillingPathLocal(adminInfo: LogOtherData['admin_info']): boolean {
+function isUsageBillingPathLocal(
+  adminInfo: LogOtherData['admin_info']
+): boolean {
   if (adminInfo?.usage_billing_path) {
     return adminInfo.usage_billing_path === USAGE_BILLING_PATH.LOCAL
   }
@@ -199,6 +201,7 @@ function BillingBreakdown(props: {
   log: UsageLog
   other: LogOtherData
   isAdmin: boolean
+  hideGroupRatio?: boolean
 }) {
   const { t } = useTranslation()
   const { log, other, isAdmin } = props
@@ -263,7 +266,11 @@ function BillingBreakdown(props: {
   const userGR = other.user_group_ratio
   const isUserGR = userGR != null && Number.isFinite(userGR) && userGR !== -1
   const effectiveGR = isUserGR ? userGR : other.group_ratio
-  if (effectiveGR != null && Number.isFinite(effectiveGR)) {
+  if (
+    !props.hideGroupRatio &&
+    effectiveGR != null &&
+    Number.isFinite(effectiveGR)
+  ) {
     rows.push({
       label: isUserGR ? t('User Exclusive Ratio') : t('Group Ratio'),
       value: `${formatRatio(effectiveGR)}x`,
@@ -462,6 +469,20 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const details = props.log.content ?? ''
   const other = parseLogOther(props.log.other)
   const typeConfig = getLogTypeConfig(props.log.type)
+  const isChannelTest = other?.is_channel_test === true
+  const isLegacyChannelTest =
+    props.log.token_name === '模型测试' &&
+    props.log.content === '模型测试' &&
+    !isChannelTest
+  const channelTestGroup = isChannelTest
+    ? other?.channel_test_group || props.log.group || other?.group || ''
+    : ''
+  const channelTestMethod = (() => {
+    if (!isChannelTest) return ''
+    if (other?.channel_test_method === 'scheduled') return t('Scheduled test')
+    if (other?.channel_test_method === 'manual_batch') return t('Batch test')
+    return t('Manual test')
+  })()
 
   const isViolation = isViolationFeeLog(other)
   const isRefund = props.log.type === 6
@@ -604,6 +625,22 @@ export function DetailsDialog(props: DetailsDialogProps) {
             size='sm'
             copyable={false}
           />
+          {isChannelTest && (
+            <StatusBadge
+              label={t('Channel model test')}
+              variant='info'
+              size='sm'
+              copyable={false}
+            />
+          )}
+          {isLegacyChannelTest && (
+            <StatusBadge
+              label={t('Historical test, group not recorded')}
+              variant='warning'
+              size='sm'
+              copyable={false}
+            />
+          )}
         </>
       }
       description={t('View the complete details for this log entry')}
@@ -658,17 +695,27 @@ export function DetailsDialog(props: DetailsDialogProps) {
             <DetailRow label={t('Retry Chain')} value={channelChain} mono />
           )}
 
-          {props.log.token_name && (
+          {props.log.token_name && !isChannelTest && !isLegacyChannelTest && (
             <DetailRow label={t('Token')} value={props.log.token_name} mono />
           )}
 
-          {(props.log.group || other?.group) && (
-            <DetailRow
-              label={t('Group')}
-              value={props.log.group || other?.group || ''}
-              mono
-            />
+          {isChannelTest && (
+            <DetailRow label={t('Test Method')} value={channelTestMethod} />
           )}
+
+          {channelTestGroup && (
+            <DetailRow label={t('Test Group')} value={channelTestGroup} mono />
+          )}
+
+          {!isChannelTest &&
+            !isLegacyChannelTest &&
+            (props.log.group || other?.group) && (
+              <DetailRow
+                label={t('Group')}
+                value={props.log.group || other?.group || ''}
+                mono
+              />
+            )}
 
           {showAdminIp && (
             <DetailRow
@@ -1050,6 +1097,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
             log={props.log}
             other={other}
             isAdmin={props.isAdmin}
+            hideGroupRatio={isLegacyChannelTest}
           />
         )}
 

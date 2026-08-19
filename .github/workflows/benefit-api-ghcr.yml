@@ -41,6 +41,7 @@ jobs:
             common/model.go
             constant/endpoint_type.go
             controller/channel-test.go
+            controller/channel_test_internal_test.go
             controller/channel_health.go
             controller/creation.go
             controller/creation_relay.go
@@ -82,6 +83,8 @@ jobs:
             service/generation_asset_test.go
             service/task_billing_test.go
             setting/channel_health_setting/config.go
+            setting/console_setting/validation.go
+            setting/console_setting/validation_test.go
             setting/creation_setting/config.go
             setting/operation_setting/referral_setting.go
           )
@@ -140,7 +143,12 @@ jobs:
             src/routes/_authenticated/referrals \
             src/context/theme-provider.tsx \
             src/features/channel-health \
+            src/features/announcements \
             src/features/channels/api.ts \
+            src/features/channels/components/dialogs/channel-test-dialog.tsx \
+            src/features/channels/lib/channel-actions.ts \
+            src/features/channels/types.ts \
+            src/features/dashboard/types.ts \
             src/features/channels/index.tsx \
             src/features/creation \
             src/features/system-settings/api.ts \
@@ -153,6 +161,10 @@ jobs:
             src/features/system-settings/operations/ai-operations-settings-section.tsx \
             src/features/system-settings/operations/index.tsx \
             src/features/system-settings/operations/section-registry.tsx \
+            src/features/system-settings/content/announcements-section.tsx \
+            src/features/usage-logs/components/columns/common-logs-columns.tsx \
+            src/features/usage-logs/components/dialogs/details-dialog.tsx \
+            src/features/usage-logs/types.ts \
             src/features/users/api.ts \
             src/features/users/components/users-columns.tsx \
             src/features/users/components/users-table.tsx \
@@ -160,8 +172,10 @@ jobs:
             src/features/wallet/index.tsx \
             src/hooks/use-sidebar-config.ts \
             src/hooks/use-sidebar-data.ts \
+            src/hooks/use-notifications.ts \
             src/routes/_authenticated/creation \
             src/routes/status \
+            src/routes/__root.tsx \
             src/routeTree.gen.ts
           ../node_modules/.bin/oxfmt -c .oxfmtrc.json --check \
             src/features/docs \
@@ -205,7 +219,12 @@ jobs:
             src/routes/_authenticated/referrals \
             src/context/theme-provider.tsx \
             src/features/channel-health \
+            src/features/announcements \
             src/features/channels/api.ts \
+            src/features/channels/components/dialogs/channel-test-dialog.tsx \
+            src/features/channels/lib/channel-actions.ts \
+            src/features/channels/types.ts \
+            src/features/dashboard/types.ts \
             src/features/channels/index.tsx \
             src/features/creation \
             src/features/system-settings/api.ts \
@@ -218,6 +237,10 @@ jobs:
             src/features/system-settings/operations/ai-operations-settings-section.tsx \
             src/features/system-settings/operations/index.tsx \
             src/features/system-settings/operations/section-registry.tsx \
+            src/features/system-settings/content/announcements-section.tsx \
+            src/features/usage-logs/components/columns/common-logs-columns.tsx \
+            src/features/usage-logs/components/dialogs/details-dialog.tsx \
+            src/features/usage-logs/types.ts \
             src/features/users/api.ts \
             src/features/users/components/users-columns.tsx \
             src/features/users/components/users-table.tsx \
@@ -225,11 +248,14 @@ jobs:
             src/features/wallet/index.tsx \
             src/hooks/use-sidebar-config.ts \
             src/hooks/use-sidebar-data.ts \
+            src/hooks/use-notifications.ts \
             src/routes/_authenticated/creation \
             src/routes/status \
+            src/routes/__root.tsx \
             src/routeTree.gen.ts \
             src/styles/index.css \
             src/i18n/locales/*.json
+          bun test src/features/announcements/lib/popup.test.ts
           bun run build
 
   build:

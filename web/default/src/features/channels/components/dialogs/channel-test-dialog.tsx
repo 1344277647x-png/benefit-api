@@ -333,6 +333,19 @@ function ChannelTestDialogContent({
     typeof toast.loading
   > | null>(null)
   const [endpointType, setEndpointType] = useState('auto')
+  const channelGroups = useMemo(() => {
+    const seen = new Set<string>()
+    const groups = currentRow.group
+      .split(',')
+      .map((group) => group.trim())
+      .filter((group) => {
+        if (!group || seen.has(group)) return false
+        seen.add(group)
+        return true
+      })
+    return groups.length > 0 ? groups : ['default']
+  }, [currentRow.group])
+  const [testGroup, setTestGroup] = useState(channelGroups[0])
   const [isStreamTest, setIsStreamTest] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({})
@@ -400,6 +413,7 @@ function ChannelTestDialogContent({
   const resetState = useCallback(() => {
     batchStopRequestedRef.current = true
     setEndpointType('auto')
+    setTestGroup(channelGroups[0])
     setIsStreamTest(false)
     setSearchTerm('')
     setTestResults({})
@@ -413,7 +427,7 @@ function ChannelTestDialogContent({
     setIsDeletingFailed(false)
     setFailureDetails(null)
     setPagination({ pageIndex: 0, pageSize: 30 })
-  }, [])
+  }, [channelGroups])
 
   const streamDisabled = STREAM_INCOMPATIBLE_ENDPOINTS.has(endpointType)
   const effectiveStreamTest = !streamDisabled && isStreamTest
@@ -562,6 +576,7 @@ function ChannelTestDialogContent({
             testModel: model,
             endpointType: endpointType === 'auto' ? undefined : endpointType,
             stream: effectiveStreamTest || undefined,
+            group: testGroup,
             silent,
           },
           (success, responseTime, error, errorCode) => {
@@ -603,6 +618,7 @@ function ChannelTestDialogContent({
       markModelTesting,
       refreshChannelLists,
       t,
+      testGroup,
       updateTestResult,
     ]
   )
@@ -993,7 +1009,42 @@ function ChannelTestDialogContent({
         }
       >
         <div className='max-h-[78vh] space-y-4 overflow-y-auto py-4 pr-1'>
-          <div className='grid gap-4 md:grid-cols-2'>
+          <div className='grid gap-4 md:grid-cols-3'>
+            <div className='grid gap-2'>
+              <Label htmlFor='test-group'>{t('Test Group')}</Label>
+              {channelGroups.length > 1 ? (
+                <Select
+                  items={channelGroups.map((group) => ({
+                    value: group,
+                    label: group,
+                  }))}
+                  value={testGroup}
+                  onValueChange={(value) => value && setTestGroup(value)}
+                >
+                  <SelectTrigger id='test-group' className='w-full min-w-0'>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false}>
+                    <SelectGroup>
+                      {channelGroups.map((group) => (
+                        <SelectItem key={group} value={group}>
+                          {group}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className='bg-muted/40 flex min-h-9 items-center rounded-md border px-3 text-sm'>
+                  {testGroup}
+                </div>
+              )}
+              <p className='text-muted-foreground text-xs'>
+                {t(
+                  'Usage and pricing for this test use the selected channel group.'
+                )}
+              </p>
+            </div>
             <div className='grid gap-2'>
               <Label htmlFor='endpoint-type'>{t('Endpoint Type')}</Label>
               <Select
