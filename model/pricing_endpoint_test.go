@@ -78,6 +78,33 @@ func pricingEndpointTypesFromPricing(pricings []Pricing) map[string][]constant.E
 	return byModel
 }
 
+func TestModelSupportEndpointTypesForGroupsFiltersCapabilities(t *testing.T) {
+	resetPricingEndpointTestTables(t)
+
+	insertPricingEndpointChannel(t, 501, constant.ChannelTypeOpenAI, dto.ChannelOtherSettings{})
+	insertPricingEndpointChannel(t, 502, constant.ChannelTypeGemini, dto.ChannelOtherSettings{})
+	insertPricingEndpointAbility(t, 501, "shared-model")
+	insertPricingEndpointAbility(t, 502, "shared-model")
+	require.NoError(t, DB.Model(&Ability{}).
+		Where("channel_id = ?", 501).
+		Update("group", "default").Error)
+	require.NoError(t, DB.Model(&Ability{}).
+		Where("channel_id = ?", 502).
+		Update("group", "vip").Error)
+
+	InitChannelCache()
+	byChat, err := GetModelSupportEndpointTypesForGroups([]string{"default"})
+	require.NoError(t, err)
+	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAI}, byChat["shared-model"])
+
+	byGemini, err := GetModelSupportEndpointTypesForGroups([]string{"vip"})
+	require.NoError(t, err)
+	assert.Equal(t, []constant.EndpointType{
+		constant.EndpointTypeGemini,
+		constant.EndpointTypeOpenAI,
+	}, byGemini["shared-model"])
+}
+
 func TestPricingAdvancedCustomUsesConfiguredEndpointTypes(t *testing.T) {
 	resetPricingEndpointTestTables(t)
 
@@ -188,6 +215,19 @@ func TestPricingNativeChannelEndpointTypesUnchanged(t *testing.T) {
 	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAI}, byModel["gpt-4o"])
 	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeGemini, constant.EndpointTypeOpenAI}, byModel["gemini-2.5-flash"])
 	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeAnthropic, constant.EndpointTypeOpenAI}, byModel["claude-3-5-sonnet"])
+}
+
+func TestPricingCodexChannelExposesResponsesOnly(t *testing.T) {
+	resetPricingEndpointTestTables(t)
+
+	insertPricingEndpointChannel(t, 204, constant.ChannelTypeCodex, dto.ChannelOtherSettings{})
+	insertPricingEndpointAbility(t, 204, "gpt-5.4")
+
+	byModel := pricingEndpointTypesByModel(t)
+
+	assert.Equal(t, []constant.EndpointType{
+		constant.EndpointTypeOpenAIResponse,
+	}, byModel["gpt-5.4"])
 }
 
 func TestInitChannelCacheInvalidatesPricingCache(t *testing.T) {

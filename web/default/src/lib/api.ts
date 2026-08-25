@@ -106,12 +106,21 @@ export const api = axios.create({
 const inFlightGet = new Map<string, Promise<unknown>>()
 const originalGet = api.get.bind(api)
 
+function getRequestIdentity(): string {
+  const user = useAuthStore.getState().auth.user
+  if (user) return `${user.id}:${user.group ?? ''}`
+
+  return getUserId() ?? 'anonymous'
+}
+
 api.get = ((url: string, config: ApiRequestConfig = {}) => {
   const disableDuplicate = config.disableDuplicate
   if (disableDuplicate) return originalGet(url, config)
 
   const params = config.params ? JSON.stringify(config.params) : '{}'
-  const key = `${url}?${params}`
+  // A request from one account must not satisfy a concurrent request from
+  // another account while login/logout is changing the session.
+  const key = `${getRequestIdentity()}|${url}?${params}`
 
   // Return existing in-flight request if available
   const existingRequest = inFlightGet.get(key)

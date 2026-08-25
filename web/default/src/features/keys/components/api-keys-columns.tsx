@@ -35,6 +35,7 @@ import { getUserGroups } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
 import { formatQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { API_KEY_STATUSES } from '../constants'
 import type { ApiKey } from '../types'
@@ -53,9 +54,11 @@ function getQuotaProgressColor(percentage: number): string {
 }
 
 function useGroupRatios(): Record<string, number> {
+  const user = useAuthStore((state) => state.auth.user)
   const { data } = useQuery({
-    queryKey: ['user-groups'],
+    queryKey: ['user-groups', user?.id ?? null, user?.group ?? ''],
     queryFn: getUserGroups,
+    enabled: Boolean(user?.id),
     staleTime: 0,
     select: (res) => {
       if (!res.success || !res.data) return {}

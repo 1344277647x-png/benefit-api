@@ -21,6 +21,8 @@ import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { useAuthStore } from '@/stores/auth-store'
+
 import { getUserGroups, getUserModels } from '../api'
 import {
   getGroupFallback,
@@ -49,6 +51,8 @@ export function usePlaygroundOptions({
   updateConfig,
 }: UsePlaygroundOptionsParams) {
   const { t } = useTranslation()
+  const user = useAuthStore((state) => state.auth.user)
+  const userScope = [user?.id ?? null, user?.group ?? ''] as const
 
   const {
     data: modelsData,
@@ -56,9 +60,9 @@ export function usePlaygroundOptions({
     isError: isModelsError,
     isLoading: isLoadingModels,
   } = useQuery({
-    queryKey: ['playground-models', currentGroup],
+    queryKey: ['playground-models', ...userScope, currentGroup],
     queryFn: () => getUserModels(currentGroup),
-    enabled: currentGroup !== '',
+    enabled: Boolean(user?.id) && currentGroup !== '',
   })
 
   const {
@@ -66,8 +70,9 @@ export function usePlaygroundOptions({
     error: groupsError,
     isError: isGroupsError,
   } = useQuery({
-    queryKey: ['playground-groups'],
+    queryKey: ['playground-groups', ...userScope],
     queryFn: getUserGroups,
+    enabled: Boolean(user?.id),
   })
 
   useEffect(() => {

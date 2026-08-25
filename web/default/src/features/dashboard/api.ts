@@ -20,6 +20,8 @@ import { api } from '@/lib/api'
 
 import type {
   FlowQuotaDataItem,
+  OperationsReport,
+  OperationsReportGroupBy,
   QuotaDataItem,
   UptimeGroupResult,
 } from './types'
@@ -89,5 +91,53 @@ export async function getUptimeStatus() {
   const res = await api.get<{ success: boolean; data: UptimeGroupResult[] }>(
     '/api/uptime/status'
   )
+  return res.data
+}
+
+export async function getOperationsReport(params: {
+  start_timestamp: number
+  end_timestamp: number
+  group_by: OperationsReportGroupBy
+  model_name?: string
+  username?: string
+  group?: string
+  channel_id?: number
+}) {
+  const res = await api.get<{
+    success: boolean
+    message?: string
+    data?: OperationsReport
+  }>('/api/log/operations-report', { params })
+  if (!res.data.success || !res.data.data) {
+    throw new Error(res.data.message || 'Unable to load operations report')
+  }
+  return res.data
+}
+
+export async function downloadOperationsReport(params: {
+  start_timestamp: number
+  end_timestamp: number
+  group_by: OperationsReportGroupBy
+  model_name?: string
+  username?: string
+  group?: string
+  channel_id?: number
+}) {
+  const res = await api.get<Blob>('/api/log/operations-report', {
+    params: { ...params, format: 'csv' },
+    responseType: 'blob',
+  })
+  const contentType = String(res.headers['content-type'] ?? '').toLowerCase()
+  if (!contentType.includes('text/csv')) {
+    const payload = await res.data.text()
+    let message: string | undefined
+    try {
+      const parsed = JSON.parse(payload) as { message?: string }
+      message = parsed.message
+    } catch {
+      // Keep malformed error bodies from leaking parser details into the UI.
+    }
+    throw new Error(message || 'Unable to load operations report')
+  }
   return res.data
 }

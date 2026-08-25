@@ -100,6 +100,26 @@ const queryClient = new QueryClient({
   }),
 })
 
+// User-scoped queries must never survive an account or user-group change.
+// Clearing the cache also removes sensitive dashboard data (groups, pricing,
+// jobs and usage) before the next account can render it.
+function getAuthQueryScope(): string {
+  const user = useAuthStore.getState().auth.user
+  return user ? `${user.id}:${user.group ?? ''}` : 'anonymous'
+}
+
+let authQueryScope = getAuthQueryScope()
+useAuthStore.subscribe(() => {
+  const nextScope = getAuthQueryScope()
+  if (nextScope === authQueryScope) return
+
+  authQueryScope = nextScope
+  // cancelQueries marks active requests as cancelled synchronously; clearing
+  // immediately prevents a stale result from being rendered during a switch.
+  void queryClient.cancelQueries()
+  queryClient.clear()
+})
+
 // Create a new router instance
 const router = createRouter({
   routeTree,
@@ -116,7 +136,10 @@ declare module '@tanstack/react-router' {
 }
 
 // Render the app
-const rootElement = document.getElementById('root')!
+const rootElement = document.querySelector('#root')
+if (!rootElement) {
+  throw new Error('Root element not found')
+}
 // Set document.title and favicon from cached status, then refresh from network
 ;(function initSystemBranding() {
   try {

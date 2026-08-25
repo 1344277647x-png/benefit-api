@@ -272,9 +272,37 @@ func ListModels(c *gin.Context, modelType int) {
 	if len(ownerGroups) > 0 {
 		ownerByModel = getPreferredModelOwners(userModelNames, ownerGroups)
 	}
+	groupEndpointTypes, endpointTypesErr := model.GetModelSupportEndpointTypesForGroups(ownerGroups)
+	if endpointTypesErr != nil {
+		// Never fall back to the global pricing cache here: doing so could expose
+		// endpoint capabilities from another group while the scoped query is
+		// unavailable. Returning an empty model list preserves the API shape and
+		// fails closed until the capability data can be read again.
+		common.SysLog(fmt.Sprintf("GetModelSupportEndpointTypesForGroups error: %v", endpointTypesErr))
+		userOpenAiModels := make([]dto.OpenAIModels, 0)
+		switch modelType {
+		case constant.ChannelTypeAnthropic:
+			c.JSON(http.StatusOK, gin.H{
+				"data":     []dto.AnthropicModel{},
+				"first_id": "",
+				"has_more": false,
+				"last_id":  "",
+			})
+		case constant.ChannelTypeGemini:
+			c.JSON(http.StatusOK, gin.H{"models": []dto.GeminiModel{}, "nextPageToken": nil})
+		default:
+			c.JSON(http.StatusOK, gin.H{"success": true, "data": userOpenAiModels, "object": "list"})
+		}
+		return
+	}
 	userOpenAiModels := make([]dto.OpenAIModels, 0, len(userModelNames))
 	for _, modelName := range userModelNames {
-		userOpenAiModels = append(userOpenAiModels, buildOpenAIModel(modelName, ownerByModel))
+		if len(groupEndpointTypes[modelName]) == 0 {
+			continue
+		}
+		modelInfo := buildOpenAIModel(modelName, ownerByModel)
+		modelInfo.SupportedEndpointTypes = groupEndpointTypes[modelName]
+		userOpenAiModels = append(userOpenAiModels, modelInfo)
 	}
 
 	switch modelType {
@@ -288,12 +316,17 @@ func ListModels(c *gin.Context, modelType int) {
 				Type:        "model",
 			}
 		}
-		c.JSON(200, gin.H{
+		response := gin.H{
 			"data":     useranthropicModels,
-			"first_id": useranthropicModels[0].ID,
+			"first_id": "",
 			"has_more": false,
-			"last_id":  useranthropicModels[len(useranthropicModels)-1].ID,
-		})
+			"last_id":  "",
+		}
+		if len(useranthropicModels) > 0 {
+			response["first_id"] = useranthropicModels[0].ID
+			response["last_id"] = useranthropicModels[len(useranthropicModels)-1].ID
+		}
+		c.JSON(200, response)
 	case constant.ChannelTypeGemini:
 		userGeminiModels := make([]dto.GeminiModel, len(userOpenAiModels))
 		for i, model := range userOpenAiModels {

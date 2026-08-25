@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { BookOpenText } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -25,6 +26,12 @@ import { RichContent } from '@/components/rich-content'
 import { Skeleton } from '@/components/ui/skeleton'
 
 import { getDocsContent } from './api'
+import { ConfigurationPanel } from './configuration-panel'
+
+function getApiBaseUrl(): string {
+  if (typeof window === 'undefined') return '/v1'
+  return `${window.location.origin}/v1`
+}
 
 function DocsEmptyState({ loadFailed = false }: { loadFailed?: boolean }) {
   const { t } = useTranslation()
@@ -80,23 +87,38 @@ export function Docs() {
   if (isError || !data?.success || !content) {
     return (
       <PublicLayout>
-        <DocsEmptyState loadFailed={isError || data?.success === false} />
+        <div className='mx-auto max-w-4xl py-8 md:py-12'>
+          <ConfigurationPanel apiBaseUrl={getApiBaseUrl()} />
+          <DocsEmptyState loadFailed={isError || data?.success === false} />
+        </div>
       </PublicLayout>
     )
   }
 
   return (
     <PublicLayout>
-      <article className='mx-auto max-w-4xl py-8 md:py-12'>
-        <header className='mb-8 border-b pb-5'>
-          <h1 className='text-3xl font-semibold'>{t('Docs')}</h1>
-        </header>
-        <RichContent
-          mode='markdown'
-          content={content}
-          className='prose-neutral dark:prose-invert max-w-none'
-        />
-      </article>
+      <div className='mx-auto max-w-4xl py-8 md:py-12'>
+        <article>
+          <header className='mb-8 border-b pb-5'>
+            <h1 className='text-3xl font-semibold'>{t('Docs')}</h1>
+          </header>
+          <ConfigurationPanel apiBaseUrl={getApiBaseUrl()} />
+          <RichContent
+            mode='markdown'
+            content={content}
+            className='prose-neutral dark:prose-invert max-w-none'
+          />
+        </article>
+        <p className='text-muted-foreground mt-8 text-center text-xs'>
+          {t('Need pricing or model compatibility details?')}{' '}
+          <Link
+            to='/pricing'
+            className='text-foreground underline underline-offset-4'
+          >
+            {t('Open Model Square')}
+          </Link>
+        </p>
+      </div>
     </PublicLayout>
   )
 }

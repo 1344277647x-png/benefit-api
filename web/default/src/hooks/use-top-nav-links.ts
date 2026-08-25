@@ -100,6 +100,11 @@ export function useTopNavLinks(): TopNavLink[] {
     }
   }
 
+  // Skills
+  if (modules?.skills !== false) {
+    links.push({ title: t('Skills'), href: '/skills' })
+  }
+
   // About
   if (modules?.about !== false) {
     links.push({ title: t('About'), href: '/about' })

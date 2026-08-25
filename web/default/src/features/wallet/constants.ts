@@ -66,3 +66,37 @@ export const DEFAULT_DISCOUNT_RATE = 1.0
  * Default minimum topup amount
  */
 export const DEFAULT_MIN_TOPUP = 1
+
+/**
+ * Short-lived marker used to explain a hosted payment return while the
+ * asynchronous provider callback is still being processed. It contains no
+ * order number, amount, or credential. Local storage is intentional here:
+ * Stripe and Waffo may return in a new browser tab.
+ */
+export const PENDING_PAYMENT_STORAGE_KEY = 'benefit_api_pending_payment'
+
+export type PaymentReturnStatus = 'success' | 'pending' | 'fail' | 'cancelled'
+
+export function rememberPendingPayment(): void {
+  if (typeof window === 'undefined') return
+
+  try {
+    window.localStorage.setItem(PENDING_PAYMENT_STORAGE_KEY, String(Date.now()))
+  } catch {
+    // Storage is optional; payment navigation must continue regardless.
+  }
+}
+
+export function consumePendingPayment(): boolean {
+  if (typeof window === 'undefined') return false
+
+  try {
+    const value = Number(
+      window.localStorage.getItem(PENDING_PAYMENT_STORAGE_KEY)
+    )
+    window.localStorage.removeItem(PENDING_PAYMENT_STORAGE_KEY)
+    return Number.isFinite(value) && Date.now() - value <= 30 * 60 * 1000
+  } catch {
+    return false
+  }
+}

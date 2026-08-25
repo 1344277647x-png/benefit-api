@@ -37,6 +37,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { ModelsChartPreferences } from './components/models/models-chart-preferences'
 import { ModelsFilter } from './components/models/models-filter-dialog'
+import { OperationsReport } from './components/operations/operations-report'
 import { OverviewDashboard } from './components/overview/overview-dashboard'
 import { DEFAULT_TIME_GRANULARITY } from './constants'
 import {
@@ -189,6 +190,9 @@ const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
   users: {
     titleKey: 'User Analytics',
   },
+  operations: {
+    titleKey: 'Operations report',
+  },
 }
 
 export function Dashboard() {
@@ -248,7 +252,10 @@ export function Dashboard() {
   const visibleSections = useMemo(
     () =>
       DASHBOARD_SECTION_IDS.filter(
-        (section) => section !== 'overview' && (section !== 'users' || isAdmin)
+        (section) =>
+          section !== 'overview' &&
+          (section !== 'users' || isAdmin) &&
+          (section !== 'operations' || isAdmin)
       ),
     [isAdmin]
   )
@@ -408,6 +415,11 @@ export function Dashboard() {
                   sensitiveVisible={flowSensitiveVisible}
                 />
               </Suspense>
+            </FadeIn>
+          )}
+          {activeSection === 'operations' && isAdmin && (
+            <FadeIn>
+              <OperationsReport />
             </FadeIn>
           )}
         </div>

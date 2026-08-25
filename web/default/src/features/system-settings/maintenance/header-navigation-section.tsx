@@ -55,6 +55,7 @@ const headerNavSchema = z.object({
   pricingRequireAuth: z.boolean(),
   rankingsEnabled: z.boolean(),
   rankingsRequireAuth: z.boolean(),
+  skills: z.boolean(),
   docs: z.boolean(),
   about: z.boolean(),
 })
@@ -89,6 +90,10 @@ const toFormValues = (config: HeaderNavModulesConfig): HeaderNavFormValues => ({
     config.rankings?.requireAuth === undefined
       ? HEADER_NAV_DEFAULT.rankings.requireAuth
       : Boolean(config.rankings.requireAuth),
+  skills:
+    config.skills === undefined
+      ? HEADER_NAV_DEFAULT.skills
+      : Boolean(config.skills),
   docs:
     config.docs === undefined ? HEADER_NAV_DEFAULT.docs : Boolean(config.docs),
   about:
@@ -120,6 +125,7 @@ export function HeaderNavigationSection({
       home: values.home,
       console: values.console,
       docs: values.docs,
+      skills: values.skills,
       about: values.about,
       pricing: {
         ...(config.pricing ?? HEADER_NAV_DEFAULT.pricing),
@@ -169,6 +175,11 @@ export function HeaderNavigationSection({
       description: t('Documentation or external knowledge base.'),
     },
     {
+      key: 'skills',
+      title: t('Skills'),
+      description: t('Client setup guides and reusable API skills.'),
+    },
+    {
       key: 'about',
       title: t('About'),
       description: t('Static page describing the platform.'),
@@ -199,8 +210,10 @@ export function HeaderNavigationSection({
       enabledKey: 'rankingsEnabled',
       requireAuthKey: 'rankingsRequireAuth',
       requireAuthDependsOn: 'rankingsEnabled',
-      title: t('Rankings'),
-      description: t('Public rankings page based on live usage data.'),
+      title: t('Usage rankings'),
+      description: t(
+        'Enable or disable the public usage leaderboard and its API endpoint.'
+      ),
       requireAuthTitle: t('Require login to view rankings'),
       requireAuthDescription: t(
         'Visitors must authenticate before accessing the rankings page.'

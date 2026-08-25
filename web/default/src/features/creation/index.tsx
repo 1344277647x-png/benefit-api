@@ -63,6 +63,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api'
 import { formatTimestamp } from '@/lib/format'
+import { useAuthStore } from '@/stores/auth-store'
 
 import {
   createImage,
@@ -257,15 +258,19 @@ function StorageMeter({
 export function Creation() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const user = useAuthStore((state) => state.auth.user)
+  const userScope = [user?.id ?? null, user?.group ?? ''] as const
   const modelsQuery = useQuery({
-    queryKey: ['creation-models'],
+    queryKey: ['creation-models', ...userScope],
     queryFn: getCreationModels,
+    enabled: Boolean(user?.id),
     staleTime: 60_000,
     retry: false,
   })
   const jobsQuery = useQuery({
-    queryKey: ['creation-jobs'],
+    queryKey: ['creation-jobs', ...userScope],
     queryFn: () => getCreationJobs(1, 24),
+    enabled: Boolean(user?.id),
     staleTime: 5_000,
     refetchInterval: 10_000,
     retry: false,
@@ -304,9 +309,9 @@ export function Creation() {
     : (selectedGroups[0] ?? '')
   const capabilities = selectedModel?.capabilities
   const activeJobQuery = useQuery({
-    queryKey: ['creation-job', activeJobId],
+    queryKey: ['creation-job', activeJobId, ...userScope],
     queryFn: () => getCreationJob(activeJobId as string),
-    enabled: Boolean(activeJobId),
+    enabled: Boolean(user?.id && activeJobId),
     refetchInterval: (query) => {
       const status = query.state.data?.data?.status
       return status && !RUNNING_STATUSES.has(status) ? false : 2500

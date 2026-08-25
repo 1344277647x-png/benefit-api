@@ -29,6 +29,7 @@ import {
   requestStripePayment,
   isApiSuccess,
 } from '../api'
+import { rememberPendingPayment } from '../constants'
 import {
   isStripePayment,
   isAlipayNativePayment,
@@ -53,14 +54,17 @@ export function usePayment() {
 
         const isStripe = isStripePayment(paymentType)
         const isPancake = isWaffoPancakePayment(paymentType)
-        const response = isStripe
-          ? await calculateStripeAmount({ amount: topupAmount })
-          : isPancake
-            ? await calculateWaffoPancakeAmount({ amount: topupAmount })
-            : await calculateAmount({ amount: topupAmount })
+        let response
+        if (isStripe) {
+          response = await calculateStripeAmount({ amount: topupAmount })
+        } else if (isPancake) {
+          response = await calculateWaffoPancakeAmount({ amount: topupAmount })
+        } else {
+          response = await calculateAmount({ amount: topupAmount })
+        }
 
         if (isApiSuccess(response) && response.data) {
-          const calculatedAmount = parseFloat(response.data)
+          const calculatedAmount = Number.parseFloat(response.data)
           setAmount(calculatedAmount)
           return calculatedAmount
         }
@@ -68,7 +72,7 @@ export function usePayment() {
         // Don't show error for calculation, just set to 0
         setAmount(0)
         return 0
-      } catch (_error) {
+      } catch {
         setAmount(0)
         return 0
       } finally {
@@ -92,14 +96,17 @@ export function usePayment() {
           amount,
           payment_method: paymentType,
         }
-        const response = isStripe
-          ? await requestStripePayment({
-              amount,
-              payment_method: 'stripe',
-            })
-          : isAlipayNative
-            ? await requestAlipayPayment(paymentRequest)
-            : await requestPayment(paymentRequest)
+        let response
+        if (isStripe) {
+          response = await requestStripePayment({
+            amount,
+            payment_method: 'stripe',
+          })
+        } else if (isAlipayNative) {
+          response = await requestAlipayPayment(paymentRequest)
+        } else {
+          response = await requestPayment(paymentRequest)
+        }
 
         if (!isApiSuccess(response)) {
           toast.error(response.message || i18next.t('Payment request failed'))
@@ -107,9 +114,11 @@ export function usePayment() {
         }
 
         // Handle Stripe payment
-        const stripePayLink = (response.data as { pay_link?: string } | undefined)
-          ?.pay_link
+        const stripePayLink = (
+          response.data as { pay_link?: string } | undefined
+        )?.pay_link
         if (isStripe && stripePayLink) {
+          rememberPendingPayment()
           window.open(stripePayLink, '_blank')
           toast.success(i18next.t('Redirecting to payment page...'))
           return true
@@ -118,6 +127,7 @@ export function usePayment() {
         const alipayPayUrl = (response.data as { pay_url?: string } | undefined)
           ?.pay_url
         if (isAlipayNative && alipayPayUrl) {
+          rememberPendingPayment()
           window.location.assign(alipayPayUrl)
           return true
         }
@@ -126,6 +136,7 @@ export function usePayment() {
         if (!isStripe && !isAlipayNative && response.data) {
           const url = (response as unknown as { url?: string }).url
           if (url) {
+            rememberPendingPayment()
             submitPaymentForm(url, response.data)
             toast.success(i18next.t('Redirecting to payment page...'))
             return true
@@ -133,7 +144,7 @@ export function usePayment() {
         }
 
         return false
-      } catch (_error) {
+      } catch {
         toast.error(i18next.t('Payment request failed'))
         return false
       } finally {

@@ -66,6 +66,7 @@ import { useStatus } from '@/hooks/use-status'
 import { getUserModels, getUserGroups } from '@/lib/api'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { createApiKey, updateApiKey, getApiKey } from '../api'
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
@@ -95,6 +96,7 @@ export function ApiKeysMutateDrawer({
   currentRow,
 }: ApiKeyMutateDrawerProps) {
   const { t } = useTranslation()
+  const user = useAuthStore((state) => state.auth.user)
   const isUpdate = !!currentRow
   const { triggerRefresh } = useApiKeys()
   const { status } = useStatus()
@@ -104,17 +106,17 @@ export function ApiKeysMutateDrawer({
 
   // Fetch models
   const { data: modelsData } = useQuery({
-    queryKey: ['user-models'],
+    queryKey: ['user-models', user?.id ?? null, user?.group ?? ''],
     queryFn: getUserModels,
-    enabled: open,
+    enabled: open && Boolean(user?.id),
     staleTime: 0,
   })
 
   // Fetch groups
   const { data: groupsData } = useQuery({
-    queryKey: ['user-groups'],
+    queryKey: ['user-groups', user?.id ?? null, user?.group ?? ''],
     queryFn: getUserGroups,
-    enabled: open,
+    enabled: open && Boolean(user?.id),
     staleTime: 0,
   })
 

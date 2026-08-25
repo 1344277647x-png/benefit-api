@@ -32,6 +32,11 @@ func GetEndpointTypesByChannelType(channelType int, modelName string) []constant
 		endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAI}
 	case constant.ChannelTypeXai:
 		endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAI, constant.EndpointTypeOpenAIResponse}
+	case constant.ChannelTypeCodex:
+		// The Codex adaptor rejects Chat Completions and only handles the
+		// Responses protocol. Exposing this capability keeps model catalogs and
+		// client templates aligned with the actual relay contract.
+		endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAIResponse}
 	case constant.ChannelTypeSora:
 		endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAIVideo}
 	default:

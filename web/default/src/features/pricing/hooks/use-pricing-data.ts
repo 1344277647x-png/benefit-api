@@ -20,14 +20,16 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 
 import { useStatus } from '@/hooks/use-status'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { getPricing } from '../api'
 
 export function usePricingData() {
   const { status } = useStatus()
+  const user = useAuthStore((state) => state.auth.user)
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['pricing'],
+    queryKey: ['pricing', user?.id ?? null, user?.group ?? ''],
     queryFn: getPricing,
     staleTime: 5 * 60 * 1000,
   })

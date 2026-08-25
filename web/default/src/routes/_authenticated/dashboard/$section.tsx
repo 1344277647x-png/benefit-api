@@ -23,9 +23,21 @@ import {
   DASHBOARD_SECTION_IDS,
   DASHBOARD_DEFAULT_SECTION,
 } from '@/features/dashboard/section-registry'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
+
+const ADMIN_ONLY_DASHBOARD_SECTIONS = new Set(['users', 'operations'])
 
 export const Route = createFileRoute('/_authenticated/dashboard/$section')({
   beforeLoad: ({ params }) => {
+    const { auth } = useAuthStore.getState()
+    if (
+      ADMIN_ONLY_DASHBOARD_SECTIONS.has(params.section) &&
+      (!auth.user || auth.user.role < ROLE.ADMIN)
+    ) {
+      throw redirect({ to: '/403' })
+    }
+
     const validSections = DASHBOARD_SECTION_IDS as unknown as string[]
     if (!validSections.includes(params.section)) {
       throw redirect({

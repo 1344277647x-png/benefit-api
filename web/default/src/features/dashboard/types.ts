@@ -274,3 +274,74 @@ export interface FAQItem {
   question: string
   answer: string
 }
+
+// ============================================================================
+// Administrator operations report types
+// ============================================================================
+
+export type OperationsReportGroupBy =
+  | 'day'
+  | 'model'
+  | 'channel'
+  | 'user'
+  | 'group'
+
+export interface OperationsReportRow {
+  key: string
+  label: string
+  model_name?: string
+  channel_id?: number
+  channel_name?: string
+  user_id?: number
+  username?: string
+  group?: string
+  request_count: number
+  success_count: number
+  error_count: number
+  error_rate: number
+  token_count: number
+  revenue_quota: number
+  refund_quota: number
+  revenue_usd: number
+  refund_usd: number
+  cost_usd: number
+  cost_status: 'known' | 'partial' | 'unknown'
+  unknown_cost_requests: number
+  profit_usd?: number
+}
+
+export type OperationsReportSummary = Omit<OperationsReportRow, 'key' | 'label'>
+
+export interface OperationsReportChannel {
+  channel_id: number
+  name: string
+  balance: number
+  used_quota: number
+  status: number
+  response_time: number
+}
+
+export interface OperationsReportHealth {
+  channel_id: number
+  model: string
+  status: 'normal' | 'delayed' | 'unavailable' | 'unknown'
+  request_count: number
+  success_rate: number
+  average_latency_ms: number
+  average_ttft_ms: number
+}
+
+export interface OperationsReport {
+  generated_at: number
+  start_timestamp: number
+  end_timestamp: number
+  group_by: OperationsReportGroupBy
+  truncated: boolean
+  quota_per_unit: number
+  summary: OperationsReportSummary
+  rows: OperationsReportRow[]
+  channel_ids: number[]
+  channels: OperationsReportChannel[]
+  health: OperationsReportHealth[]
+  warnings?: string[]
+}

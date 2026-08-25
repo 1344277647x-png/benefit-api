@@ -169,6 +169,50 @@ func GetEnabledModelEndpointGroups() (map[string]map[constant.EndpointType][]str
 	return result, nil
 }
 
+// GetModelSupportEndpointTypesForGroups returns only the endpoint capabilities
+// backed by enabled channels in the supplied groups. The global pricing cache
+// intentionally remains available for admin/public catalog views, but API key
+// model discovery must not advertise a capability owned by another group.
+func GetModelSupportEndpointTypesForGroups(groups []string) (map[string][]constant.EndpointType, error) {
+	endpointGroups, err := GetEnabledModelEndpointGroups()
+	if err != nil {
+		return nil, err
+	}
+
+	groupSet := make(map[string]struct{}, len(groups))
+	for _, group := range groups {
+		group = strings.TrimSpace(group)
+		if group == "" {
+			continue
+		}
+		groupSet[group] = struct{}{}
+	}
+
+	result := make(map[string][]constant.EndpointType)
+	for modelName, endpointGroups := range endpointGroups {
+		for endpointType, endpointGroupNames := range endpointGroups {
+			usable := false
+			for _, group := range endpointGroupNames {
+				if _, ok := groupSet[group]; ok && ratio_setting.ContainsGroupRatio(group) {
+					usable = true
+					break
+				}
+			}
+			if !usable {
+				continue
+			}
+			result[modelName] = append(result[modelName], endpointType)
+		}
+	}
+
+	for modelName := range result {
+		sort.Slice(result[modelName], func(i, j int) bool {
+			return result[modelName][i] < result[modelName][j]
+		})
+	}
+	return result, nil
+}
+
 // loadPricingAdvancedCustomConfigs runs inside updatePricing while
 // updatePricingLock is held, and nests channelSyncLock.RLock. This defines the
 // global lock order updatePricingLock -> channelSyncLock: any code path holding

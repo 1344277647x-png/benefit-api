@@ -25,6 +25,7 @@ import {
   ChevronDown,
   ChevronUp,
   Circle,
+  Clipboard,
   Copy,
   CreditCard,
   FileText,
@@ -52,6 +53,11 @@ import type { ApiKey } from '@/features/keys/types'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { getUserModels } from '@/lib/api'
 import { MOTION_TRANSITION } from '@/lib/motion'
+import {
+  markOnboardingFlag,
+  ONBOARDING_STORAGE_KEYS,
+  readOnboardingFlag,
+} from '@/lib/onboarding'
 import { ROLE } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
@@ -88,6 +94,7 @@ type DashboardActionPath =
   | '/channels'
   | '/usage-logs'
   | '/pricing'
+  | '/docs'
 
 interface StartStep {
   title: string
@@ -248,6 +255,13 @@ function StartStepItem(props: {
 
       <Link
         to={props.step.to}
+        onClick={() => {
+          if (props.step.to === '/usage-logs') {
+            // The destination is the usage-log page, so count the step when
+            // the user intentionally opens it from the guide.
+            markOnboardingFlag(ONBOARDING_STORAGE_KEYS.logsViewed)
+          }
+        }}
         className='bg-background/70 hover:bg-muted/50 focus-visible:ring-ring flex min-w-0 flex-1 items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left shadow-xs transition-colors outline-none focus-visible:ring-2'
       >
         <span className='flex min-w-0 items-start gap-2.5'>
@@ -473,9 +487,20 @@ export function OverviewDashboard() {
   const remainQuota = Number(user?.quota ?? 0)
   const usedQuota = Number(user?.used_quota ?? 0)
   const isAdmin = Boolean(user?.role && user.role >= ROLE.ADMIN)
+  const apiUrlCopied = readOnboardingFlag(ONBOARDING_STORAGE_KEYS.apiUrlCopied)
+  const modelSelected = readOnboardingFlag(
+    ONBOARDING_STORAGE_KEYS.modelSelected
+  )
+  const logsViewed = readOnboardingFlag(ONBOARDING_STORAGE_KEYS.logsViewed)
 
   const apiKeysQuery = useQuery({
-    queryKey: ['dashboard', 'overview', 'api-keys'],
+    queryKey: [
+      'dashboard',
+      'overview',
+      'api-keys',
+      user?.id ?? null,
+      user?.group ?? '',
+    ],
     queryFn: async () => {
       const result = await getApiKeys({ p: 1, size: 10 })
       return result.success ? (result.data?.items ?? []) : []
@@ -484,7 +509,13 @@ export function OverviewDashboard() {
   })
 
   const modelsQuery = useQuery({
-    queryKey: ['dashboard', 'overview', 'user-models'],
+    queryKey: [
+      'dashboard',
+      'overview',
+      'user-models',
+      user?.id ?? null,
+      user?.group ?? '',
+    ],
     queryFn: async () => {
       const result = await getUserModels()
       return result.success ? (result.data ?? []) : []
@@ -507,6 +538,20 @@ export function OverviewDashboard() {
         completed: Boolean(preferredKey),
       },
       {
+        title: t('Copy API URL'),
+        description: t('Use the current endpoint in your client configuration'),
+        to: '/docs',
+        icon: Clipboard,
+        completed: apiUrlCopied,
+      },
+      {
+        title: t('Choose a model'),
+        description: t('Review compatibility and pricing before you call'),
+        to: '/pricing',
+        icon: BookOpen,
+        completed: modelSelected,
+      },
+      {
         title: t('Add credits'),
         description: t('Keep enough balance before production traffic'),
         to: '/wallet',
@@ -520,8 +565,24 @@ export function OverviewDashboard() {
         icon: TerminalSquare,
         completed: requestCount > 0,
       },
+      {
+        title: t('Review usage logs'),
+        description: t('Confirm response, latency, and billing details'),
+        to: '/usage-logs',
+        icon: FileText,
+        completed: logsViewed,
+      },
     ],
-    [preferredKey, remainQuota, requestCount, t, usedQuota]
+    [
+      apiUrlCopied,
+      logsViewed,
+      modelSelected,
+      preferredKey,
+      remainQuota,
+      requestCount,
+      t,
+      usedQuota,
+    ]
   )
 
   const quickActions = useMemo<QuickAction[]>(
@@ -550,6 +611,12 @@ export function OverviewDashboard() {
         description: t('Review model rates before scaling traffic'),
         to: '/pricing',
         icon: BookOpen,
+      },
+      {
+        title: t('Docs'),
+        description: t('Copy a ready-to-use client configuration'),
+        to: '/docs',
+        icon: Clipboard,
       },
     ],
     [t]

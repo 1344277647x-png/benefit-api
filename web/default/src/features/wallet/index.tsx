@@ -30,10 +30,15 @@ import { getSelf } from '@/lib/api'
 import { BillingHistoryDialog } from './components/dialogs/billing-history-dialog'
 import { CreemConfirmDialog } from './components/dialogs/creem-confirm-dialog'
 import { PaymentConfirmDialog } from './components/dialogs/payment-confirm-dialog'
+import { PaymentStatusBanner } from './components/payment-status-banner'
 import { RechargeFormCard } from './components/recharge-form-card'
 import { SubscriptionPlansCard } from './components/subscription-plans-card'
 import { WalletStatsCard } from './components/wallet-stats-card'
-import { DEFAULT_DISCOUNT_RATE } from './constants'
+import {
+  consumePendingPayment,
+  DEFAULT_DISCOUNT_RATE,
+  type PaymentReturnStatus,
+} from './constants'
 import {
   useTopupInfo,
   usePayment,
@@ -56,6 +61,7 @@ import type {
 
 interface WalletProps {
   initialShowHistory?: boolean
+  initialPaymentStatus?: PaymentReturnStatus
 }
 
 export function Wallet(props: WalletProps) {
@@ -74,6 +80,8 @@ export function Wallet(props: WalletProps) {
   const [selectedCreemProduct, setSelectedCreemProduct] =
     useState<CreemProduct | null>(null)
   const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(true)
+  const [paymentStatus, setPaymentStatus] =
+    useState<PaymentReturnStatus | null>(props.initialPaymentStatus ?? null)
 
   const { status } = useStatus()
   const { currency } = useSystemConfig()
@@ -119,11 +127,28 @@ export function Wallet(props: WalletProps) {
   }, [fetchUser])
 
   useEffect(() => {
+    const returnedFromHostedPayment = consumePendingPayment()
+    if (props.initialPaymentStatus) {
+      setPaymentStatus(props.initialPaymentStatus)
+    } else if (returnedFromHostedPayment) {
+      setPaymentStatus('pending')
+    }
+
     if (props.initialShowHistory) {
       setBillingDialogOpen(true)
       window.history.replaceState({}, '', window.location.pathname)
+    } else if (props.initialPaymentStatus) {
+      // Keep the result banner visible first; the user can open the full
+      // history from the banner without losing the outcome message.
+      window.history.replaceState({}, '', window.location.pathname)
     }
-  }, [props.initialShowHistory])
+  }, [props.initialPaymentStatus, props.initialShowHistory])
+
+  useEffect(() => {
+    if (props.initialPaymentStatus === 'success') {
+      fetchUser()
+    }
+  }, [fetchUser, props.initialPaymentStatus])
 
   // Initialize topup amount when topup info is loaded
   useEffect(() => {
@@ -249,6 +274,13 @@ export function Wallet(props: WalletProps) {
         <SectionPageLayout.Title>{t('Wallet')}</SectionPageLayout.Title>
         <SectionPageLayout.Content>
           <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
+            {paymentStatus && (
+              <PaymentStatusBanner
+                status={paymentStatus}
+                onDismiss={() => setPaymentStatus(null)}
+                onOpenHistory={() => setBillingDialogOpen(true)}
+              />
+            )}
             <WalletStatsCard user={user} loading={userLoading} />
 
             <div

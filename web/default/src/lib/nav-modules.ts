@@ -20,13 +20,14 @@ import { getStatus } from '@/lib/api'
 
 export type ModuleAccess = { enabled: boolean; requireAuth: boolean }
 
-export type HeaderNavModule = 'rankings' | 'pricing'
+export type HeaderNavModule = 'rankings' | 'pricing' | 'skills'
 
 export type HeaderNavModules = {
   home: boolean
   console: boolean
   pricing: ModuleAccess
   rankings: ModuleAccess
+  skills: boolean
   docs: boolean
   about: boolean
   [key: string]: boolean | ModuleAccess
@@ -37,6 +38,7 @@ const DEFAULT_HEADER_NAV_MODULES: HeaderNavModules = {
   console: true,
   pricing: { enabled: true, requireAuth: false },
   rankings: { enabled: true, requireAuth: false },
+  skills: true,
   docs: true,
   about: true,
 }
@@ -44,6 +46,10 @@ const DEFAULT_HEADER_NAV_MODULES: HeaderNavModules = {
 const DEFAULTS: Record<HeaderNavModule, ModuleAccess> = {
   pricing: DEFAULT_HEADER_NAV_MODULES.pricing,
   rankings: DEFAULT_HEADER_NAV_MODULES.rankings,
+  skills: {
+    enabled: DEFAULT_HEADER_NAV_MODULES.skills,
+    requireAuth: false,
+  },
 }
 
 function cloneHeaderNavDefaults(): HeaderNavModules {
@@ -166,7 +172,12 @@ export function getModuleAccessFromStatus(
   status: Record<string, unknown> | null,
   module: HeaderNavModule
 ): ModuleAccess {
-  return parseHeaderNavModulesFromStatus(status)[module] ?? DEFAULTS[module]
+  const value = parseHeaderNavModulesFromStatus(status)[module]
+  if (value && typeof value === 'object') return value
+  return {
+    enabled: value !== false,
+    requireAuth: DEFAULTS[module].requireAuth,
+  }
 }
 
 export function getModuleAccess(module: HeaderNavModule): ModuleAccess {
