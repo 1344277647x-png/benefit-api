@@ -97,11 +97,11 @@ jobs:
         working-directory: web
         run: bun install --frozen-lockfile
 
-      - name: Check default frontend
-        working-directory: web/default
+      - name: Check frontend
+        working-directory: web
         run: |
           bun run typecheck
-          ../node_modules/.bin/oxlint -c .oxlintrc.json \
+          node_modules/.bin/oxlint -c .oxlintrc.json \
             src/features/docs \
             src/routes/docs \
             src/features/system-settings/site/documentation-section.tsx \
@@ -177,7 +177,7 @@ jobs:
             src/routes/status \
             src/routes/__root.tsx \
             src/routeTree.gen.ts
-          ../node_modules/.bin/oxfmt -c .oxfmtrc.json --check \
+          node_modules/.bin/oxfmt -c .oxfmtrc.json --check \
             src/features/docs \
             src/routes/docs \
             src/features/system-settings/site/documentation-section.tsx \
