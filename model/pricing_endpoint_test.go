@@ -6,7 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -217,7 +217,7 @@ func TestPricingNativeChannelEndpointTypesUnchanged(t *testing.T) {
 	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeAnthropic, constant.EndpointTypeOpenAI}, byModel["claude-3-5-sonnet"])
 }
 
-func TestPricingCodexChannelExposesResponsesOnly(t *testing.T) {
+func TestPricingCodexChannelExposesRc25ResponsesEndpoints(t *testing.T) {
 	resetPricingEndpointTestTables(t)
 
 	insertPricingEndpointChannel(t, 204, constant.ChannelTypeCodex, dto.ChannelOtherSettings{})
@@ -227,6 +227,8 @@ func TestPricingCodexChannelExposesResponsesOnly(t *testing.T) {
 
 	assert.Equal(t, []constant.EndpointType{
 		constant.EndpointTypeOpenAIResponse,
+		constant.EndpointTypeOpenAIResponseCompact,
+		constant.EndpointTypeOpenAIAlphaSearch,
 	}, byModel["gpt-5.4"])
 }
 

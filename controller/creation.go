@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -312,7 +313,11 @@ func GetCreationAssetContent(c *gin.Context) {
 	if !requireCreationEnabled(c) {
 		return
 	}
-	asset, err := model.GetGenerationAssetForUser(c.GetInt("id"), c.Param("id"))
+	userID, ticket, ok := resolveCreationAssetAccess(c)
+	if !ok {
+		return
+	}
+	asset, err := model.GetGenerationAssetForUser(userID, c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "generation asset not found"})
 		return
@@ -334,9 +339,18 @@ func GetCreationAssetContent(c *gin.Context) {
 	}
 	c.Header("Content-Type", asset.MimeType)
 	c.Header("X-Content-Type-Options", "nosniff")
-	c.Header("Cache-Control", "private, max-age=3600")
+	c.Header("Referrer-Policy", "no-referrer")
+	cacheControl := "private, max-age=3600"
+	if ticket != nil {
+		cacheControl = "private, no-store"
+	}
+	c.Header("Cache-Control", cacheControl)
 	disposition := "inline"
-	if c.Query("download") == "1" {
+	if ticket != nil {
+		if ticket.Download {
+			disposition = "attachment"
+		}
+	} else if c.Query("download") == "1" {
 		disposition = "attachment"
 	}
 	extension := extensionForMimeType(asset.MimeType)
@@ -344,6 +358,50 @@ func GetCreationAssetContent(c *gin.Context) {
 		"filename": asset.PublicID + extension,
 	}))
 	http.ServeContent(c.Writer, c.Request, asset.PublicID+extension, info.ModTime(), file)
+}
+
+func GetCreationAssetAccess(c *gin.Context) {
+	if !requireCreationEnabled(c) {
+		return
+	}
+	asset, err := model.GetGenerationAssetForUser(c.GetInt("id"), c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "generation asset not found"})
+		return
+	}
+	if asset.ExpiresAt > 0 && asset.ExpiresAt <= time.Now().Unix() {
+		c.JSON(http.StatusGone, gin.H{"success": false, "message": "generation asset has expired"})
+		return
+	}
+	download := c.Query("download") == "1"
+	ticket, expiresAt, err := service.IssueCreationAssetAccessToken(c.GetInt("id"), asset.PublicID, download)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	contentPath := "/api/creation/assets/" + url.PathEscape(asset.PublicID) + "/content"
+	contentURL := contentPath + "?ticket=" + url.QueryEscape(ticket)
+	c.Header("Cache-Control", "private, no-store")
+	c.Header("Referrer-Policy", "no-referrer")
+	common.ApiSuccess(c, gin.H{"url": contentURL, "expires_at": expiresAt})
+}
+
+func resolveCreationAssetAccess(c *gin.Context) (int, *service.CreationAssetAccess, bool) {
+	userID := c.GetInt("id")
+	rawTicket := strings.TrimSpace(c.Query("ticket"))
+	if rawTicket == "" {
+		if userID <= 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "authentication required"})
+			return 0, nil, false
+		}
+		return userID, nil, true
+	}
+	ticket, err := service.ParseCreationAssetAccessToken(rawTicket)
+	if err != nil || ticket.AssetID != c.Param("id") || (userID > 0 && userID != ticket.UserID) {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "invalid generation asset access ticket"})
+		return 0, nil, false
+	}
+	return ticket.UserID, &ticket, true
 }
 
 func DeleteCreationJob(c *gin.Context) {

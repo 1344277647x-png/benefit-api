@@ -28,14 +28,14 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/gin-contrib/sessions"
-	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+const emailBindTestAccessToken = "email-bind-route-test-token"
 
 func setupEmailBindTestRouter(t *testing.T) (*gin.Engine, *gorm.DB, *model.User) {
 	t.Helper()
@@ -54,26 +54,17 @@ func setupEmailBindTestRouter(t *testing.T) (*gin.Engine, *gorm.DB, *model.User)
 	model.LOG_DB = db
 
 	user := &model.User{
-		Username: "email-bind-user",
-		Password: "unused-test-password",
-		Role:     common.RoleCommonUser,
-		Status:   common.UserStatusEnabled,
-		Group:    "default",
+		Username:    "email-bind-user",
+		Password:    "unused-test-password",
+		Role:        common.RoleCommonUser,
+		Status:      common.UserStatusEnabled,
+		Group:       "default",
+		AuthVersion: 1,
 	}
+	user.SetAccessToken(emailBindTestAccessToken)
 	require.NoError(t, db.Create(user).Error)
 
 	engine := gin.New()
-	engine.Use(sessions.Sessions("session", cookie.NewStore([]byte("email-bind-route-test"))))
-	engine.GET("/test/login", func(c *gin.Context) {
-		session := sessions.Default(c)
-		session.Set("username", user.Username)
-		session.Set("role", user.Role)
-		session.Set("id", user.Id)
-		session.Set("status", user.Status)
-		session.Set("group", user.Group)
-		require.NoError(t, session.Save())
-		c.Status(http.StatusNoContent)
-	})
 	SetApiRouter(engine)
 
 	t.Cleanup(func() {
@@ -108,10 +99,6 @@ func TestEmailBindRouteRequiresAuthentication(t *testing.T) {
 func TestEmailBindRouteBindsEmailForAuthenticatedUser(t *testing.T) {
 	engine, db, user := setupEmailBindTestRouter(t)
 
-	loginRecorder := httptest.NewRecorder()
-	engine.ServeHTTP(loginRecorder, httptest.NewRequest(http.MethodGet, "/test/login", nil))
-	require.Equal(t, http.StatusNoContent, loginRecorder.Code)
-
 	const email = "Bound.User@Example.com"
 	const normalizedEmail = "bound.user@example.com"
 	const code = "ABC123"
@@ -127,10 +114,7 @@ func TestEmailBindRouteBindsEmailForAuthenticatedUser(t *testing.T) {
 		bytes.NewBufferString(`{"email":"Bound.User@Example.com","code":"ABC123"}`),
 	)
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("New-Api-User", fmt.Sprintf("%d", user.Id))
-	for _, sessionCookie := range loginRecorder.Result().Cookies() {
-		request.AddCookie(sessionCookie)
-	}
+	request.Header.Set("Authorization", "Bearer "+emailBindTestAccessToken)
 
 	engine.ServeHTTP(recorder, request)
 
