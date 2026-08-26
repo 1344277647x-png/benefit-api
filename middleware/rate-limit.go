@@ -178,6 +178,15 @@ func CriticalRateLimit() func(c *gin.Context) {
 	return defNext
 }
 
+// LoginRateLimit isolates sign-in attempts from the shared critical-operation
+// limiter, so unrelated sensitive actions cannot lock a user out of login.
+func LoginRateLimit() func(c *gin.Context) {
+	if common.LoginRateLimitEnable {
+		return rateLimitFactory(common.LoginRateLimitNum, common.LoginRateLimitDuration, "LG")
+	}
+	return defNext
+}
+
 func UserCriticalRateLimit(scope string) func(c *gin.Context) {
 	if !common.CriticalRateLimitEnable {
 		return defNext

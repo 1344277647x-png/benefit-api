@@ -158,6 +158,19 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		}
 	})
 
+	if info.ReceivedResponseCount == 0 && info.StreamStatus != nil {
+		reason := info.StreamStatus.EndReason
+		if reason == relaycommon.StreamEndReasonTimeout ||
+			reason == relaycommon.StreamEndReasonScannerErr ||
+			reason == relaycommon.StreamEndReasonEOF {
+			return nil, types.NewErrorWithStatusCode(
+				fmt.Errorf("upstream Responses stream ended before the first event: %s", reason),
+				types.ErrorCodeReadResponseBodyFailed,
+				http.StatusBadGateway,
+			)
+		}
+	}
+
 	if usage.CompletionTokens == 0 {
 		// 计算输出文本的 token 数量
 		tempStr := responseTextBuilder.String()

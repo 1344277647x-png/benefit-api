@@ -89,6 +89,30 @@ export function getApiErrorMessage(
   return fallback
 }
 
+export function getRetryAfterSeconds(error: unknown): number | null {
+  if (!isApiErrorRecord(error)) return null
+
+  const response = isApiErrorRecord(error.response) ? error.response : null
+  if (response?.status !== 429 || !isApiErrorRecord(response.headers)) {
+    return null
+  }
+
+  const retryAfter =
+    response.headers['retry-after'] ?? response.headers['Retry-After']
+  let parsed = Number.NaN
+  if (typeof retryAfter === 'number') {
+    parsed = retryAfter
+  } else if (
+    typeof retryAfter === 'string' &&
+    /^\d+$/.test(retryAfter.trim())
+  ) {
+    parsed = Number.parseInt(retryAfter, 10)
+  }
+
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) return null
+  return parsed
+}
+
 export const api = axios.create({
   baseURL: '',
   withCredentials: true,
@@ -178,7 +202,18 @@ api.interceptors.response.use(
       }
     } else if (!skipErrorHandler) {
       const messageKey = getServerErrorMessageKey(error)
-      const message = messageKey ? t(messageKey) : getApiErrorMessage(error)
+      const retryAfterSeconds = getRetryAfterSeconds(error)
+      let message = getApiErrorMessage(error)
+      if (messageKey) {
+        message = t(messageKey)
+      } else if (retryAfterSeconds) {
+        message = t(
+          'Too many requests. Please try again in {{seconds}} seconds.',
+          {
+            seconds: retryAfterSeconds,
+          }
+        )
+      }
       toast.error(message)
     }
     throw error

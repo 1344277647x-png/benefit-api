@@ -4851,6 +4851,7 @@
     "Too many files. Some were not added.": "文件过多。部分未添加。",
     "Too many login sessions were created recently. Please wait for the rolling window to pass, then try again.": "近期创建的登录会话过多。请等待滚动时间窗口结束后再试。",
     "Too many requests": "请求过于频繁",
+    "Too many requests. Please try again in {{seconds}} seconds.": "请求过于频繁，请在 {{seconds}} 秒后重试。",
     "Tool / function declarations the model may call": "模型可调用的工具 / 函数声明",
     "Tool identifier": "工具标识",
     "Tool price settings": "工具价格设置",

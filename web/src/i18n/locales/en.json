@@ -4851,6 +4851,7 @@
     "Too many files. Some were not added.": "Too many files. Some were not added.",
     "Too many login sessions were created recently. Please wait for the rolling window to pass, then try again.": "Too many login sessions were created recently. Please wait for the rolling window to pass, then try again.",
     "Too many requests": "Too many requests",
+    "Too many requests. Please try again in {{seconds}} seconds.": "Too many requests. Please try again in {{seconds}} seconds.",
     "Tool / function declarations the model may call": "Tool / function declarations the model may call",
     "Tool identifier": "Tool identifier",
     "Tool price settings": "Tool price settings",
