@@ -94,13 +94,13 @@ func createFirstTopupReferralReward(tx *gorm.DB, topUp *TopUp, creditedQuota int
 		return nil
 	}
 
-	calculatedReward, clamp := common.QuotaFromDecimalChecked(
+	calculatedReward, err := common.WalletQuotaFromDecimalStrict(
 		decimal.NewFromInt(int64(creditedQuota)).
 			Mul(decimal.NewFromInt(int64(rules.RewardRateBasisPoints))).
 			Div(decimal.NewFromInt(10000)),
 	)
-	if clamp != nil {
-		return clamp
+	if err != nil {
+		return err
 	}
 
 	rewardQuota := calculatedReward
@@ -126,7 +126,7 @@ func createFirstTopupReferralReward(tx *gorm.DB, topUp *TopUp, creditedQuota int
 	}
 
 	// Reserve room for every pending reward while the inviter row is locked.
-	// This prevents a later settlement from overflowing the int32 quota fields.
+	// This prevents a later settlement from overflowing the wallet quota fields.
 	var pendingReward int64
 	if err := tx.Model(&ReferralReward{}).
 		Where("inviter_id = ? AND status = ?", invitee.InviterId, ReferralRewardStatusPending).
@@ -136,8 +136,8 @@ func createFirstTopupReferralReward(tx *gorm.DB, topUp *TopUp, creditedQuota int
 	if pendingReward < 0 {
 		return errors.New("invalid pending referral reward total")
 	}
-	availableBalanceRoom := int64(common.MaxQuota) - int64(inviter.AffQuota) - pendingReward
-	availableHistoryRoom := int64(common.MaxQuota) - int64(inviter.AffHistoryQuota) - pendingReward
+	availableBalanceRoom := int64(common.MaxWalletQuota) - int64(inviter.AffQuota) - pendingReward
+	availableHistoryRoom := int64(common.MaxWalletQuota) - int64(inviter.AffHistoryQuota) - pendingReward
 	availableRewardRoom := min(availableBalanceRoom, availableHistoryRoom)
 	if availableRewardRoom < 0 {
 		availableRewardRoom = 0
@@ -147,7 +147,7 @@ func createFirstTopupReferralReward(tx *gorm.DB, topUp *TopUp, creditedQuota int
 	}
 
 	inviteeBonusQuota := rules.InviteeBonusQuota
-	availableInviteeRoom := int64(common.MaxQuota) - int64(invitee.Quota)
+	availableInviteeRoom := int64(common.MaxWalletQuota) - int64(invitee.Quota)
 	if availableInviteeRoom < 0 {
 		availableInviteeRoom = 0
 	}
@@ -219,17 +219,17 @@ func settleMaturedReferralRewards(tx *gorm.DB, inviterId int) error {
 	var total int64
 	ids := make([]int, 0, len(rewards))
 	for _, reward := range rewards {
-		if reward.RewardQuota < 0 || total > int64(common.MaxQuota)-int64(reward.RewardQuota) {
+		if reward.RewardQuota < 0 || total > int64(common.MaxWalletQuota)-int64(reward.RewardQuota) {
 			return errors.New("invalid referral reward total")
 		}
 		total += int64(reward.RewardQuota)
 		ids = append(ids, reward.Id)
 	}
-	if total > int64(common.MaxQuota) {
+	if total > int64(common.MaxWalletQuota) {
 		return errors.New("referral reward total exceeds quota limit")
 	}
 
-	if int64(user.AffQuota)+total > int64(common.MaxQuota) || int64(user.AffHistoryQuota)+total > int64(common.MaxQuota) {
+	if int64(user.AffQuota)+total > int64(common.MaxWalletQuota) || int64(user.AffHistoryQuota)+total > int64(common.MaxWalletQuota) {
 		return errors.New("referral balance exceeds quota limit")
 	}
 	if err := tx.Model(&User{}).Where("id = ?", inviterId).Updates(map[string]any{
@@ -369,7 +369,7 @@ func TransferReferralQuota(userId int, quota int) error {
 		if user.AffQuota < quota {
 			return errors.New("邀请额度不足")
 		}
-		if int64(user.Quota)+int64(quota) > int64(common.MaxQuota) {
+		if int64(user.Quota)+int64(quota) > int64(common.MaxWalletQuota) {
 			return errors.New("用户额度超过系统上限")
 		}
 		return tx.Model(&User{}).Where("id = ?", userId).Updates(map[string]any{

@@ -67,7 +67,7 @@ func validateReferralOption(key string, value string) error {
 			return fmt.Errorf("邀请返利结算延迟不能超过 720 小时")
 		}
 	default:
-		if parsed > common.MaxQuota {
+		if parsed > common.MaxWalletQuota {
 			return fmt.Errorf("邀请返利额度超过系统上限")
 		}
 	}

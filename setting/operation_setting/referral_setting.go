@@ -40,11 +40,11 @@ func GetReferralSetting() *ReferralSetting {
 
 func GetReferralSettingSnapshot() ReferralSetting {
 	setting := referralSetting
-	setting.MinimumTopupQuota = max(setting.MinimumTopupQuota, 0)
+	setting.MinimumTopupQuota = min(max(setting.MinimumTopupQuota, 0), common.MaxWalletQuota)
 	setting.RewardRateBasisPoints = min(max(setting.RewardRateBasisPoints, 0), MaxReferralRewardRateBasisPoints)
-	setting.InviteeBonusQuota = max(setting.InviteeBonusQuota, 0)
-	setting.PerInviteeCapQuota = max(setting.PerInviteeCapQuota, 0)
-	setting.MonthlyCapQuota = max(setting.MonthlyCapQuota, 0)
+	setting.InviteeBonusQuota = min(max(setting.InviteeBonusQuota, 0), common.MaxWalletQuota)
+	setting.PerInviteeCapQuota = min(max(setting.PerInviteeCapQuota, 0), common.MaxWalletQuota)
+	setting.MonthlyCapQuota = min(max(setting.MonthlyCapQuota, 0), common.MaxWalletQuota)
 	setting.SettlementDelayHours = min(max(setting.SettlementDelayHours, 0), MaxReferralSettlementDelayHours)
 	return setting
 }

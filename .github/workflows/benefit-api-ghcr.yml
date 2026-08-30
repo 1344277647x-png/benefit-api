@@ -162,8 +162,10 @@ jobs:
             src/features/system-settings/operations/index.tsx \
             src/features/system-settings/operations/section-registry.tsx \
             src/features/system-settings/content/announcements-section.tsx \
+            src/features/usage-logs/components/common-logs-filter-bar.tsx \
             src/features/usage-logs/components/columns/common-logs-columns.tsx \
             src/features/usage-logs/components/dialogs/details-dialog.tsx \
+            src/features/usage-logs/components/logs-filter-toolbar.tsx \
             src/features/usage-logs/types.ts \
             src/features/users/api.ts \
             src/features/users/components/users-columns.tsx \
@@ -238,8 +240,10 @@ jobs:
             src/features/system-settings/operations/index.tsx \
             src/features/system-settings/operations/section-registry.tsx \
             src/features/system-settings/content/announcements-section.tsx \
+            src/features/usage-logs/components/common-logs-filter-bar.tsx \
             src/features/usage-logs/components/columns/common-logs-columns.tsx \
             src/features/usage-logs/components/dialogs/details-dialog.tsx \
+            src/features/usage-logs/components/logs-filter-toolbar.tsx \
             src/features/usage-logs/types.ts \
             src/features/users/api.ts \
             src/features/users/components/users-columns.tsx \
@@ -279,6 +283,12 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Write immutable application version
+        shell: bash
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          printf 'v1.0.0-rc.26-benefit-%s\n' "$SHORT_SHA" > VERSION
 
       - name: Generate image metadata
         id: meta

@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -40,4 +42,6 @@ func TestValidateReferralOptionRejectsUnsafeValues(t *testing.T) {
 	require.Error(t, validateReferralOption("referral_setting.reward_rate_basis_points", "10001"))
 	require.Error(t, validateReferralOption("referral_setting.settlement_delay_hours", "721"))
 	require.NoError(t, validateReferralOption("referral_setting.reward_rate_basis_points", "300"))
+	require.NoError(t, validateReferralOption("referral_setting.monthly_cap_quota", strconv.Itoa(common.MaxQuota+1)))
+	require.Error(t, validateReferralOption("referral_setting.monthly_cap_quota", strconv.FormatInt(int64(common.MaxWalletQuota)+1, 10)))
 }

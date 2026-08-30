@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func configureReferralTest(t *testing.T, mutate func(*operation_setting.ReferralSetting)) {
@@ -319,8 +320,8 @@ func TestReferralRewardsAreCappedBeforeQuotaFieldsOverflow(t *testing.T) {
 	truncateTables(t)
 	configureReferralTest(t, nil)
 	users := []User{
-		{Id: 901, Username: "referral_inviter", AffCode: "r901", Status: common.UserStatusEnabled, AffHistoryQuota: common.MaxQuota - 20},
-		{Id: 902, Username: "referral_invitee", AffCode: "r902", Status: common.UserStatusEnabled, InviterId: 901, Quota: common.MaxQuota - 1050},
+		{Id: 901, Username: "referral_inviter", AffCode: "r901", Status: common.UserStatusEnabled, AffHistoryQuota: common.MaxWalletQuota - 20},
+		{Id: 902, Username: "referral_invitee", AffCode: "r902", Status: common.UserStatusEnabled, InviterId: 901, Quota: common.MaxWalletQuota - 1050},
 	}
 	require.NoError(t, DB.Create(&users).Error)
 	insertReferralTopUp(t, "referral-overflow-cap", 10)
@@ -329,7 +330,33 @@ func TestReferralRewardsAreCappedBeforeQuotaFieldsOverflow(t *testing.T) {
 	reward := getReferralRewardForTest(t)
 	assert.Equal(t, 20, reward.RewardQuota)
 	assert.Equal(t, 50, reward.InviteeBonusQuota)
-	assert.Equal(t, common.MaxQuota, getUserQuotaForPaymentGuardTest(t, 902))
+	assert.Equal(t, common.MaxWalletQuota, getUserQuotaForPaymentGuardTest(t, 902))
+}
+
+func TestReferralRewardSupportsWalletQuotaAboveSingleRequestLimit(t *testing.T) {
+	truncateTables(t)
+	configureReferralTest(t, func(rules *operation_setting.ReferralSetting) {
+		rules.MinimumTopupQuota = 1
+		rules.RewardRateBasisPoints = 10000
+		rules.PerInviteeCapQuota = common.MaxWalletQuota
+		rules.MonthlyCapQuota = common.MaxWalletQuota
+		rules.InviteeBonusQuota = 0
+	})
+	insertReferralUsers(t)
+	creditedQuota := common.MaxQuota + 1
+	topUp := &TopUp{
+		UserId: 902, Amount: 1, Money: 1, TradeNo: "referral-wallet-range",
+		PaymentMethod: PaymentMethodAlipayNative, PaymentProvider: PaymentProviderAlipay,
+		Status: common.TopUpStatusSuccess, CreateTime: common.GetTimestamp(),
+	}
+	require.NoError(t, topUp.Insert())
+
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		return createFirstTopupReferralReward(tx, topUp, creditedQuota)
+	}))
+	reward := getReferralRewardForTest(t)
+	assert.Equal(t, creditedQuota, reward.CalculatedRewardQuota)
+	assert.Equal(t, creditedQuota, reward.RewardQuota)
 }
 
 func TestReferralQuotaConversionRejectsInvalidAndOverflowingValues(t *testing.T) {
