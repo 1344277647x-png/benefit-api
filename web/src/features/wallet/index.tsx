@@ -33,6 +33,7 @@ import { PaymentConfirmDialog } from './components/dialogs/payment-confirm-dialo
 import { PaymentStatusBanner } from './components/payment-status-banner'
 import { RechargeFormCard } from './components/recharge-form-card'
 import { SubscriptionPlansCard } from './components/subscription-plans-card'
+import { WalletFlowSteps } from './components/wallet-flow-steps'
 import { WalletStatsCard } from './components/wallet-stats-card'
 import {
   consumePendingPayment,
@@ -292,6 +293,11 @@ export function Wallet(props: WalletProps) {
     []
   )
 
+  let walletFlowStep = 0
+  if (topupAmount > 0) walletFlowStep = 1
+  if (selectedPaymentMethod) walletFlowStep = 2
+  if (confirmDialogOpen || paymentStatus) walletFlowStep = 3
+
   return (
     <>
       <SectionPageLayout>
@@ -306,6 +312,7 @@ export function Wallet(props: WalletProps) {
               />
             )}
             <WalletStatsCard user={user} loading={userLoading} />
+            <WalletFlowSteps currentStep={walletFlowStep} />
 
             <div
               className={

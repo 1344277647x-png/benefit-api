@@ -46,6 +46,7 @@ export {
 } from './layout/card-grid'
 export { CardRowContent } from './layout/card-row-content'
 export { tableHasCompactMeta } from './layout/card-cell-utils'
+export { OPERATIONAL_TABLE_CLASSNAMES } from './layout/operational-table-layout'
 export {
   DataTablePage,
   type DataTablePageProps,

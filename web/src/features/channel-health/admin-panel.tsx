@@ -70,7 +70,7 @@ function HealthRow({
   t: (key: string) => string
 }) {
   return (
-    <div className='grid min-w-[700px] grid-cols-[72px_minmax(180px,1fr)_110px_100px_100px_90px] items-center gap-3 border-b px-3 py-2.5 text-sm last:border-b-0'>
+    <div className='grid min-w-[760px] grid-cols-[72px_minmax(210px,1fr)_110px_100px_100px_90px] items-center gap-3 border-b px-3 py-2.5 text-sm last:border-b-0'>
       <span className='text-muted-foreground tabular-nums'>
         #{item.channel_id}
       </span>
@@ -106,6 +106,113 @@ function HealthRow({
         {item.request_count > 0 ? `${item.success_rate.toFixed(1)}%` : '-'}
       </span>
     </div>
+  )
+}
+
+function MobileHealthRow({
+  item,
+  t,
+}: {
+  item: ChannelHealthView
+  t: (key: string) => string
+}) {
+  const error =
+    item.last_error_code ||
+    item.last_error_class ||
+    (item.last_http_status ? `HTTP ${item.last_http_status}` : '')
+
+  return (
+    <article role='listitem' className='space-y-3 px-3 py-3.5'>
+      <div className='flex min-w-0 items-start justify-between gap-3'>
+        <div className='min-w-0'>
+          <p className='truncate text-sm font-medium'>{item.model}</p>
+          <p className='text-muted-foreground mt-0.5 truncate text-[11px]'>
+            #{item.channel_id} / {item.endpoint_type || t('Unknown endpoint')}
+          </p>
+        </div>
+        <Badge
+          variant='outline'
+          className={`shrink-0 ${statusStyles[item.status]}`}
+        >
+          <StatusIcon status={item.status} />
+          {statusLabel(item.status, t)}
+        </Badge>
+      </div>
+      <dl className='grid grid-cols-3 gap-2'>
+        <div className='bg-muted/35 min-w-0 rounded-lg px-2.5 py-2'>
+          <dt className='text-muted-foreground text-[10px]'>{t('Latency')}</dt>
+          <dd className='mt-1 truncate text-xs font-medium tabular-nums'>
+            {item.average_latency_ms ? `${item.average_latency_ms} ms` : '-'}
+          </dd>
+        </div>
+        <div className='bg-muted/35 min-w-0 rounded-lg px-2.5 py-2'>
+          <dt className='text-muted-foreground text-[10px]'>
+            {t('First byte')}
+          </dt>
+          <dd className='mt-1 truncate text-xs font-medium tabular-nums'>
+            {item.average_ttft_ms ? `${item.average_ttft_ms} ms` : '-'}
+          </dd>
+        </div>
+        <div className='bg-muted/35 min-w-0 rounded-lg px-2.5 py-2'>
+          <dt className='text-muted-foreground text-[10px]'>{t('Success')}</dt>
+          <dd className='mt-1 truncate text-xs font-medium tabular-nums'>
+            {item.request_count > 0 ? `${item.success_rate.toFixed(1)}%` : '-'}
+          </dd>
+        </div>
+      </dl>
+      {error && (
+        <p className='text-destructive/80 truncate text-[11px]' title={error}>
+          {error}
+        </p>
+      )}
+    </article>
+  )
+}
+
+export function ChannelHealthItems(props: {
+  items: ChannelHealthView[]
+  t: (key: string) => string
+}) {
+  return (
+    <CardContent className='p-0'>
+      <div
+        role='list'
+        aria-label={props.t('Channel health')}
+        data-channel-health-layout='mobile'
+        className='max-h-[28rem] divide-y overflow-y-auto sm:hidden'
+      >
+        {props.items.map((item) => (
+          <MobileHealthRow
+            key={`${item.channel_id}:${item.model}`}
+            item={item}
+            t={props.t}
+          />
+        ))}
+      </div>
+
+      <div
+        data-channel-health-layout='desktop'
+        className='hidden overflow-x-auto sm:block'
+      >
+        <div className='max-h-96 min-w-[760px] overflow-y-auto'>
+          <div className='bg-muted/95 text-muted-foreground sticky top-0 z-10 grid grid-cols-[72px_minmax(210px,1fr)_110px_100px_100px_90px] gap-3 border-b px-3 py-2 text-[11px] font-medium tracking-wide uppercase backdrop-blur'>
+            <span>{props.t('Channel')}</span>
+            <span>{props.t('Model')}</span>
+            <span>{props.t('Status')}</span>
+            <span>{props.t('Latency')}</span>
+            <span>{props.t('First byte')}</span>
+            <span>{props.t('Success')}</span>
+          </div>
+          {props.items.map((item) => (
+            <HealthRow
+              key={`${item.channel_id}:${item.model}`}
+              item={item}
+              t={props.t}
+            />
+          ))}
+        </div>
+      </div>
+    </CardContent>
   )
 }
 
@@ -160,27 +267,7 @@ export function ChannelHealthPanel() {
       </CardContent>
     )
   } else {
-    content = (
-      <CardContent className='overflow-auto p-0'>
-        <div className='max-h-80 min-w-[700px] overflow-y-auto sm:max-h-96'>
-          <div className='bg-muted/95 text-muted-foreground sticky top-0 z-10 grid grid-cols-[72px_minmax(180px,1fr)_110px_100px_100px_90px] gap-3 border-b px-3 py-2 text-[11px] font-medium tracking-wide uppercase backdrop-blur'>
-            <span>{t('Channel')}</span>
-            <span>{t('Model')}</span>
-            <span>{t('Status')}</span>
-            <span>{t('Latency')}</span>
-            <span>{t('First byte')}</span>
-            <span>{t('Success')}</span>
-          </div>
-          {items.map((item) => (
-            <HealthRow
-              key={`${item.channel_id}:${item.model}`}
-              item={item}
-              t={t}
-            />
-          ))}
-        </div>
-      </CardContent>
-    )
+    content = <ChannelHealthItems items={items} t={t} />
   }
   return (
     <Card className='bg-card/80 mb-4 overflow-hidden shadow-sm'>

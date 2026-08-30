@@ -32,6 +32,7 @@ import {
   DISABLED_ROW_DESKTOP,
   DISABLED_ROW_MOBILE,
   DataTablePage,
+  OPERATIONAL_TABLE_CLASSNAMES,
   useDebouncedColumnFilter,
   useDataTable,
 } from '@/components/data-table'
@@ -425,6 +426,7 @@ export function ChannelsTable() {
       )}
       cardGridClassName='grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-3'
       applyHeaderSize
+      tableClassName={OPERATIONAL_TABLE_CLASSNAMES.channels}
       toolbarProps={{
         searchPlaceholder: t('Filter by name, ID, or key...'),
         searchDebounceMs: 500,

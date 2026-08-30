@@ -97,6 +97,28 @@ function ReferralStat({
   )
 }
 
+function ReferralMetaStat({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: LucideIcon
+  label: string
+  value: string
+}) {
+  return (
+    <div className='flex min-w-0 items-center gap-3 px-3 py-2.5 sm:px-4'>
+      <span className='bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-lg'>
+        <Icon className='size-4' aria-hidden='true' />
+      </span>
+      <div className='min-w-0'>
+        <p className='text-muted-foreground truncate text-xs'>{label}</p>
+        <p className='truncate text-sm font-semibold tabular-nums'>{value}</p>
+      </div>
+    </div>
+  )
+}
+
 function ReferralRulesList({ rules }: { rules: ReferralRules }) {
   const { t } = useTranslation()
   const rate = `${(rules.reward_rate_basis_points / 100).toFixed(2)}%`
@@ -443,6 +465,31 @@ export function Referrals() {
                       {t('Recharge')}
                     </Button>
                   </div>
+                  <div className='mt-3 flex flex-wrap items-center gap-2'>
+                    <CopyButton
+                      value={inviteUrl}
+                      size='lg'
+                      variant='default'
+                      className={`min-h-11 ${!inviteUrl ? 'pointer-events-none opacity-50' : ''}`}
+                      tooltip={t('Copy invite link')}
+                      aria-label={t('Copy invite link')}
+                    >
+                      {t('Copy invite link')}
+                    </CopyButton>
+                    <Button
+                      variant='outline'
+                      className='min-h-11'
+                      onClick={() => setTransferOpen(true)}
+                      disabled={
+                        disabled ||
+                        !overview?.available_quota ||
+                        !overview.compliance_ready
+                      }
+                    >
+                      <WalletCards aria-hidden='true' />
+                      {t('Transfer to Balance')}
+                    </Button>
+                  </div>
                 </div>
                 <div className='border-primary/15 bg-background/70 flex size-28 items-center justify-center rounded-2xl border shadow-sm sm:size-32'>
                   {qrContent}
@@ -450,18 +497,12 @@ export function Referrals() {
               </CardContent>
             </Card>
 
-            <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6'>
+            <div className='grid gap-3 sm:grid-cols-3'>
               <ReferralStat
-                icon={UsersRound}
-                label={t('Invites')}
-                value={String(overview?.invite_count ?? 0)}
-                tone='chart-1'
-              />
-              <ReferralStat
-                icon={CheckCircle2}
-                label={t('Qualified invites')}
-                value={String(overview?.qualified_count ?? 0)}
-                tone='chart-2'
+                icon={WalletCards}
+                label={t('Available rewards')}
+                value={formatQuota(overview?.available_quota ?? 0)}
+                tone='chart-4'
               />
               <ReferralStat
                 icon={Clock3}
@@ -470,22 +511,28 @@ export function Referrals() {
                 tone='chart-3'
               />
               <ReferralStat
-                icon={WalletCards}
-                label={t('Available rewards')}
-                value={formatQuota(overview?.available_quota ?? 0)}
-                tone='chart-4'
-              />
-              <ReferralStat
-                icon={Percent}
-                label={t('Reward rate')}
-                value={rewardRate}
-                tone='chart-2'
-              />
-              <ReferralStat
                 icon={History}
                 label={t('Total earned')}
                 value={formatQuota(overview?.total_reward_quota ?? 0)}
                 tone='chart-3'
+              />
+            </div>
+
+            <div className='bg-card grid overflow-hidden rounded-xl border shadow-xs sm:grid-cols-3 sm:divide-x'>
+              <ReferralMetaStat
+                icon={UsersRound}
+                label={t('Invites')}
+                value={String(overview?.invite_count ?? 0)}
+              />
+              <ReferralMetaStat
+                icon={CheckCircle2}
+                label={t('Qualified invites')}
+                value={String(overview?.qualified_count ?? 0)}
+              />
+              <ReferralMetaStat
+                icon={Percent}
+                label={t('Reward rate')}
+                value={rewardRate}
               />
             </div>
 
@@ -638,8 +685,8 @@ export function Referrals() {
                     {t('Transfer to Balance')}
                   </Button>
                 </CardHeader>
-                <CardContent>
-                  <Table>
+                <CardContent className='overflow-x-auto'>
+                  <Table className='min-w-[560px]'>
                     <TableHeader>
                       <TableRow>
                         <TableHead>{t('Invitee')}</TableHead>
@@ -665,8 +712,8 @@ export function Referrals() {
                     {t('Only masked usernames are shown for privacy.')}
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <Table>
+                <CardContent className='overflow-x-auto'>
+                  <Table className='min-w-[440px]'>
                     <TableHeader>
                       <TableRow>
                         <TableHead>{t('User')}</TableHead>

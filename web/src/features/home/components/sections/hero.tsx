@@ -17,13 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Link } from '@tanstack/react-router'
-import {
-  ArrowRight,
-  BookOpen,
-  CircleDollarSign,
-  Gauge,
-  Layers3,
-} from 'lucide-react'
+import { ArrowRight, BookOpen } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -71,35 +65,9 @@ export function Hero(props: HeroProps) {
     )
   }
 
-  const serviceSignals = [
-    {
-      icon: Layers3,
-      label: t('One endpoint, many models'),
-      className: 'text-teal-600 dark:text-teal-400',
-    },
-    {
-      icon: CircleDollarSign,
-      label: t('Pay only for usage'),
-      className: 'text-amber-600 dark:text-amber-400',
-    },
-    {
-      icon: Gauge,
-      label: t('Usage and balance stay visible'),
-      className: 'text-sky-600 dark:text-sky-400',
-    },
-  ]
-
   return (
-    <section className='benefit-apple-shell benefit-hero-3d relative z-10 overflow-hidden border-b px-5 pt-28 pb-16 sm:pt-32 md:pt-36 md:pb-20'>
+    <section className='benefit-apple-shell benefit-hero-3d relative z-10 overflow-hidden border-b px-5 pt-28 pb-20 sm:pt-32 md:pt-36 md:pb-24'>
       <Hero3DScene />
-      <div
-        aria-hidden='true'
-        className='border-border/25 pointer-events-none absolute inset-y-0 left-1/2 z-[1] w-full max-w-6xl -translate-x-1/2 border-x'
-      />
-      <div
-        aria-hidden='true'
-        className='border-border/20 pointer-events-none absolute inset-x-0 top-[58%] z-[1] border-t'
-      />
       <div className='relative z-[2] mx-auto max-w-6xl'>
         <div className='benefit-hero-3d-content mx-auto flex max-w-4xl flex-col items-center text-center'>
           <div
@@ -162,26 +130,8 @@ export function Hero(props: HeroProps) {
                 >
                   {t('View Pricing')}
                 </Button>
-                {renderDocsButton()}
               </>
             )}
-          </div>
-
-          <div
-            className='landing-animate-fade-up mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-3'
-            style={{ animationDelay: '240ms' }}
-          >
-            {serviceSignals.map((signal) => {
-              const Icon = signal.icon
-              return (
-                <div key={signal.label} className='flex items-center gap-2'>
-                  <Icon className={`size-4 shrink-0 ${signal.className}`} />
-                  <span className='text-muted-foreground text-xs leading-none'>
-                    {signal.label}
-                  </span>
-                </div>
-              )
-            })}
           </div>
         </div>
       </div>

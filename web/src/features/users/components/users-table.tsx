@@ -27,6 +27,7 @@ import {
   DISABLED_ROW_DESKTOP,
   DISABLED_ROW_MOBILE,
   DataTablePage,
+  OPERATIONAL_TABLE_CLASSNAMES,
   useDataTable,
 } from '@/components/data-table'
 import { Input } from '@/components/ui/input'
@@ -240,6 +241,7 @@ export function UsersTable() {
       )}
       skeletonKeyPrefix='users-skeleton'
       applyHeaderSize
+      tableClassName={OPERATIONAL_TABLE_CLASSNAMES.users}
       toolbarProps={{
         searchPlaceholder: t('Filter by username, name or email...'),
         additionalSearch: (
