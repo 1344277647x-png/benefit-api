@@ -125,8 +125,8 @@ func CreationImage(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"success": false, "message": err.Error()})
 		return
 	}
-	if request.ReferenceAssetID != "" {
-		if _, err := model.AttachGenerationInputAsset(job.UserID, request.ReferenceAssetID, job.ID); err != nil {
+	if len(request.ReferenceAssetIDs) > 0 {
+		if _, err := model.AttachGenerationInputAssets(job.UserID, request.ReferenceAssetIDs, job.ID); err != nil {
 			finishCreationJobWithError(job, http.StatusBadRequest, err)
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
 			return
@@ -420,6 +420,31 @@ func finishCreationJobWithError(job *model.GenerationJob, status int, err error)
 		message = message[:1000]
 	}
 	_ = model.FinishGenerationJob(job.ID, model.GenerationJobFailed, creationErrorCode(status), message)
+	cleanupCreationJobInputAssets(job)
+}
+
+func cleanupCreationJobInputAssets(job *model.GenerationJob) {
+	if job == nil || job.UserID <= 0 || job.ID <= 0 {
+		return
+	}
+	assets, err := model.ClaimGenerationInputAssetsForCleanup(job.UserID, job.ID)
+	if err != nil {
+		common.SysError("failed to claim failed creation input assets: " + err.Error())
+		return
+	}
+	for i := range assets {
+		asset := &assets[i]
+		if err := service.RemoveGenerationAssetFile(asset); err != nil {
+			if restoreErr := model.RestoreClaimedGenerationInputAssetForJob(job.UserID, job.ID, asset.ID, asset.ExpiresAt); restoreErr != nil {
+				common.SysError("failed to restore creation input asset after cleanup error: " + restoreErr.Error())
+			}
+			common.SysError("failed to remove failed creation input asset: " + err.Error())
+			continue
+		}
+		if err := model.DeleteClaimedGenerationInputAssetRecordForJob(job.UserID, job.ID, asset.ID); err != nil {
+			common.SysError("failed to delete failed creation input asset record: " + err.Error())
+		}
+	}
 }
 
 func respondWithCreationJob(c *gin.Context, publicID string) {

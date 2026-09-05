@@ -79,7 +79,12 @@ func processGenerationVideoArchive(ctx context.Context, job *model.GenerationJob
 		if message == "" {
 			message = "video generation failed"
 		}
-		return model.FinishGenerationJob(job.ID, model.GenerationJobFailed, "upstream_task_failed", message)
+		finishErr := model.FinishGenerationJob(job.ID, model.GenerationJobFailed, "upstream_task_failed", message)
+		// The input reference is only needed while the upstream task is active.
+		// Once the task has failed, release it so a failed video cannot consume
+		// the user's media quota until retention expiry.
+		cleanupCreationJobInputAssets(job)
+		return finishErr
 	case model.TaskStatusSuccess:
 		assetsByJob, err := model.GetGenerationAssetsByJobIDs([]int64{job.ID})
 		if err != nil {

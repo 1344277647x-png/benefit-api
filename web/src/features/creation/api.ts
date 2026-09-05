@@ -47,6 +47,30 @@ export async function uploadCreationAsset(
   return response.data
 }
 
+export async function uploadCreationAssets(
+  files: File[]
+): Promise<CreationApiResponse<{ assets: GenerationAsset[] }>> {
+  const form = new FormData()
+  for (const file of files) {
+    form.append('files', file, file.name)
+  }
+  const response = await api.post('/api/creation/uploads/batch', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    skipErrorHandler: true,
+  })
+  return response.data
+}
+
+export async function deleteCreationUpload(
+  id: string
+): Promise<CreationApiResponse<{ id: string }>> {
+  const response = await api.delete(
+    `/api/creation/uploads/${encodeURIComponent(id)}`,
+    { skipErrorHandler: true }
+  )
+  return response.data
+}
+
 export async function createImage(
   payload: CreationImagePayload
 ): Promise<CreationApiResponse<GenerationJob>> {

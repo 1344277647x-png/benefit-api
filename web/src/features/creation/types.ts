@@ -26,6 +26,8 @@ export type CreationProtocol =
 
 export interface CreationCapabilities {
   reference_image: boolean
+  max_reference_images?: number
+  max_reference_total_bytes?: number
   max_count?: number
   sizes?: string[]
   aspect_ratios?: string[]
@@ -85,6 +87,8 @@ export interface GenerationJob {
   created_at: number
   updated_at: number
   expires_at: number
+  requested_count?: number
+  result_count?: number
   assets?: GenerationAsset[]
 }
 
@@ -117,6 +121,7 @@ export interface CreationImagePayload {
   quality?: string
   count: number
   reference_asset_id?: string
+  reference_asset_ids?: string[]
 }
 
 export interface CreationVideoPayload {

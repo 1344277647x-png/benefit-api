@@ -55,7 +55,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -68,14 +67,22 @@ import { useAuthStore } from '@/stores/auth-store'
 import {
   createImage,
   createVideo,
+  deleteCreationUpload,
   deleteCreationJob,
   getCreationJob,
   getCreationJobs,
   getCreationModels,
   retryCreationArchive,
   uploadCreationAsset,
+  uploadCreationAssets,
 } from './api'
 import { downloadAuthenticatedAsset, useAuthenticatedAssetUrl } from './media'
+import {
+  appendReferenceImageFiles,
+  MAX_REFERENCE_IMAGE_FILES,
+  MAX_REFERENCE_IMAGE_TOTAL_BYTES,
+} from './reference-image-files'
+import { ReferenceImagePicker } from './reference-images'
 import type {
   CreationCapabilities,
   CreationKind,
@@ -135,11 +142,13 @@ function capabilityLabel(model: CreationModel, t: (key: string) => string) {
 }
 
 function NativeSelect({
+  id,
   value,
   onChange,
   children,
   disabled = false,
 }: {
+  id?: string
   value: string
   onChange: (value: string) => void
   children: React.ReactNode
@@ -147,6 +156,7 @@ function NativeSelect({
 }) {
   return (
     <select
+      id={id}
       value={value}
       disabled={disabled}
       onChange={(event) => onChange(event.target.value)}
@@ -182,52 +192,69 @@ function JobStatusBadge({
 
 function AssetPreview({
   asset,
-  kind,
   t,
+  alt,
+  compact = false,
 }: {
   asset: GenerationAsset
-  kind: CreationKind
   t: (key: string) => string
+  alt: string
+  compact?: boolean
 }) {
   const contentUrl = asset.content_url ?? ''
   if (!contentUrl) return null
   return (
     <AuthenticatedAssetPreview
       asset={asset}
-      kind={kind}
       contentUrl={contentUrl}
       t={t}
+      alt={alt}
+      compact={compact}
     />
   )
 }
 
 function AuthenticatedAssetPreview({
   asset,
-  kind,
   contentUrl,
   t,
+  alt,
+  compact,
 }: {
   asset: GenerationAsset
-  kind: CreationKind
   contentUrl: string
   t: (key: string) => string
+  alt: string
+  compact: boolean
 }) {
   const media = useAuthenticatedAssetUrl(contentUrl)
   if (media.loading) {
     return (
-      <div className='bg-muted/20 text-muted-foreground flex aspect-video items-center justify-center rounded-lg border text-xs'>
+      <div
+        className={
+          compact
+            ? 'bg-muted/20 text-muted-foreground flex size-16 items-center justify-center rounded-lg border text-xs'
+            : 'bg-muted/20 text-muted-foreground flex aspect-video items-center justify-center rounded-lg border text-xs'
+        }
+      >
         {t('Loading...')}
       </div>
     )
   }
   if (media.failed || !media.url) {
     return (
-      <div className='bg-muted/20 text-muted-foreground flex aspect-video items-center justify-center rounded-lg border text-xs'>
+      <div
+        className={
+          compact
+            ? 'bg-muted/20 text-muted-foreground flex size-16 items-center justify-center rounded-lg border text-xs'
+            : 'bg-muted/20 text-muted-foreground flex aspect-video items-center justify-center rounded-lg border text-xs'
+        }
+      >
         {t('Loading failed')}
       </div>
     )
   }
-  if (kind === 'video' || asset.mime_type.startsWith('video/')) {
+  if (asset.mime_type.startsWith('video/')) {
     return (
       <video
         controls
@@ -240,8 +267,12 @@ function AuthenticatedAssetPreview({
   return (
     <img
       src={media.url}
-      alt=''
-      className='bg-muted/30 aspect-square w-full rounded-lg border object-contain'
+      alt={alt}
+      className={
+        compact
+          ? 'bg-muted/30 size-16 rounded-lg border object-cover'
+          : 'bg-muted/30 aspect-square w-full rounded-lg border object-contain'
+      }
       loading='lazy'
     />
   )
@@ -325,11 +356,15 @@ export function Creation() {
   const [quality, setQuality] = useState('')
   const [duration, setDuration] = useState('5')
   const [resolution, setResolution] = useState('720p')
-  const [referenceFile, setReferenceFile] = useState<File | null>(null)
-  const [referencePreview, setReferencePreview] = useState('')
+  const [imageReferenceFiles, setImageReferenceFiles] = useState<File[]>([])
+  const [videoReferenceFile, setVideoReferenceFile] = useState<File | null>(
+    null
+  )
+  const [videoReferencePreview, setVideoReferencePreview] = useState('')
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const imageFileInputRef = useRef<HTMLInputElement>(null)
+  const videoFileInputRef = useRef<HTMLInputElement>(null)
 
   const data = modelsQuery.data?.data
   const models = useMemo(() => data?.models ?? [], [data?.models])
@@ -395,30 +430,89 @@ export function Creation() {
   }, [selectedModel])
 
   useEffect(() => {
-    if (capabilities?.reference_image || !referenceFile) return
-    setReferenceFile(null)
-    if (fileInputRef.current) fileInputRef.current.value = ''
-  }, [capabilities?.reference_image, referenceFile])
+    if (kind !== 'image' || capabilities?.reference_image) return
+    setImageReferenceFiles([])
+    if (imageFileInputRef.current) imageFileInputRef.current.value = ''
+  }, [capabilities?.reference_image, kind])
 
   useEffect(() => {
-    if (!referenceFile) {
-      setReferencePreview('')
+    if (kind !== 'video' || capabilities?.reference_image) return
+    setVideoReferenceFile(null)
+    if (videoFileInputRef.current) videoFileInputRef.current.value = ''
+  }, [capabilities?.reference_image, kind])
+
+  useEffect(() => {
+    if (!videoReferenceFile) {
+      setVideoReferencePreview('')
       return
     }
-    const url = URL.createObjectURL(referenceFile)
-    setReferencePreview(url)
+    const url = URL.createObjectURL(videoReferenceFile)
+    setVideoReferencePreview(url)
     return () => URL.revokeObjectURL(url)
-  }, [referenceFile])
+  }, [videoReferenceFile])
 
-  const setReference = (event: ChangeEvent<HTMLInputElement>) => {
+  const setVideoReference = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null
     if (!file) return
-    if (!file.type.startsWith('image/')) {
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
       toast.error(t('Please select an image file.'))
       event.target.value = ''
       return
     }
-    setReferenceFile(file)
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error(t('Each reference image must be 20 MB or smaller.'))
+      event.target.value = ''
+      return
+    }
+    setVideoReferenceFile(file)
+    event.target.value = ''
+  }
+
+  const maxReferenceImages = Math.min(
+    Math.max(capabilities?.max_reference_images ?? 1, 1),
+    MAX_REFERENCE_IMAGE_FILES
+  )
+  const maxReferenceTotalBytes = Math.min(
+    Math.max(
+      1,
+      capabilities?.max_reference_total_bytes ?? MAX_REFERENCE_IMAGE_TOTAL_BYTES
+    ),
+    MAX_REFERENCE_IMAGE_TOTAL_BYTES
+  )
+
+  const addImageReferences = (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = [...(event.target.files ?? [])]
+    event.target.value = ''
+    if (selectedFiles.length === 0) return
+    setImageReferenceFiles((currentFiles) => {
+      const selection = appendReferenceImageFiles(
+        currentFiles,
+        selectedFiles,
+        maxReferenceImages,
+        maxReferenceTotalBytes
+      )
+      if (selection.unsupportedCount > 0) {
+        toast.error(t('Only PNG, JPEG, and WebP reference images are allowed.'))
+      }
+      if (selection.oversizedCount > 0) {
+        toast.error(t('Each reference image must be 20 MB or smaller.'))
+      }
+      if (selection.totalSizeExceededCount > 0) {
+        toast.error(
+          t('Reference images must be {{size}} MB or smaller in total.', {
+            size: Math.round(maxReferenceTotalBytes / 1024 / 1024),
+          })
+        )
+      }
+      if (selection.overflowCount > 0) {
+        toast.error(
+          t('You can upload up to {{count}} reference images.', {
+            count: maxReferenceImages,
+          })
+        )
+      }
+      return selection.files
+    })
   }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -428,16 +522,36 @@ export function Creation() {
       return
     }
     setIsSubmitting(true)
+    let uploadedReferenceAssetIds: string[] = []
     try {
       let referenceAssetId: string | undefined
-      if (referenceFile && capabilities?.reference_image) {
-        const uploaded = await uploadCreationAsset(referenceFile)
+      let referenceAssetIds: string[] | undefined
+      if (
+        kind === 'image' &&
+        imageReferenceFiles.length > 0 &&
+        capabilities?.reference_image
+      ) {
+        const uploaded = await uploadCreationAssets(imageReferenceFiles)
+        if (!uploaded.success || !uploaded.data?.assets) {
+          throw new Error(
+            uploaded.message || t('Reference image upload failed.')
+          )
+        }
+        referenceAssetIds = uploaded.data.assets.map((asset) => asset.id)
+        uploadedReferenceAssetIds = referenceAssetIds
+      } else if (
+        kind === 'video' &&
+        videoReferenceFile &&
+        capabilities?.reference_image
+      ) {
+        const uploaded = await uploadCreationAsset(videoReferenceFile)
         if (!uploaded.success || !uploaded.data) {
           throw new Error(
             uploaded.message || t('Reference image upload failed.')
           )
         }
         referenceAssetId = uploaded.data.id
+        uploadedReferenceAssetIds = [referenceAssetId]
       }
 
       const created =
@@ -450,11 +564,14 @@ export function Creation() {
               >,
               group: selectedGroup,
               prompt: prompt.trim(),
-              count: Number(count) || 1,
+              count: Math.min(
+                Math.max(Number(count) || 1, 1),
+                capabilities?.max_count ?? 4
+              ),
               size: size || undefined,
               aspect_ratio: aspectRatio || undefined,
               quality: quality || undefined,
-              reference_asset_id: referenceAssetId,
+              reference_asset_ids: referenceAssetIds,
             })
           : await createVideo({
               model: selectedModel.id,
@@ -469,11 +586,28 @@ export function Creation() {
       }
       setActiveJobId(created.data.id)
       setPrompt('')
-      setReferenceFile(null)
-      if (fileInputRef.current) fileInputRef.current.value = ''
+      if (kind === 'image') {
+        setImageReferenceFiles([])
+        if (imageFileInputRef.current) imageFileInputRef.current.value = ''
+      } else {
+        setVideoReferenceFile(null)
+        if (videoFileInputRef.current) videoFileInputRef.current.value = ''
+      }
       await queryClient.invalidateQueries({ queryKey: ['creation-jobs'] })
       toast.success(t('Generation request submitted.'))
     } catch (error) {
+      if (uploadedReferenceAssetIds.length > 0) {
+        await Promise.allSettled(
+          uploadedReferenceAssetIds.map(async (assetID) => {
+            const result = await deleteCreationUpload(assetID)
+            if (!result.success) {
+              throw new Error(
+                result.message || 'reference asset cleanup failed'
+              )
+            }
+          })
+        )
+      }
       toast.error(getApiErrorMessage(error, t('Generation request failed.')))
     } finally {
       setIsSubmitting(false)
@@ -536,7 +670,10 @@ export function Creation() {
   }
 
   const jobs = jobsQuery.data?.data?.items ?? []
-  const hasReference = Boolean(referenceFile && capabilities?.reference_image)
+  const hasReference =
+    kind === 'image'
+      ? imageReferenceFiles.length > 0 && Boolean(capabilities?.reference_image)
+      : Boolean(videoReferenceFile && capabilities?.reference_image)
 
   return (
     <Main className='overflow-auto'>
@@ -618,20 +755,29 @@ export function Creation() {
                       setResolution={setResolution}
                       t={t}
                     />
-                    <ReferencePicker
-                      enabled={Boolean(capabilities?.reference_image)}
-                      file={referenceFile}
-                      preview={referencePreview}
-                      inputRef={fileInputRef}
-                      onChange={setReference}
-                      onClear={() => {
-                        setReferenceFile(null)
-                        if (fileInputRef.current) {
-                          fileInputRef.current.value = ''
+                    {capabilities?.reference_image && (
+                      <ReferenceImagePicker
+                        files={imageReferenceFiles}
+                        maxFiles={maxReferenceImages}
+                        maxTotalBytes={maxReferenceTotalBytes}
+                        inputRef={imageFileInputRef}
+                        onChange={addImageReferences}
+                        onRemove={(index) =>
+                          setImageReferenceFiles((currentFiles) =>
+                            currentFiles.filter(
+                              (_, currentIndex) => currentIndex !== index
+                            )
+                          )
                         }
-                      }}
-                      t={t}
-                    />
+                        onClear={() => {
+                          setImageReferenceFiles([])
+                          if (imageFileInputRef.current) {
+                            imageFileInputRef.current.value = ''
+                          }
+                        }}
+                        t={t}
+                      />
+                    )}
                     <Button
                       type='submit'
                       className='w-full'
@@ -680,14 +826,14 @@ export function Creation() {
                     />
                     <ReferencePicker
                       enabled={Boolean(capabilities?.reference_image)}
-                      file={referenceFile}
-                      preview={referencePreview}
-                      inputRef={fileInputRef}
-                      onChange={setReference}
+                      file={videoReferenceFile}
+                      preview={videoReferencePreview}
+                      inputRef={videoFileInputRef}
+                      onChange={setVideoReference}
                       onClear={() => {
-                        setReferenceFile(null)
-                        if (fileInputRef.current) {
-                          fileInputRef.current.value = ''
+                        setVideoReferenceFile(null)
+                        if (videoFileInputRef.current) {
+                          videoFileInputRef.current.value = ''
                         }
                       }}
                       t={t}
@@ -923,15 +1069,27 @@ function CreationFormFields({
           )}
           <div className='space-y-1.5'>
             <Label htmlFor='image-count'>{t('Images')}</Label>
-            <Input
-              id='image-count'
-              type='number'
-              min={1}
-              max={capabilities?.max_count ?? 4}
-              value={count}
-              onChange={(event) => setCount(event.target.value)}
-            />
+            <NativeSelect id='image-count' value={count} onChange={setCount}>
+              {Array.from(
+                {
+                  length: Math.min(
+                    Math.max(capabilities?.max_count ?? 1, 1),
+                    4
+                  ),
+                },
+                (_, index) => index + 1
+              ).map((value) => (
+                <option key={value} value={value}>
+                  {t('Image count: {{count}}', { count: value })}
+                </option>
+              ))}
+            </NativeSelect>
           </div>
+          <p className='text-muted-foreground text-xs sm:col-span-2'>
+            {t(
+              'Generate multiple images in one request. The final count depends on the model response.'
+            )}
+          </p>
         </div>
       ) : (
         <div className='grid gap-3 sm:grid-cols-2'>
@@ -1061,7 +1219,7 @@ function ReferencePicker({
   )
 }
 
-function ActiveJobCard({
+export function ActiveJobCard({
   job,
   t,
   onRetry,
@@ -1071,6 +1229,18 @@ function ActiveJobCard({
   onRetry: () => void
 }) {
   const isRunning = RUNNING_STATUSES.has(job.status)
+  const inputAssets =
+    job.assets?.filter((asset) => asset.role === 'input') ?? []
+  const outputAssets =
+    job.assets?.filter((asset) => asset.role === 'output') ?? []
+  const resultCount = job.result_count ?? outputAssets.length
+  const requestedCount = job.requested_count ?? resultCount
+  const isPartialImageResult =
+    job.kind === 'image' &&
+    job.status === 'succeeded' &&
+    resultCount > 0 &&
+    requestedCount > resultCount
+
   return (
     <div className='bg-muted/20 space-y-3 rounded-xl border p-3'>
       <div className='flex flex-wrap items-center justify-between gap-2'>
@@ -1080,9 +1250,85 @@ function ActiveJobCard({
         </div>
         <JobStatusBadge status={job.status} t={t} />
       </div>
-      {job.assets?.map((asset) => (
-        <AssetPreview key={asset.id} asset={asset} kind={job.kind} t={t} />
-      ))}
+      {inputAssets.length > 0 && (
+        <section className='space-y-2' aria-label={t('Input reference images')}>
+          <div className='flex items-center justify-between gap-2'>
+            <h3 className='text-sm font-medium'>
+              {t('Input reference images')}
+            </h3>
+            <span className='text-muted-foreground text-xs tabular-nums'>
+              {inputAssets.length}
+            </span>
+          </div>
+          <div className='grid grid-cols-2 gap-2 sm:grid-cols-4'>
+            {inputAssets.map((asset, index) => (
+              <AssetPreview
+                key={asset.id}
+                asset={asset}
+                t={t}
+                alt={t('Reference image {{number}}', { number: index + 1 })}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+      {outputAssets.length > 0 && (
+        <section className='space-y-2' aria-label={t('Generated results')}>
+          <div className='flex flex-wrap items-center justify-between gap-2'>
+            <h3 className='text-sm font-medium'>{t('Generated results')}</h3>
+            <span className='text-muted-foreground text-xs tabular-nums'>
+              {job.kind === 'image'
+                ? t('{{count}} generated images', { count: resultCount })
+                : t('Generated video')}
+            </span>
+          </div>
+          <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
+            {outputAssets.map((asset, index) => (
+              <div
+                key={asset.id}
+                className='bg-background/40 min-w-0 space-y-2 rounded-xl border p-2'
+              >
+                <AssetPreview
+                  asset={asset}
+                  t={t}
+                  alt={
+                    job.kind === 'image'
+                      ? t('Generated image {{number}}', { number: index + 1 })
+                      : t('Generated video')
+                  }
+                />
+                {asset.content_url && (
+                  <Button
+                    type='button'
+                    variant='outline'
+                    className='min-h-11 w-full'
+                    onClick={() => {
+                      void downloadAuthenticatedAsset(
+                        asset.content_url as string,
+                        asset.id
+                      ).catch(() => toast.error(t('Download failed.')))
+                    }}
+                  >
+                    <Download aria-hidden='true' />
+                    {t('Download result {{number}}', { number: index + 1 })}
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {isPartialImageResult && (
+        <Alert className='border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'>
+          <AlertCircle />
+          <AlertDescription>
+            {t(
+              'The model returned {{actual}} of {{requested}} requested images. Billing follows actual upstream usage.',
+              { actual: resultCount, requested: requestedCount }
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
       {isRunning && (
         <div className='text-muted-foreground flex items-center gap-2 text-xs'>
           <Loader2 className='size-3.5 animate-spin' />
@@ -1120,41 +1366,60 @@ function JobCard({
 }) {
   const outputAssets =
     job.assets?.filter((asset) => asset.role === 'output') ?? []
+  const resultCount = job.result_count ?? outputAssets.length
+  const requestedCount = job.requested_count ?? resultCount
+  const previewAsset = outputAssets[0]
+  let previewContent = (
+    <Images className='text-muted-foreground size-6' aria-hidden='true' />
+  )
+  if (job.kind === 'video') {
+    previewContent = (
+      <Video className='text-muted-foreground size-6' aria-hidden='true' />
+    )
+  }
+  if (previewAsset && !previewAsset.mime_type.startsWith('video/')) {
+    previewContent = (
+      <AssetPreview
+        asset={previewAsset}
+        t={t}
+        compact
+        alt={t('Generated image')}
+      />
+    )
+  }
   return (
     <div className='group bg-background/40 hover:bg-muted/30 flex min-w-0 gap-3 rounded-xl border p-2.5 transition'>
       <button
         type='button'
-        className='min-w-0 flex-1 text-left'
+        className='flex min-h-16 min-w-0 flex-1 items-center gap-3 text-left'
         onClick={onSelect}
       >
-        <div className='flex items-center gap-2'>
-          <span className='text-sm font-medium'>
-            {job.kind === 'video' ? t('Video') : t('Image')}
-          </span>
-          <JobStatusBadge status={job.status} t={t} />
+        <div className='bg-muted/30 flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border'>
+          {previewContent}
         </div>
-        <p className='text-muted-foreground mt-1 truncate text-xs'>
-          {job.prompt}
-        </p>
-        <p className='text-muted-foreground mt-1 text-[11px]'>
-          {formatTimestamp(job.created_at)} · {job.model}
-        </p>
+        <div className='min-w-0 flex-1'>
+          <div className='flex flex-wrap items-center gap-2'>
+            <span className='text-sm font-medium'>
+              {job.kind === 'video' ? t('Video') : t('Image')}
+            </span>
+            <JobStatusBadge status={job.status} t={t} />
+            {job.kind === 'image' && requestedCount > 0 && (
+              <span className='text-muted-foreground text-xs tabular-nums'>
+                {resultCount > 0
+                  ? t('{{count}} generated images', { count: resultCount })
+                  : t('{{count}} images requested', { count: requestedCount })}
+              </span>
+            )}
+          </div>
+          <p className='text-muted-foreground mt-1 truncate text-xs'>
+            {job.prompt}
+          </p>
+          <p className='text-muted-foreground mt-1 text-[11px]'>
+            {formatTimestamp(job.created_at)} · {job.model}
+          </p>
+        </div>
       </button>
       <div className='flex shrink-0 items-center gap-1'>
-        {outputAssets[0]?.content_url && (
-          <Button
-            variant='ghost'
-            size='icon-sm'
-            onClick={() => {
-              const asset = outputAssets[0]
-              if (!asset.content_url) return
-              void downloadAuthenticatedAsset(asset.content_url, asset.id)
-            }}
-            aria-label={t('Download')}
-          >
-            <Download />
-          </Button>
-        )}
         {job.status === 'archive_failed' && (
           <Button
             variant='ghost'

@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,6 +30,11 @@ const (
 	GenerationKindVideo = "video"
 )
 
+const (
+	GenerationAssetStatusReady    = "ready"
+	GenerationAssetStatusDeleting = "deleting"
+)
+
 type GenerationJob struct {
 	ID              int64               `json:"-" gorm:"primaryKey"`
 	PublicID        string              `json:"id" gorm:"type:varchar(64);uniqueIndex"`
@@ -49,6 +55,8 @@ type GenerationJob struct {
 	UpdatedAt       int64               `json:"updated_at" gorm:"autoUpdateTime"`
 	ExpiresAt       int64               `json:"expires_at" gorm:"index"`
 	Assets          []GenerationAsset   `json:"assets,omitempty" gorm:"-"`
+	RequestedCount  int                 `json:"requested_count,omitempty" gorm:"-"`
+	ResultCount     int                 `json:"result_count,omitempty" gorm:"-"`
 }
 
 type GenerationAsset struct {
@@ -251,25 +259,219 @@ func InsertGenerationAsset(asset *GenerationAsset, consumeReservation bool) erro
 }
 
 func AttachGenerationInputAsset(userID int, publicID string, jobID int64) (*GenerationAsset, error) {
-	var asset GenerationAsset
+	assets, err := AttachGenerationInputAssets(userID, []string{publicID}, jobID)
+	if err != nil {
+		return nil, err
+	}
+	if len(assets) != 1 {
+		return nil, errors.New("reference asset not found")
+	}
+	return &assets[0], nil
+}
+
+func AttachGenerationInputAssets(userID int, publicIDs []string, jobID int64) ([]GenerationAsset, error) {
+	if userID <= 0 || jobID <= 0 || len(publicIDs) == 0 {
+		return nil, errors.New("invalid reference assets")
+	}
+	uniqueIDs := make([]string, 0, len(publicIDs))
+	seen := make(map[string]struct{}, len(publicIDs))
+	for _, rawID := range publicIDs {
+		publicID := strings.TrimSpace(rawID)
+		if publicID == "" {
+			return nil, errors.New("reference asset ids cannot be empty")
+		}
+		if _, exists := seen[publicID]; exists {
+			continue
+		}
+		seen[publicID] = struct{}{}
+		uniqueIDs = append(uniqueIDs, publicID)
+	}
+	assets := make([]GenerationAsset, 0, len(uniqueIDs))
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		// Lock all rows in a stable database order before reconstructing the
+		// client order. This avoids deadlocks when two concurrent requests share
+		// multiple reference assets but submit them in opposite orders.
+		var found []GenerationAsset
 		if err := lockForUpdate(tx).
-			Where("public_id = ? AND user_id = ? AND role = ? AND status = ?", publicID, userID, "input", "ready").
-			First(&asset).Error; err != nil {
+			Where("public_id IN ? AND user_id = ? AND role = ? AND status = ?", uniqueIDs, userID, "input", GenerationAssetStatusReady).
+			Order("id ASC").Find(&found).Error; err != nil {
 			return err
 		}
-		if asset.JobID != 0 && asset.JobID != jobID {
-			return errors.New("reference asset is already attached to another job")
+		if len(found) != len(uniqueIDs) {
+			return errors.New("reference asset not found")
 		}
-		if asset.JobID == 0 {
-			if err := tx.Model(&asset).Update("job_id", jobID).Error; err != nil {
-				return err
+		byPublicID := make(map[string]GenerationAsset, len(found))
+		for _, asset := range found {
+			byPublicID[asset.PublicID] = asset
+		}
+		for _, publicID := range uniqueIDs {
+			asset, ok := byPublicID[publicID]
+			if !ok {
+				return errors.New("reference asset not found")
 			}
-			asset.JobID = jobID
+			if asset.ExpiresAt > 0 && asset.ExpiresAt <= time.Now().Unix() {
+				return errors.New("reference asset has expired")
+			}
+			if asset.JobID != 0 && asset.JobID != jobID {
+				return errors.New("reference asset is already attached to another job")
+			}
+			assets = append(assets, asset)
+		}
+		idsToAttach := make([]int64, 0, len(assets))
+		for _, asset := range assets {
+			if asset.JobID == 0 {
+				idsToAttach = append(idsToAttach, asset.ID)
+			}
+		}
+		if len(idsToAttach) == 0 {
+			return nil
+		}
+		result := tx.Model(&GenerationAsset{}).
+			Where("id IN ? AND user_id = ? AND role = ? AND status = ? AND job_id = 0", idsToAttach, userID, "input", GenerationAssetStatusReady).
+			Update("job_id", jobID)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != int64(len(idsToAttach)) {
+			return errors.New("reference asset changed while attaching")
+		}
+		for i := range assets {
+			if assets[i].JobID == 0 {
+				assets[i].JobID = jobID
+			}
 		}
 		return nil
 	})
-	return &asset, err
+	return assets, err
+}
+
+func ClaimUnattachedGenerationInputAssets(userID int, publicIDs []string) ([]GenerationAsset, error) {
+	if userID <= 0 || len(publicIDs) == 0 {
+		return []GenerationAsset{}, nil
+	}
+	uniqueIDs := make([]string, 0, len(publicIDs))
+	seen := make(map[string]struct{}, len(publicIDs))
+	for _, publicID := range publicIDs {
+		publicID = strings.TrimSpace(publicID)
+		if publicID == "" {
+			continue
+		}
+		if _, ok := seen[publicID]; ok {
+			continue
+		}
+		seen[publicID] = struct{}{}
+		uniqueIDs = append(uniqueIDs, publicID)
+	}
+	if len(uniqueIDs) == 0 {
+		return []GenerationAsset{}, nil
+	}
+	var assets []GenerationAsset
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockForUpdate(tx).
+			Where("public_id IN ? AND user_id = ? AND role = ? AND status = ? AND job_id = 0", uniqueIDs, userID, "input", GenerationAssetStatusReady).
+			Find(&assets).Error; err != nil {
+			return err
+		}
+		if len(assets) == 0 {
+			return nil
+		}
+		ids := make([]int64, 0, len(assets))
+		for _, asset := range assets {
+			ids = append(ids, asset.ID)
+		}
+		result := tx.Model(&GenerationAsset{}).
+			Where("id IN ? AND user_id = ? AND role = ? AND status = ? AND job_id = 0", ids, userID, "input", GenerationAssetStatusReady).
+			Updates(map[string]any{
+				"status":     GenerationAssetStatusDeleting,
+				"expires_at": time.Now().Unix(),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != int64(len(assets)) {
+			return errors.New("reference asset changed while preparing cleanup")
+		}
+		return nil
+	})
+	return assets, err
+}
+
+// ClaimGenerationInputAssetsForCleanup marks input assets attached to a failed
+// generation job for deletion. The claim is transactional so a concurrent
+// cleanup or job deletion cannot process the same ready asset twice.
+func ClaimGenerationInputAssetsForCleanup(userID int, jobID int64) ([]GenerationAsset, error) {
+	if userID <= 0 || jobID <= 0 {
+		return []GenerationAsset{}, nil
+	}
+	var assets []GenerationAsset
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockForUpdate(tx).
+			Where("job_id = ? AND user_id = ? AND role = ? AND status = ?", jobID, userID, "input", GenerationAssetStatusReady).
+			Find(&assets).Error; err != nil {
+			return err
+		}
+		if len(assets) == 0 {
+			return nil
+		}
+		ids := make([]int64, 0, len(assets))
+		for _, asset := range assets {
+			ids = append(ids, asset.ID)
+		}
+		result := tx.Model(&GenerationAsset{}).
+			Where("id IN ? AND job_id = ? AND user_id = ? AND role = ? AND status = ?", ids, jobID, userID, "input", GenerationAssetStatusReady).
+			Updates(map[string]any{
+				"status":     GenerationAssetStatusDeleting,
+				"expires_at": time.Now().Unix(),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != int64(len(assets)) {
+			return errors.New("reference asset changed while preparing cleanup")
+		}
+		return nil
+	})
+	return assets, err
+}
+
+func RestoreClaimedGenerationInputAsset(userID int, assetID int64, expiresAt int64) error {
+	if userID <= 0 || assetID <= 0 {
+		return nil
+	}
+	return DB.Model(&GenerationAsset{}).
+		Where("id = ? AND user_id = ? AND role = ? AND status = ? AND job_id = 0", assetID, userID, "input", GenerationAssetStatusDeleting).
+		Updates(map[string]any{
+			"status":     GenerationAssetStatusReady,
+			"expires_at": expiresAt,
+		}).Error
+}
+
+func RestoreClaimedGenerationInputAssetForJob(userID int, jobID int64, assetID int64, expiresAt int64) error {
+	if userID <= 0 || jobID <= 0 || assetID <= 0 {
+		return nil
+	}
+	return DB.Model(&GenerationAsset{}).
+		Where("id = ? AND user_id = ? AND job_id = ? AND role = ? AND status = ?", assetID, userID, jobID, "input", GenerationAssetStatusDeleting).
+		Updates(map[string]any{
+			"status":     GenerationAssetStatusReady,
+			"expires_at": expiresAt,
+		}).Error
+}
+
+func DeleteClaimedGenerationInputAssetRecord(userID int, assetID int64) error {
+	if userID <= 0 || assetID <= 0 {
+		return nil
+	}
+	return DB.Where("id = ? AND user_id = ? AND role = ? AND status = ? AND job_id = 0", assetID, userID, "input", GenerationAssetStatusDeleting).
+		Delete(&GenerationAsset{}).Error
+}
+
+func DeleteClaimedGenerationInputAssetRecordForJob(userID int, jobID int64, assetID int64) error {
+	if userID <= 0 || jobID <= 0 || assetID <= 0 {
+		return nil
+	}
+	return DB.Where("id = ? AND user_id = ? AND job_id = ? AND role = ? AND status = ?", assetID, userID, jobID, "input", GenerationAssetStatusDeleting).
+		Delete(&GenerationAsset{}).Error
 }
 
 func GetGenerationAssetForUser(userID int, publicID string) (*GenerationAsset, error) {

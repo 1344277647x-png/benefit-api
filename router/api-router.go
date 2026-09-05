@@ -82,6 +82,8 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			creationRoute.GET("/models", controller.GetCreationModels)
 			creationRoute.POST("/uploads", controller.UploadCreationAsset)
+			creationRoute.POST("/uploads/batch", controller.UploadCreationAssets)
+			creationRoute.DELETE("/uploads/:id", controller.DeleteCreationUpload)
 			creationRoute.GET("/jobs", controller.ListCreationJobs)
 			creationRoute.GET("/jobs/:id", controller.GetCreationJob)
 			creationRoute.POST("/jobs/:id/retry-archive", controller.RetryCreationArchive)

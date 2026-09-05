@@ -14,6 +14,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	creationdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/creation_setting"
@@ -23,13 +24,15 @@ import (
 )
 
 type creationModelCapabilities struct {
-	ReferenceImage bool     `json:"reference_image"`
-	MaxCount       int      `json:"max_count,omitempty"`
-	Sizes          []string `json:"sizes,omitempty"`
-	AspectRatios   []string `json:"aspect_ratios,omitempty"`
-	Qualities      []string `json:"qualities,omitempty"`
-	Durations      []int    `json:"durations,omitempty"`
-	Resolutions    []string `json:"resolutions,omitempty"`
+	ReferenceImage     bool     `json:"reference_image"`
+	MaxReferenceImages int      `json:"max_reference_images,omitempty"`
+	MaxReferenceTotal  int64    `json:"max_reference_total_bytes,omitempty"`
+	MaxCount           int      `json:"max_count,omitempty"`
+	Sizes              []string `json:"sizes,omitempty"`
+	AspectRatios       []string `json:"aspect_ratios,omitempty"`
+	Qualities          []string `json:"qualities,omitempty"`
+	Durations          []int    `json:"durations,omitempty"`
+	Resolutions        []string `json:"resolutions,omitempty"`
 }
 
 type creationModel struct {
@@ -117,18 +120,22 @@ func creationModelsForUser(user *model.UserBase) ([]creationModel, error) {
 				Protocol:    "gemini-image",
 				Groups:      geminiGroups,
 				Capabilities: creationModelCapabilities{
-					ReferenceImage: true,
-					MaxCount:       4,
-					AspectRatios:   []string{"1:1", "16:9", "9:16", "4:3", "3:4"},
+					ReferenceImage:     true,
+					MaxReferenceImages: creationdto.MaxCreationReferenceImages,
+					MaxReferenceTotal:  creationdto.MaxCreationReferenceTotalBytes,
+					MaxCount:           creationdto.MaxCreationImageCount,
+					AspectRatios:       []string{"1:1", "16:9", "9:16", "4:3", "3:4"},
 				},
 			})
 		} else if len(imageGroups) > 0 {
 			protocol := "openai-image"
 			capabilities := creationModelCapabilities{
-				ReferenceImage: true,
-				MaxCount:       4,
-				Sizes:          []string{"1024x1024", "1536x1024", "1024x1536"},
-				Qualities:      []string{"auto", "low", "medium", "high"},
+				ReferenceImage:     true,
+				MaxReferenceImages: creationdto.MaxCreationReferenceImages,
+				MaxReferenceTotal:  creationdto.MaxCreationReferenceTotalBytes,
+				MaxCount:           creationdto.MaxCreationImageCount,
+				Sizes:              []string{"1024x1024", "1536x1024", "1024x1536"},
+				Qualities:          []string{"auto", "low", "medium", "high"},
 			}
 			if strings.HasPrefix(strings.ToLower(pricing.ModelName), "imagen-") {
 				protocol = "imagen"
@@ -272,6 +279,144 @@ func UploadCreationAsset(c *gin.Context) {
 	}
 	decorateCreationAsset(asset)
 	common.ApiSuccess(c, asset)
+}
+
+func UploadCreationAssets(c *gin.Context) {
+	if !requireCreationEnabled(c) {
+		return
+	}
+	limit := service.GenerationAssetLimit(model.GenerationKindImage)
+	totalLimit := creationdto.MaxCreationReferenceTotalBytes + 4*(1<<20)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, totalLimit)
+	reader, err := c.Request.MultipartReader()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "multipart image upload is required"})
+		return
+	}
+
+	assets := make([]*model.GenerationAsset, 0, creationdto.MaxCreationReferenceImages)
+	cleanup := func() {
+		publicIDs := make([]string, 0, len(assets))
+		for _, asset := range assets {
+			publicIDs = append(publicIDs, asset.PublicID)
+		}
+		if cleanupErr := cleanupUnattachedCreationAssets(c.GetInt("id"), publicIDs); cleanupErr != nil {
+			common.SysError("failed to rollback creation input assets: " + cleanupErr.Error())
+		}
+	}
+	var totalBytes int64
+
+	for {
+		part, nextErr := reader.NextPart()
+		if nextErr != nil {
+			if errors.Is(nextErr, io.EOF) {
+				break
+			}
+			cleanup()
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": nextErr.Error()})
+			return
+		}
+		if part.FileName() == "" {
+			_ = part.Close()
+			continue
+		}
+		if part.FormName() != "files" {
+			_ = part.Close()
+			cleanup()
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "reference images must use the files field"})
+			return
+		}
+		if len(assets) >= creationdto.MaxCreationReferenceImages {
+			_ = part.Close()
+			cleanup()
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("at most %d reference images are allowed", creationdto.MaxCreationReferenceImages),
+			})
+			return
+		}
+		asset, saveErr := service.SaveGenerationAsset(service.GenerationAssetSaveRequest{
+			UserID:   c.GetInt("id"),
+			Role:     "input",
+			Kind:     model.GenerationKindImage,
+			Reader:   part,
+			MaxBytes: limit,
+		})
+		_ = part.Close()
+		if saveErr != nil {
+			cleanup()
+			status := http.StatusBadRequest
+			if errors.Is(saveErr, service.ErrGenerationAssetTooLarge) {
+				status = http.StatusRequestEntityTooLarge
+			}
+			c.JSON(status, gin.H{"success": false, "message": saveErr.Error()})
+			return
+		}
+		assets = append(assets, asset)
+		totalBytes += asset.SizeBytes
+		if totalBytes > creationdto.MaxCreationReferenceTotalBytes {
+			cleanup()
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("reference images must be %d MB or smaller in total", creationdto.MaxCreationReferenceTotalBytes/(1<<20)),
+			})
+			return
+		}
+	}
+	if len(assets) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "at least one reference image is required"})
+		return
+	}
+	for _, asset := range assets {
+		decorateCreationAsset(asset)
+	}
+	common.ApiSuccess(c, gin.H{"assets": assets})
+}
+
+func cleanupUnattachedCreationAssets(userID int, publicIDs []string) error {
+	assets, err := model.ClaimUnattachedGenerationInputAssets(userID, publicIDs)
+	if err != nil {
+		return err
+	}
+	var cleanupErr error
+	for i := range assets {
+		asset := &assets[i]
+		if err := service.RemoveGenerationAssetFile(asset); err != nil {
+			_ = model.RestoreClaimedGenerationInputAsset(userID, asset.ID, asset.ExpiresAt)
+			cleanupErr = errors.Join(cleanupErr, err)
+			continue
+		}
+		if err := model.DeleteClaimedGenerationInputAssetRecord(userID, asset.ID); err != nil {
+			cleanupErr = errors.Join(cleanupErr, err)
+		}
+	}
+	return cleanupErr
+}
+
+func DeleteCreationUpload(c *gin.Context) {
+	if !requireCreationEnabled(c) {
+		return
+	}
+	assets, err := model.ClaimUnattachedGenerationInputAssets(c.GetInt("id"), []string{c.Param("id")})
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if len(assets) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "unattached generation asset not found"})
+		return
+	}
+	asset := &assets[0]
+	if err := service.RemoveGenerationAssetFile(asset); err != nil {
+		_ = model.RestoreClaimedGenerationInputAsset(c.GetInt("id"), asset.ID, asset.ExpiresAt)
+		common.ApiError(c, err)
+		return
+	}
+	if err := model.DeleteClaimedGenerationInputAssetRecord(c.GetInt("id"), asset.ID); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"id": asset.PublicID})
 }
 
 func ListCreationJobs(c *gin.Context) {
@@ -471,8 +616,21 @@ func decorateCreationJob(job *model.GenerationJob) {
 	if job == nil {
 		return
 	}
+	job.RequestedCount = 0
+	job.ResultCount = 0
+	if job.Kind == model.GenerationKindImage && job.Parameters != "" {
+		var parameters struct {
+			Count int `json:"count"`
+		}
+		if err := common.Unmarshal([]byte(job.Parameters), &parameters); err == nil && parameters.Count > 0 {
+			job.RequestedCount = parameters.Count
+		}
+	}
 	for i := range job.Assets {
 		decorateCreationAsset(&job.Assets[i])
+		if job.Assets[i].Role == "output" {
+			job.ResultCount++
+		}
 	}
 }
 

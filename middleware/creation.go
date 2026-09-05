@@ -61,6 +61,12 @@ func CreationImageRequestConvert() gin.HandlerFunc {
 		request.AspectRatio = strings.TrimSpace(request.AspectRatio)
 		request.Quality = strings.TrimSpace(request.Quality)
 		request.ReferenceAssetID = strings.TrimSpace(request.ReferenceAssetID)
+		referenceAssetIDs, err := normalizeCreationReferenceAssetIDs(request.ReferenceAssetID, request.ReferenceAssetIDs)
+		if err != nil {
+			abortCreationRequest(c, err)
+			return
+		}
+		request.ReferenceAssetIDs = referenceAssetIDs
 		if request.Model == "" || request.Prompt == "" {
 			abortCreationRequest(c, errors.New("model and prompt are required"))
 			return
@@ -76,8 +82,8 @@ func CreationImageRequestConvert() gin.HandlerFunc {
 		if request.Count == 0 {
 			request.Count = 1
 		}
-		if request.Count < 1 || request.Count > 4 {
-			abortCreationRequest(c, errors.New("count must be between 1 and 4"))
+		if request.Count < 1 || request.Count > dto.MaxCreationImageCount {
+			abortCreationRequest(c, fmt.Errorf("count must be between 1 and %d", dto.MaxCreationImageCount))
 			return
 		}
 		if request.Protocol != "openai-image" && request.Protocol != "imagen" && request.Protocol != "gemini-image" {
@@ -91,18 +97,30 @@ func CreationImageRequestConvert() gin.HandlerFunc {
 		}
 		request.Group = group
 
-		var reference *model.GenerationAsset
-		if request.ReferenceAssetID != "" {
+		references := make([]*model.GenerationAsset, 0, len(request.ReferenceAssetIDs))
+		if len(request.ReferenceAssetIDs) > 0 {
 			if request.Protocol == "imagen" {
-				abortCreationRequest(c, errors.New("the selected model does not support a reference image"))
+				abortCreationRequest(c, errors.New("the selected model does not support reference images"))
 				return
 			}
-			asset, err := model.GetGenerationAssetForUser(c.GetInt("id"), request.ReferenceAssetID)
-			if err != nil || asset.Role != "input" || !strings.HasPrefix(asset.MimeType, "image/") {
-				abortCreationRequest(c, errors.New("reference image not found"))
-				return
+			var totalReferenceBytes int64
+			for _, assetID := range request.ReferenceAssetIDs {
+				asset, assetErr := model.GetGenerationAssetForUser(c.GetInt("id"), assetID)
+				if assetErr != nil || !validCreationReferenceAsset(asset) {
+					abortCreationRequest(c, errors.New("reference image not found or unavailable"))
+					return
+				}
+				if asset.SizeBytes <= 0 || asset.SizeBytes > service.GenerationAssetLimit(model.GenerationKindImage) {
+					abortCreationRequest(c, errors.New("reference image exceeds the per-file size limit"))
+					return
+				}
+				totalReferenceBytes += asset.SizeBytes
+				if totalReferenceBytes > dto.MaxCreationReferenceTotalBytes {
+					abortCreationRequest(c, fmt.Errorf("reference images must be %d MB or smaller in total", dto.MaxCreationReferenceTotalBytes/(1<<20)))
+					return
+				}
+				references = append(references, asset)
 			}
-			reference = asset
 		}
 
 		var body []byte
@@ -111,12 +129,12 @@ func CreationImageRequestConvert() gin.HandlerFunc {
 		switch request.Protocol {
 		case "gemini-image":
 			path = "/v1beta/models/" + request.Model + ":generateContent"
-			body, err = buildGeminiCreationImageBody(request, reference)
+			body, err = buildGeminiCreationImageBody(request, references)
 			contentType = gin.MIMEJSON
 		case "openai-image", "imagen":
-			if reference != nil {
+			if len(references) > 0 {
 				path = "/v1/images/edits"
-				body, contentType, err = buildOpenAIImageEditBody(request, reference)
+				body, contentType, err = buildOpenAIImageEditBody(request, references)
 			} else {
 				path = "/v1/images/generations"
 				payload := map[string]any{
@@ -242,9 +260,50 @@ func setCreationRelayRequest(c *gin.Context, path string, contentType string, bo
 	c.Set("is_playground", true)
 }
 
-func buildGeminiCreationImageBody(request dto.CreationImageRequest, reference *model.GenerationAsset) ([]byte, error) {
+func normalizeCreationReferenceAssetIDs(legacyID string, requestedIDs []string) ([]string, error) {
+	ids := make([]string, 0, len(requestedIDs)+1)
+	seen := make(map[string]struct{}, len(requestedIDs)+1)
+	for _, rawID := range requestedIDs {
+		id := strings.TrimSpace(rawID)
+		if id == "" {
+			return nil, errors.New("reference asset ids cannot be empty")
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	legacyID = strings.TrimSpace(legacyID)
+	if legacyID != "" {
+		if _, exists := seen[legacyID]; !exists {
+			ids = append(ids, legacyID)
+		}
+	}
+	if len(ids) > dto.MaxCreationReferenceImages {
+		return nil, fmt.Errorf("at most %d reference images are allowed", dto.MaxCreationReferenceImages)
+	}
+	return ids, nil
+}
+
+func validCreationReferenceAsset(asset *model.GenerationAsset) bool {
+	if asset == nil || asset.Role != "input" || asset.JobID != 0 {
+		return false
+	}
+	if asset.ExpiresAt > 0 && asset.ExpiresAt <= common.GetTimestamp() {
+		return false
+	}
+	switch asset.MimeType {
+	case "image/png", "image/jpeg", "image/webp":
+		return true
+	default:
+		return false
+	}
+}
+
+func buildGeminiCreationImageBody(request dto.CreationImageRequest, references []*model.GenerationAsset) ([]byte, error) {
 	parts := []any{map[string]any{"text": request.Prompt}}
-	if reference != nil {
+	for _, reference := range references {
 		file, err := service.OpenGenerationAsset(reference)
 		if err != nil {
 			return nil, errors.New("reference image file not found")
@@ -286,13 +345,10 @@ func buildGeminiCreationImageBody(request dto.CreationImageRequest, reference *m
 	})
 }
 
-func buildOpenAIImageEditBody(request dto.CreationImageRequest, reference *model.GenerationAsset) ([]byte, string, error) {
-	file, err := service.OpenGenerationAsset(reference)
-	if err != nil {
-		return nil, "", errors.New("reference image file not found")
+func buildOpenAIImageEditBody(request dto.CreationImageRequest, references []*model.GenerationAsset) ([]byte, string, error) {
+	if len(references) == 0 {
+		return nil, "", errors.New("reference image is required")
 	}
-	defer file.Close()
-
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	fields := map[string]string{
@@ -312,20 +368,45 @@ func buildOpenAIImageEditBody(request dto.CreationImageRequest, reference *model
 			return nil, "", err
 		}
 	}
-	header := make(textproto.MIMEHeader)
-	header.Set("Content-Disposition", `form-data; name="image"; filename="reference"`)
-	header.Set("Content-Type", reference.MimeType)
-	part, err := writer.CreatePart(header)
-	if err != nil {
-		return nil, "", err
+	fieldName := "image"
+	if len(references) > 1 {
+		fieldName = "image[]"
 	}
-	if _, err := io.Copy(part, io.LimitReader(file, service.GenerationAssetLimit(model.GenerationKindImage)+1)); err != nil {
-		return nil, "", err
+	for index, reference := range references {
+		file, err := service.OpenGenerationAsset(reference)
+		if err != nil {
+			return nil, "", errors.New("reference image file not found")
+		}
+		header := make(textproto.MIMEHeader)
+		filename := fmt.Sprintf("reference-%d%s", index+1, creationReferenceExtension(reference.MimeType))
+		header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, fieldName, filename))
+		header.Set("Content-Type", reference.MimeType)
+		part, createErr := writer.CreatePart(header)
+		if createErr != nil {
+			_ = file.Close()
+			return nil, "", createErr
+		}
+		_, copyErr := io.Copy(part, io.LimitReader(file, service.GenerationAssetLimit(model.GenerationKindImage)+1))
+		_ = file.Close()
+		if copyErr != nil {
+			return nil, "", copyErr
+		}
 	}
 	if err := writer.Close(); err != nil {
 		return nil, "", err
 	}
 	return body.Bytes(), writer.FormDataContentType(), nil
+}
+
+func creationReferenceExtension(mimeType string) string {
+	switch mimeType {
+	case "image/jpeg":
+		return ".jpg"
+	case "image/webp":
+		return ".webp"
+	default:
+		return ".png"
+	}
 }
 
 func creationVideoSize(resolution string) string {
