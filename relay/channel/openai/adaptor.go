@@ -11,6 +11,7 @@ import (
 	"net/textproto"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -451,6 +452,19 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		writer := multipart.NewWriter(&requestBody)
 
 		writer.WriteField("model", request.Model)
+		isCreationRequest := c.Request != nil && c.Request.URL != nil && c.Request.URL.Path == "/pg/creation/images"
+		if isCreationRequest {
+			writer.WriteField("prompt", request.Prompt)
+			if request.N != nil {
+				writer.WriteField("n", strconv.FormatUint(uint64(*request.N), 10))
+			}
+			if len(request.InputFidelity) > 0 {
+				var inputFidelity string
+				if err := common.Unmarshal(request.InputFidelity, &inputFidelity); err == nil && inputFidelity != "" {
+					writer.WriteField("input_fidelity", inputFidelity)
+				}
+			}
+		}
 		// 使用已解析的 multipart 表单，避免重复解析
 		mf := c.Request.MultipartForm
 		if mf == nil {
@@ -466,7 +480,7 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		// 写入所有非文件字段
 		if mf != nil {
 			for key, values := range mf.Value {
-				if key == "model" {
+				if key == "model" || (isCreationRequest && (key == "prompt" || key == "n" || key == "input_fidelity")) {
 					continue
 				}
 				for _, value := range values {

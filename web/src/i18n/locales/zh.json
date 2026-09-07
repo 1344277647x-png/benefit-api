@@ -5728,6 +5728,22 @@
     "OpenAI-compatible provider fields for Cherry Studio.": "Cherry Studio 的 OpenAI 兼容提供商字段。",
     "Test the Benefit API gateway from any terminal.": "从任意终端测试 Benefit API 网关。",
     "Known": "已知",
-    "Partial": "部分已知"
+    "Partial": "部分已知",
+    "Partially completed": "部分完成",
+    "Native batch": "原生批量",
+    "Sequential fanout": "顺序单图补齐",
+    "Image batch mode": "图片批量模式",
+    "Creation center sends one native multi-image request on this channel.": "创作中心通过此渠道发送一次原生多图请求。",
+    "Creation center sends sequential single-image requests on this channel.": "创作中心通过此渠道顺序发送多个单图请求。",
+    "Image batch model overrides": "图片批量模型覆盖",
+    "Exact requested or mapped model names override the channel default.": "原始请求模型名或映射后的模型名精确匹配时会覆盖渠道默认值。",
+    "Add model override": "添加模型覆盖",
+    "No model overrides": "暂无模型覆盖",
+    "Remove model override": "删除模型覆盖",
+    "Model name": "模型名称",
+    "Model name is required": "必须填写模型名称",
+    "Image batch model overrides must be unique": "图片批量模型覆盖不能重复",
+    "{{succeeded}} succeeded, {{failed}} failed": "{{succeeded}} 个成功，{{failed}} 个失败",
+    "{{requested}} requested · {{succeeded}} succeeded · {{failed}} failed": "请求 {{requested}} 张 · 成功 {{succeeded}} 张 · 失败 {{failed}} 张"
   }
 }

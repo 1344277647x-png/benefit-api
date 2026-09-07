@@ -5412,6 +5412,22 @@
     "Test Method": "測試方式",
     "Scheduled test": "排程測試",
     "Batch test": "批量測試",
-    "Manual test": "手動測試"
+    "Manual test": "手動測試",
+    "Partially completed": "部分完成",
+    "Native batch": "原生批量",
+    "Sequential fanout": "依序單圖補齊",
+    "Image batch mode": "圖片批量模式",
+    "Creation center sends one native multi-image request on this channel.": "創作中心透過此渠道傳送一次原生多圖請求。",
+    "Creation center sends sequential single-image requests on this channel.": "創作中心透過此渠道依序傳送多個單圖請求。",
+    "Image batch model overrides": "圖片批量模型覆寫",
+    "Exact requested or mapped model names override the channel default.": "原始請求模型名稱或映射後的模型名稱精確相符時會覆寫渠道預設值。",
+    "Add model override": "新增模型覆寫",
+    "No model overrides": "暫無模型覆寫",
+    "Remove model override": "刪除模型覆寫",
+    "Model name": "模型名稱",
+    "Model name is required": "必須填寫模型名稱",
+    "Image batch model overrides must be unique": "圖片批量模型覆寫不得重複",
+    "{{succeeded}} succeeded, {{failed}} failed": "{{succeeded}} 個成功，{{failed}} 個失敗",
+    "{{requested}} requested · {{succeeded}} succeeded · {{failed}} failed": "請求 {{requested}} 張 · 成功 {{succeeded}} 張 · 失敗 {{failed}} 張"
   }
 }

@@ -16,13 +16,14 @@ import (
 type GenerationJobStatus string
 
 const (
-	GenerationJobPending       GenerationJobStatus = "pending"
-	GenerationJobQueued        GenerationJobStatus = "queued"
-	GenerationJobProcessing    GenerationJobStatus = "processing"
-	GenerationJobArchiving     GenerationJobStatus = "archiving"
-	GenerationJobArchiveFailed GenerationJobStatus = "archive_failed"
-	GenerationJobSucceeded     GenerationJobStatus = "succeeded"
-	GenerationJobFailed        GenerationJobStatus = "failed"
+	GenerationJobPending            GenerationJobStatus = "pending"
+	GenerationJobQueued             GenerationJobStatus = "queued"
+	GenerationJobProcessing         GenerationJobStatus = "processing"
+	GenerationJobArchiving          GenerationJobStatus = "archiving"
+	GenerationJobArchiveFailed      GenerationJobStatus = "archive_failed"
+	GenerationJobSucceeded          GenerationJobStatus = "succeeded"
+	GenerationJobPartiallyCompleted GenerationJobStatus = "partially_completed"
+	GenerationJobFailed             GenerationJobStatus = "failed"
 )
 
 const (
@@ -43,7 +44,7 @@ type GenerationJob struct {
 	Protocol        string              `json:"protocol" gorm:"type:varchar(32)"`
 	Model           string              `json:"model" gorm:"type:varchar(191);index"`
 	Prompt          string              `json:"prompt" gorm:"type:text"`
-	Parameters      string              `json:"parameters" gorm:"type:text"`
+	Parameters      string              `json:"parameters,omitempty" gorm:"type:text"`
 	TaskID          string              `json:"task_id,omitempty" gorm:"type:varchar(191);index"`
 	Status          GenerationJobStatus `json:"status" gorm:"type:varchar(32);index"`
 	ErrorCode       string              `json:"error_code,omitempty" gorm:"type:varchar(64)"`
@@ -57,6 +58,7 @@ type GenerationJob struct {
 	Assets          []GenerationAsset   `json:"assets,omitempty" gorm:"-"`
 	RequestedCount  int                 `json:"requested_count,omitempty" gorm:"-"`
 	ResultCount     int                 `json:"result_count,omitempty" gorm:"-"`
+	FailedCount     int                 `json:"failed_count,omitempty" gorm:"-"`
 }
 
 type GenerationAsset struct {

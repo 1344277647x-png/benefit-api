@@ -13,8 +13,11 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	creationdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
+	relaypkg "github.com/QuantumNous/new-api/relay"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
@@ -107,7 +110,13 @@ func CreationImage(c *gin.Context) {
 		return
 	}
 
-	parameters, err := common.Marshal(request)
+	initialBatch := &relaycommon.ImageBatchInfo{
+		Mode:           dto.ImageBatchModeNative,
+		RequestedCount: request.Count,
+		FailedCount:    request.Count,
+		ReferenceCount: len(request.ReferenceAssetIDs),
+	}
+	parameters, err := creationImageParameters(request, initialBatch)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -134,6 +143,7 @@ func CreationImage(c *gin.Context) {
 	}
 
 	responseLimit := reservedBytes + reservedBytes/2 + 2*1024*1024
+	relaypkg.BeginCreationImageExecution(c, len(request.ReferenceAssetIDs), request.Count)
 	capture := newCreationResponseCapture(c.Writer, responseLimit)
 	originalWriter := c.Writer
 	c.Writer = capture
@@ -143,40 +153,111 @@ func CreationImage(c *gin.Context) {
 		Relay(c, types.RelayFormatOpenAIImage)
 	}
 	c.Writer = originalWriter
+	executionResult, hasExecutionResult := relaypkg.GetCreationImageExecutionResult(c)
 
 	if capture.overflow {
+		if hasExecutionResult {
+			persistCreationImageBatchParameters(job, request, executionResult.BatchInfo)
+			relaypkg.RefundCreationImageBilling(c, executionResult)
+		}
 		finishCreationJobWithError(job, http.StatusBadGateway, errCreationResponseTooLarge)
 		c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": errCreationResponseTooLarge.Error()})
 		return
 	}
 	if capture.status < http.StatusOK || capture.status >= http.StatusMultipleChoices {
+		if hasExecutionResult {
+			persistCreationImageBatchParameters(job, request, executionResult.BatchInfo)
+			relaypkg.RefundCreationImageBilling(c, executionResult)
+		}
 		err := errors.New(creationErrorMessage(capture.body.Bytes(), "image generation failed"))
 		finishCreationJobWithError(job, capture.status, err)
 		c.JSON(capture.status, gin.H{"success": false, "message": err.Error()})
 		return
 	}
-
-	var assets []model.GenerationAsset
-	if request.Protocol == "gemini-image" {
-		assets, err = archiveGeminiCreationImages(job, capture.body.Bytes())
-	} else {
-		assets, err = archiveOpenAICreationImages(job, capture.body.Bytes())
-	}
-	if err != nil {
+	if !hasExecutionResult {
+		err = errors.New("image relay did not return a settlement result")
 		finishCreationJobWithError(job, http.StatusBadGateway, err)
 		c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": err.Error()})
 		return
+	}
+
+	var assets []model.GenerationAsset
+	var archiveErr error
+	if request.Protocol == "gemini-image" {
+		assets, archiveErr = archiveGeminiCreationImages(job, capture.body.Bytes(), request.Count)
+	} else {
+		assets, archiveErr = archiveOpenAICreationImages(job, capture.body.Bytes(), request.Count)
+	}
+	if archiveErr != nil && len(assets) == 0 {
+		executionResult.BatchInfo.ResultCount = 0
+		executionResult.BatchInfo.FailedCount = request.Count
+		relaypkg.AppendCreationImageExecutionError(executionResult, 1, types.NewErrorWithStatusCode(
+			archiveErr,
+			types.ErrorCodeBadResponseBody,
+			http.StatusBadGateway,
+		))
+		persistCreationImageBatchParameters(job, request, executionResult.BatchInfo)
+		relaypkg.RefundCreationImageBilling(c, executionResult)
+		finishCreationJobWithError(job, http.StatusBadGateway, archiveErr)
+		c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": archiveErr.Error()})
+		return
+	}
+	if archiveErr != nil {
+		relaypkg.AppendCreationImageExecutionError(executionResult, len(assets)+1, types.NewErrorWithStatusCode(
+			archiveErr,
+			types.ErrorCodeBadResponseBody,
+			http.StatusBadGateway,
+		))
 	}
 	if len(assets) == 0 {
 		err = errors.New("upstream returned no image")
+		executionResult.BatchInfo.ResultCount = 0
+		executionResult.BatchInfo.FailedCount = request.Count
+		relaypkg.AppendCreationImageExecutionError(executionResult, 1, types.NewErrorWithStatusCode(
+			err,
+			types.ErrorCodeEmptyResponse,
+			http.StatusBadGateway,
+		))
+		persistCreationImageBatchParameters(job, request, executionResult.BatchInfo)
+		relaypkg.RefundCreationImageBilling(c, executionResult)
+		apiErr := types.NewErrorWithStatusCode(err, types.ErrorCodeEmptyResponse, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
+		processChannelError(c, *types.NewChannelError(
+			c.GetInt("channel_id"),
+			c.GetInt("channel_type"),
+			c.GetString("channel_name"),
+			common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey),
+			common.GetContextKeyString(c, constant.ContextKeyChannelKey),
+			c.GetBool("auto_ban"),
+		), apiErr)
 		finishCreationJobWithError(job, http.StatusBadGateway, err)
 		c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": err.Error()})
 		return
 	}
-	if err := model.FinishGenerationJob(job.ID, model.GenerationJobSucceeded, "", ""); err != nil {
+	status := model.GenerationJobSucceeded
+	if len(assets) < request.Count {
+		status = model.GenerationJobPartiallyCompleted
+	}
+	executionResult.BatchInfo.ResultCount = len(assets)
+	executionResult.BatchInfo.FailedCount = request.Count - len(assets)
+	parameters, err = creationImageParameters(request, executionResult.BatchInfo)
+	if err != nil {
+		relaypkg.RefundCreationImageBilling(c, executionResult)
 		common.ApiError(c, err)
 		return
 	}
+	if err := model.UpdateGenerationJob(job.ID, map[string]any{
+		"status":          status,
+		"error_code":      "",
+		"error_message":   "",
+		"parameters":      string(parameters),
+		"reserved_bytes":  0,
+		"next_archive_at": 0,
+	}); err != nil {
+		relaypkg.RefundCreationImageBilling(c, executionResult)
+		common.ApiError(c, err)
+		return
+	}
+	relaypkg.CompleteCreationImageBilling(c, executionResult, len(assets))
 	respondWithCreationJob(c, job.PublicID)
 }
 
@@ -304,13 +385,16 @@ func creationModelAvailable(user *model.UserBase, modelName string, kind string,
 	return false
 }
 
-func archiveOpenAICreationImages(job *model.GenerationJob, body []byte) ([]model.GenerationAsset, error) {
+func archiveOpenAICreationImages(job *model.GenerationJob, body []byte, limit int) ([]model.GenerationAsset, error) {
 	var response dto.ImageResponse
 	if err := common.Unmarshal(body, &response); err != nil {
 		return nil, fmt.Errorf("decode image response: %w", err)
 	}
 	assets := make([]model.GenerationAsset, 0, len(response.Data))
 	for _, image := range response.Data {
+		if limit > 0 && len(assets) >= limit {
+			break
+		}
 		asset, err := archiveCreationImage(job, image.B64Json, image.Url)
 		if err != nil {
 			return assets, err
@@ -320,7 +404,7 @@ func archiveOpenAICreationImages(job *model.GenerationJob, body []byte) ([]model
 	return assets, nil
 }
 
-func archiveGeminiCreationImages(job *model.GenerationJob, body []byte) ([]model.GenerationAsset, error) {
+func archiveGeminiCreationImages(job *model.GenerationJob, body []byte, limit int) ([]model.GenerationAsset, error) {
 	var response dto.GeminiChatResponse
 	if err := common.Unmarshal(body, &response); err != nil {
 		return nil, fmt.Errorf("decode Gemini image response: %w", err)
@@ -328,6 +412,9 @@ func archiveGeminiCreationImages(job *model.GenerationJob, body []byte) ([]model
 	assets := make([]model.GenerationAsset, 0)
 	for _, candidate := range response.Candidates {
 		for _, part := range candidate.Content.Parts {
+			if limit > 0 && len(assets) >= limit {
+				return assets, nil
+			}
 			if part.InlineData == nil || part.InlineData.Data == "" {
 				continue
 			}
@@ -339,6 +426,40 @@ func archiveGeminiCreationImages(job *model.GenerationJob, body []byte) ([]model
 		}
 	}
 	return assets, nil
+}
+
+func creationImageParameters(request creationdto.CreationImageRequest, batch *relaycommon.ImageBatchInfo) ([]byte, error) {
+	type parameters struct {
+		creationdto.CreationImageRequest
+		BatchMode      string `json:"batch_mode,omitempty"`
+		RequestedCount int    `json:"requested_count,omitempty"`
+		ResultCount    int    `json:"result_count,omitempty"`
+		FailedCount    int    `json:"failed_count,omitempty"`
+		ReferenceCount int    `json:"reference_count,omitempty"`
+	}
+	value := parameters{CreationImageRequest: request}
+	if batch != nil {
+		value.BatchMode = batch.Mode
+		value.RequestedCount = batch.RequestedCount
+		value.ResultCount = batch.ResultCount
+		value.FailedCount = batch.FailedCount
+		value.ReferenceCount = batch.ReferenceCount
+	}
+	return common.Marshal(value)
+}
+
+func persistCreationImageBatchParameters(job *model.GenerationJob, request creationdto.CreationImageRequest, batch *relaycommon.ImageBatchInfo) {
+	if job == nil || batch == nil {
+		return
+	}
+	parameters, err := creationImageParameters(request, batch)
+	if err != nil {
+		common.SysError("failed to marshal creation image batch parameters: " + err.Error())
+		return
+	}
+	if err := model.UpdateGenerationJob(job.ID, map[string]any{"parameters": string(parameters)}); err != nil {
+		common.SysError("failed to persist creation image batch parameters: " + err.Error())
+	}
 }
 
 func archiveCreationImage(job *model.GenerationJob, encoded string, rawURL string) (*model.GenerationAsset, error) {

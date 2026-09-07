@@ -55,6 +55,22 @@ type ResponsesUsageInfo struct {
 	BuiltInTools map[string]*BuildInToolInfo
 }
 
+type ImageBatchError struct {
+	Index      int    `json:"index"`
+	StatusCode int    `json:"status_code,omitempty"`
+	Code       string `json:"code,omitempty"`
+	Message    string `json:"message,omitempty"`
+}
+
+type ImageBatchInfo struct {
+	Mode           string            `json:"batch_mode"`
+	RequestedCount int               `json:"requested_count"`
+	ResultCount    int               `json:"result_count"`
+	FailedCount    int               `json:"failed_count"`
+	ReferenceCount int               `json:"reference_count"`
+	Errors         []ImageBatchError `json:"-"`
+}
+
 type ChannelMeta struct {
 	ChannelType          int
 	ChannelId            int
@@ -181,6 +197,7 @@ type RelayInfo struct {
 	*ClaudeConvertInfo
 	*RerankerInfo
 	*ResponsesUsageInfo
+	*ImageBatchInfo
 	*ChannelMeta
 	*TaskRelayInfo
 }

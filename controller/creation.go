@@ -618,19 +618,34 @@ func decorateCreationJob(job *model.GenerationJob) {
 	}
 	job.RequestedCount = 0
 	job.ResultCount = 0
+	job.FailedCount = 0
 	if job.Kind == model.GenerationKindImage && job.Parameters != "" {
+		storedParameters := job.Parameters
 		var parameters struct {
-			Count int `json:"count"`
+			Count          int `json:"count"`
+			RequestedCount int `json:"requested_count"`
 		}
-		if err := common.Unmarshal([]byte(job.Parameters), &parameters); err == nil && parameters.Count > 0 {
-			job.RequestedCount = parameters.Count
+		if err := common.Unmarshal([]byte(storedParameters), &parameters); err == nil {
+			job.RequestedCount = parameters.RequestedCount
+			if job.RequestedCount <= 0 {
+				job.RequestedCount = parameters.Count
+			}
 		}
+		// Internal request parameters (including reference asset IDs and batch
+		// mode) are needed for server-side decoration only and are not part of
+		// the ordinary creation API response.
+		job.Parameters = ""
 	}
 	for i := range job.Assets {
 		decorateCreationAsset(&job.Assets[i])
 		if job.Assets[i].Role == "output" {
 			job.ResultCount++
 		}
+	}
+	if job.Kind == model.GenerationKindImage &&
+		(job.Status == model.GenerationJobPartiallyCompleted || job.Status == model.GenerationJobFailed) &&
+		job.RequestedCount > job.ResultCount {
+		job.FailedCount = job.RequestedCount - job.ResultCount
 	}
 }
 

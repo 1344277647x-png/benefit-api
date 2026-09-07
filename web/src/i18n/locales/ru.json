@@ -5393,6 +5393,22 @@
     "Markdown supports headings, lists, links, tables, and code blocks.": "Markdown supports headings, lists, links, tables, and code blocks.",
     "No content to preview.": "No content to preview.",
     "The documentation is not configured yet.": "The documentation is not configured yet.",
-    "Write your API guide in Markdown...": "Write your API guide in Markdown..."
+    "Write your API guide in Markdown...": "Write your API guide in Markdown...",
+    "Partially completed": "Выполнено частично",
+    "Native batch": "Нативный пакет",
+    "Sequential fanout": "Последовательные запросы",
+    "Image batch mode": "Режим пакетной генерации изображений",
+    "Creation center sends one native multi-image request on this channel.": "Центр создания отправляет по этому каналу один нативный запрос на несколько изображений.",
+    "Creation center sends sequential single-image requests on this channel.": "Центр создания последовательно отправляет по этому каналу несколько запросов на одно изображение.",
+    "Image batch model overrides": "Переопределения пакетного режима по моделям",
+    "Exact requested or mapped model names override the channel default.": "Точное имя запрошенной или сопоставленной модели переопределяет настройку канала.",
+    "Add model override": "Добавить переопределение модели",
+    "No model overrides": "Переопределений моделей нет",
+    "Remove model override": "Удалить переопределение модели",
+    "Model name": "Имя модели",
+    "Model name is required": "Укажите имя модели",
+    "Image batch model overrides must be unique": "Переопределения моделей не должны повторяться",
+    "{{succeeded}} succeeded, {{failed}} failed": "Успешно: {{succeeded}}, с ошибкой: {{failed}}",
+    "{{requested}} requested · {{succeeded}} succeeded · {{failed}} failed": "Запрошено: {{requested}} · успешно: {{succeeded}} · с ошибкой: {{failed}}"
   }
 }

@@ -11,12 +11,14 @@ import (
 )
 
 type ChannelSettings struct {
-	ForceFormat            bool   `json:"force_format,omitempty"`
-	ThinkingToContent      bool   `json:"thinking_to_content,omitempty"`
-	Proxy                  string `json:"proxy"`
-	PassThroughBodyEnabled bool   `json:"pass_through_body_enabled,omitempty"`
-	SystemPrompt           string `json:"system_prompt,omitempty"`
-	SystemPromptOverride   bool   `json:"system_prompt_override,omitempty"`
+	ForceFormat            bool              `json:"force_format,omitempty"`
+	ThinkingToContent      bool              `json:"thinking_to_content,omitempty"`
+	Proxy                  string            `json:"proxy"`
+	PassThroughBodyEnabled bool              `json:"pass_through_body_enabled,omitempty"`
+	SystemPrompt           string            `json:"system_prompt,omitempty"`
+	SystemPromptOverride   bool              `json:"system_prompt_override,omitempty"`
+	ImageBatchMode         string            `json:"image_batch_mode,omitempty"`
+	ImageBatchModelModes   map[string]string `json:"image_batch_model_modes,omitempty"`
 	// HTTPProtocol controls outbound HTTP version negotiation for this channel.
 	// Accepted values: "", "auto" (default), "http1".
 	HTTPProtocol string `json:"http_protocol,omitempty"`
@@ -29,7 +31,30 @@ const (
 	HTTPProtocolAuto         = "auto"
 	HTTPProtocolHTTP1        = "http1"
 	MaxHTTP2ConnectionShards = 8
+	ImageBatchModeNative     = "native"
+	ImageBatchModeFanout     = "fanout"
 )
+
+// ImageBatchModeFor resolves creation-center image batching without changing
+// public image relay behavior. Unknown legacy values deliberately mean native.
+func (s ChannelSettings) ImageBatchModeFor(originalModel string, upstreamModel string) string {
+	for _, model := range []string{strings.TrimSpace(originalModel), strings.TrimSpace(upstreamModel)} {
+		if model == "" || s.ImageBatchModelModes == nil {
+			continue
+		}
+		if mode, exists := s.ImageBatchModelModes[model]; exists {
+			return normalizeImageBatchMode(mode)
+		}
+	}
+	return normalizeImageBatchMode(s.ImageBatchMode)
+}
+
+func normalizeImageBatchMode(mode string) string {
+	if strings.EqualFold(strings.TrimSpace(mode), ImageBatchModeFanout) {
+		return ImageBatchModeFanout
+	}
+	return ImageBatchModeNative
+}
 
 // ValidateHTTPTransport validates save-time HTTP transport channel settings.
 func (s *ChannelSettings) ValidateHTTPTransport() error {

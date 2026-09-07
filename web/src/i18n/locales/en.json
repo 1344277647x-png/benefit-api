@@ -5728,6 +5728,22 @@
     "OpenAI-compatible provider fields for Cherry Studio.": "OpenAI-compatible provider fields for Cherry Studio.",
     "Test the Benefit API gateway from any terminal.": "Test the Benefit API gateway from any terminal.",
     "Known": "Known",
-    "Partial": "Partial"
+    "Partial": "Partial",
+    "Partially completed": "Partially completed",
+    "Native batch": "Native batch",
+    "Sequential fanout": "Sequential fanout",
+    "Image batch mode": "Image batch mode",
+    "Creation center sends one native multi-image request on this channel.": "Creation center sends one native multi-image request on this channel.",
+    "Creation center sends sequential single-image requests on this channel.": "Creation center sends sequential single-image requests on this channel.",
+    "Image batch model overrides": "Image batch model overrides",
+    "Exact requested or mapped model names override the channel default.": "Exact requested or mapped model names override the channel default.",
+    "Add model override": "Add model override",
+    "No model overrides": "No model overrides",
+    "Remove model override": "Remove model override",
+    "Model name": "Model name",
+    "Model name is required": "Model name is required",
+    "Image batch model overrides must be unique": "Image batch model overrides must be unique",
+    "{{succeeded}} succeeded, {{failed}} failed": "{{succeeded}} succeeded, {{failed}} failed",
+    "{{requested}} requested · {{succeeded}} succeeded · {{failed}} failed": "{{requested}} requested · {{succeeded}} succeeded · {{failed}} failed"
   }
 }

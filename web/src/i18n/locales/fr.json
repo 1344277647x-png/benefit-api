@@ -5393,6 +5393,22 @@
     "Markdown supports headings, lists, links, tables, and code blocks.": "Markdown supports headings, lists, links, tables, and code blocks.",
     "No content to preview.": "No content to preview.",
     "The documentation is not configured yet.": "The documentation is not configured yet.",
-    "Write your API guide in Markdown...": "Write your API guide in Markdown..."
+    "Write your API guide in Markdown...": "Write your API guide in Markdown...",
+    "Partially completed": "Partiellement terminé",
+    "Native batch": "Lot natif",
+    "Sequential fanout": "Envoi séquentiel",
+    "Image batch mode": "Mode de lot d'images",
+    "Creation center sends one native multi-image request on this channel.": "Le centre de création envoie une requête native contenant plusieurs images sur ce canal.",
+    "Creation center sends sequential single-image requests on this channel.": "Le centre de création envoie séquentiellement plusieurs requêtes d'une image sur ce canal.",
+    "Image batch model overrides": "Remplacements par modèle pour les lots d'images",
+    "Exact requested or mapped model names override the channel default.": "Le nom exact du modèle demandé ou mappé remplace la valeur par défaut du canal.",
+    "Add model override": "Ajouter un remplacement de modèle",
+    "No model overrides": "Aucun remplacement de modèle",
+    "Remove model override": "Supprimer le remplacement de modèle",
+    "Model name": "Nom du modèle",
+    "Model name is required": "Le nom du modèle est obligatoire",
+    "Image batch model overrides must be unique": "Les remplacements de modèles doivent être uniques",
+    "{{succeeded}} succeeded, {{failed}} failed": "{{succeeded}} réussi(s), {{failed}} échoué(s)",
+    "{{requested}} requested · {{succeeded}} succeeded · {{failed}} failed": "{{requested}} demandé(s) · {{succeeded}} réussi(s) · {{failed}} échoué(s)"
   }
 }

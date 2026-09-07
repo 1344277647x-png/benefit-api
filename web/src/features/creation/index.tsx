@@ -108,6 +108,7 @@ const statusClasses: Record<GenerationJobStatus, string> = {
   archiving: 'border-violet-500/30 bg-violet-500/10 text-violet-600',
   archive_failed: 'border-amber-500/30 bg-amber-500/10 text-amber-600',
   succeeded: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600',
+  partially_completed: 'border-amber-500/30 bg-amber-500/10 text-amber-600',
   failed: 'border-rose-500/30 bg-rose-500/10 text-rose-600',
 }
 
@@ -129,6 +130,7 @@ function statusLabel(status: GenerationJobStatus, t: (key: string) => string) {
     archiving: t('Saving result'),
     archive_failed: t('Save failed'),
     succeeded: t('Completed'),
+    partially_completed: t('Partially completed'),
     failed: t('Failed'),
   }
   return labels[status]
@@ -182,6 +184,7 @@ function JobStatusBadge({
       {!RUNNING_STATUSES.has(status) && status === 'succeeded' && (
         <Check className='size-3' />
       )}
+      {status === 'partially_completed' && <AlertCircle className='size-3' />}
       {!RUNNING_STATUSES.has(status) && status === 'failed' && (
         <X className='size-3' />
       )}
@@ -1235,9 +1238,11 @@ export function ActiveJobCard({
     job.assets?.filter((asset) => asset.role === 'output') ?? []
   const resultCount = job.result_count ?? outputAssets.length
   const requestedCount = job.requested_count ?? resultCount
+  const failedCount =
+    job.failed_count ?? Math.max(requestedCount - resultCount, 0)
   const isPartialImageResult =
     job.kind === 'image' &&
-    job.status === 'succeeded' &&
+    job.status === 'partially_completed' &&
     resultCount > 0 &&
     requestedCount > resultCount
 
@@ -1322,10 +1327,18 @@ export function ActiveJobCard({
         <Alert className='border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'>
           <AlertCircle />
           <AlertDescription>
-            {t(
-              'The model returned {{actual}} of {{requested}} requested images. Billing follows actual upstream usage.',
-              { actual: resultCount, requested: requestedCount }
-            )}
+            <span className='block font-medium'>
+              {t('{{succeeded}} succeeded, {{failed}} failed', {
+                succeeded: resultCount,
+                failed: failedCount,
+              })}
+            </span>
+            <span className='mt-1 block'>
+              {t(
+                'The model returned {{actual}} of {{requested}} requested images. Billing follows actual upstream usage.',
+                { actual: resultCount, requested: requestedCount }
+              )}
+            </span>
           </AlertDescription>
         </Alert>
       )}
@@ -1368,6 +1381,24 @@ function JobCard({
     job.assets?.filter((asset) => asset.role === 'output') ?? []
   const resultCount = job.result_count ?? outputAssets.length
   const requestedCount = job.requested_count ?? resultCount
+  const failedCount =
+    job.failed_count ?? Math.max(requestedCount - resultCount, 0)
+  let imageCountLabel = t('{{count}} images requested', {
+    count: requestedCount,
+  })
+  if (resultCount > 0) {
+    imageCountLabel = t('{{count}} generated images', { count: resultCount })
+  }
+  if (job.status === 'partially_completed') {
+    imageCountLabel = t(
+      '{{requested}} requested · {{succeeded}} succeeded · {{failed}} failed',
+      {
+        requested: requestedCount,
+        succeeded: resultCount,
+        failed: failedCount,
+      }
+    )
+  }
   const previewAsset = outputAssets[0]
   let previewContent = (
     <Images className='text-muted-foreground size-6' aria-hidden='true' />
@@ -1405,9 +1436,7 @@ function JobCard({
             <JobStatusBadge status={job.status} t={t} />
             {job.kind === 'image' && requestedCount > 0 && (
               <span className='text-muted-foreground text-xs tabular-nums'>
-                {resultCount > 0
-                  ? t('{{count}} generated images', { count: resultCount })
-                  : t('{{count}} images requested', { count: requestedCount })}
+                {imageCountLabel}
               </span>
             )}
           </div>

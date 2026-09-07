@@ -642,3 +642,22 @@ func TestChannelSettingsValidateHTTPTransport(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "http2_connection_shards")
 }
+
+func TestChannelSettingsImageBatchModeForUsesModelPrecedenceAndNativeFallback(t *testing.T) {
+	settings := ChannelSettings{
+		ImageBatchMode: "fanout",
+		ImageBatchModelModes: map[string]string{
+			"public-model":   "native",
+			"upstream-model": "fanout",
+			"unknown-model":  "unsupported",
+		},
+	}
+
+	assert.Equal(t, ImageBatchModeNative, settings.ImageBatchModeFor("public-model", "upstream-model"))
+	assert.Equal(t, ImageBatchModeFanout, settings.ImageBatchModeFor("missing", "upstream-model"))
+	assert.Equal(t, ImageBatchModeNative, settings.ImageBatchModeFor("unknown-model", "missing"))
+	assert.Equal(t, ImageBatchModeFanout, settings.ImageBatchModeFor("missing", "missing"))
+
+	legacy := ChannelSettings{ImageBatchMode: "unsupported"}
+	assert.Equal(t, ImageBatchModeNative, legacy.ImageBatchModeFor("model", "model"))
+}

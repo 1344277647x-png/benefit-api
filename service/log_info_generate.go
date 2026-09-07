@@ -50,6 +50,26 @@ func attachQuotaSaturation(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, o
 		clamp.Op, clamp.Kind, clamp.Original, clamp.Clamped, relayInfo.UserId, relayInfo.OriginModelName))
 }
 
+func AppendImageBatchLogInfo(other map[string]interface{}, batch *relaycommon.ImageBatchInfo) {
+	if other == nil || batch == nil {
+		return
+	}
+	other["batch_mode"] = batch.Mode
+	other["requested_count"] = batch.RequestedCount
+	other["result_count"] = batch.ResultCount
+	other["failed_count"] = batch.FailedCount
+	other["reference_count"] = batch.ReferenceCount
+	if len(batch.Errors) == 0 {
+		return
+	}
+	adminInfo, ok := other["admin_info"].(map[string]interface{})
+	if !ok || adminInfo == nil {
+		adminInfo = map[string]interface{}{}
+		other["admin_info"] = adminInfo
+	}
+	adminInfo["image_batch_errors"] = batch.Errors
+}
+
 func appendRequestPath(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
 	if other == nil {
 		return
@@ -109,6 +129,7 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	AppendChannelAffinityAdminInfo(ctx, adminInfo)
 
 	other["admin_info"] = adminInfo
+	AppendImageBatchLogInfo(other, relayInfo.ImageBatchInfo)
 	appendRequestPath(ctx, relayInfo, other)
 	appendRequestConversionChain(relayInfo, other)
 	appendFinalRequestFormat(relayInfo, other)

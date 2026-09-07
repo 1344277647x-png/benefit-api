@@ -5393,6 +5393,22 @@
     "Markdown supports headings, lists, links, tables, and code blocks.": "Markdown supports headings, lists, links, tables, and code blocks.",
     "No content to preview.": "No content to preview.",
     "The documentation is not configured yet.": "The documentation is not configured yet.",
-    "Write your API guide in Markdown...": "Write your API guide in Markdown..."
+    "Write your API guide in Markdown...": "Write your API guide in Markdown...",
+    "Partially completed": "Hoàn tất một phần",
+    "Native batch": "Lô gốc",
+    "Sequential fanout": "Gửi tuần tự",
+    "Image batch mode": "Chế độ lô hình ảnh",
+    "Creation center sends one native multi-image request on this channel.": "Trung tâm sáng tạo gửi một yêu cầu nhiều hình ảnh gốc qua kênh này.",
+    "Creation center sends sequential single-image requests on this channel.": "Trung tâm sáng tạo gửi tuần tự nhiều yêu cầu một hình ảnh qua kênh này.",
+    "Image batch model overrides": "Ghi đè lô hình ảnh theo mô hình",
+    "Exact requested or mapped model names override the channel default.": "Tên mô hình được yêu cầu hoặc sau ánh xạ phải khớp chính xác để ghi đè mặc định của kênh.",
+    "Add model override": "Thêm ghi đè mô hình",
+    "No model overrides": "Không có ghi đè mô hình",
+    "Remove model override": "Xóa ghi đè mô hình",
+    "Model name": "Tên mô hình",
+    "Model name is required": "Bắt buộc nhập tên mô hình",
+    "Image batch model overrides must be unique": "Các ghi đè mô hình không được trùng nhau",
+    "{{succeeded}} succeeded, {{failed}} failed": "{{succeeded}} thành công, {{failed}} thất bại",
+    "{{requested}} requested · {{succeeded}} succeeded · {{failed}} failed": "Đã yêu cầu {{requested}} · {{succeeded}} thành công · {{failed}} thất bại"
   }
 }

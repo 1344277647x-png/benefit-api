@@ -51,7 +51,11 @@ import {
   useCallback,
   useRef,
 } from 'react'
-import { type SubmitErrorHandler, useForm } from 'react-hook-form'
+import {
+  type SubmitErrorHandler,
+  useFieldArray,
+  useForm,
+} from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -292,6 +296,8 @@ const SENSITIVE_FORM_FIELDS = [
   'pass_through_body_enabled',
   'system_prompt',
   'system_prompt_override',
+  'image_batch_mode',
+  'image_batch_model_modes',
   'allow_service_tier',
   'disable_store',
   'allow_safety_identifier',
@@ -344,6 +350,8 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     values.thinking_to_content ||
     values.pass_through_body_enabled ||
     values.system_prompt_override ||
+    values.image_batch_mode === 'fanout' ||
+    (values.image_batch_model_modes?.length ?? 0) > 0 ||
     (values.http_protocol && values.http_protocol !== 'auto') ||
     (values.http2_connection_shards != null &&
       values.http2_connection_shards > 1) ||
@@ -716,6 +724,10 @@ export function ChannelMutateDrawer({
     resolver: zodResolver(channelFormSchema),
     defaultValues: CHANNEL_FORM_DEFAULT_VALUES,
   })
+  const imageBatchModelModes = useFieldArray({
+    control: form.control,
+    name: 'image_batch_model_modes',
+  })
 
   // Watch form values for conditional rendering
   const multiKeyMode = form.watch('multi_key_mode')
@@ -757,6 +769,7 @@ export function ChannelMutateDrawer({
   const currentHttp2ConnectionShards = form.watch('http2_connection_shards')
   const currentSystemPrompt = form.watch('system_prompt')
   const currentSystemPromptOverride = form.watch('system_prompt_override')
+  const currentImageBatchMode = form.watch('image_batch_mode')
   const currentAllowServiceTier = form.watch('allow_service_tier')
   const currentDisableStore = form.watch('disable_store')
   const currentAllowSafetyIdentifier = form.watch('allow_safety_identifier')
@@ -968,7 +981,12 @@ export function ChannelMutateDrawer({
     formErrors.models || formErrors.group || formErrors.model_mapping
   )
   const advancedHaveErrors =
-    hasAdvancedSettingsErrors(formErrors) || Boolean(formErrors.advanced_custom)
+    hasAdvancedSettingsErrors(formErrors) ||
+    Boolean(
+      formErrors.advanced_custom ||
+      formErrors.image_batch_mode ||
+      formErrors.image_batch_model_modes
+    )
   const providerRequiresBaseUrl = [3, 8, 36, 45].includes(currentType)
   const providerRequiresOther = [3, 18, 21, 39, 41, 49].includes(currentType)
   const identityComplete = Boolean(currentName?.trim() && currentType > 0)
@@ -4174,6 +4192,182 @@ export function ChannelMutateDrawer({
                                   </FormItem>
                                 )}
                               />
+                            </div>
+
+                            <FormField
+                              control={form.control}
+                              name='image_batch_mode'
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>{t('Image batch mode')}</FormLabel>
+                                  <Select
+                                    items={[
+                                      {
+                                        value: 'native',
+                                        label: t('Native batch'),
+                                      },
+                                      {
+                                        value: 'fanout',
+                                        label: t('Sequential fanout'),
+                                      },
+                                    ]}
+                                    value={field.value || 'native'}
+                                    onValueChange={(value) =>
+                                      field.onChange(
+                                        value === 'fanout' ? 'fanout' : 'native'
+                                      )
+                                    }
+                                  >
+                                    <FormControl>
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent alignItemWithTrigger={false}>
+                                      <SelectGroup>
+                                        <SelectItem value='native'>
+                                          {t('Native batch')}
+                                        </SelectItem>
+                                        <SelectItem value='fanout'>
+                                          {t('Sequential fanout')}
+                                        </SelectItem>
+                                      </SelectGroup>
+                                    </SelectContent>
+                                  </Select>
+                                  <FormDescription>
+                                    {currentImageBatchMode === 'fanout'
+                                      ? t(
+                                          'Creation center sends sequential single-image requests on this channel.'
+                                        )
+                                      : t(
+                                          'Creation center sends one native multi-image request on this channel.'
+                                        )}
+                                  </FormDescription>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+
+                            <div className='space-y-3'>
+                              <div className='flex flex-wrap items-center justify-between gap-2'>
+                                <div className='space-y-0.5'>
+                                  <FormLabel>
+                                    {t('Image batch model overrides')}
+                                  </FormLabel>
+                                  <FormDescription>
+                                    {t(
+                                      'Exact requested or mapped model names override the channel default.'
+                                    )}
+                                  </FormDescription>
+                                </div>
+                                <Button
+                                  type='button'
+                                  variant='outline'
+                                  size='sm'
+                                  onClick={() =>
+                                    imageBatchModelModes.append({
+                                      model: '',
+                                      mode: 'native',
+                                    })
+                                  }
+                                >
+                                  <Plus aria-hidden='true' />
+                                  {t('Add model override')}
+                                </Button>
+                              </div>
+                              {imageBatchModelModes.fields.length === 0 ? (
+                                <p className='text-muted-foreground border-border rounded-md border border-dashed px-3 py-4 text-center text-xs'>
+                                  {t('No model overrides')}
+                                </p>
+                              ) : (
+                                <div className='space-y-2'>
+                                  {imageBatchModelModes.fields.map(
+                                    (override, index) => (
+                                      <div
+                                        key={override.id}
+                                        className='grid min-w-0 grid-cols-[minmax(0,1fr)_9rem_2.25rem] items-start gap-2 max-sm:grid-cols-[minmax(0,1fr)_2.25rem]'
+                                      >
+                                        <FormField
+                                          control={form.control}
+                                          name={`image_batch_model_modes.${index}.model`}
+                                          render={({ field }) => (
+                                            <FormItem className='min-w-0'>
+                                              <FormControl>
+                                                <Input
+                                                  {...field}
+                                                  placeholder={t('Model name')}
+                                                />
+                                              </FormControl>
+                                              <FormMessage />
+                                            </FormItem>
+                                          )}
+                                        />
+                                        <FormField
+                                          control={form.control}
+                                          name={`image_batch_model_modes.${index}.mode`}
+                                          render={({ field }) => (
+                                            <FormItem className='min-w-0 max-sm:col-span-2 max-sm:row-start-2'>
+                                              <Select
+                                                items={[
+                                                  {
+                                                    value: 'native',
+                                                    label: t('Native batch'),
+                                                  },
+                                                  {
+                                                    value: 'fanout',
+                                                    label:
+                                                      t('Sequential fanout'),
+                                                  },
+                                                ]}
+                                                value={field.value}
+                                                onValueChange={(value) =>
+                                                  field.onChange(
+                                                    value === 'fanout'
+                                                      ? 'fanout'
+                                                      : 'native'
+                                                  )
+                                                }
+                                              >
+                                                <FormControl>
+                                                  <SelectTrigger>
+                                                    <SelectValue />
+                                                  </SelectTrigger>
+                                                </FormControl>
+                                                <SelectContent
+                                                  alignItemWithTrigger={false}
+                                                >
+                                                  <SelectGroup>
+                                                    <SelectItem value='native'>
+                                                      {t('Native batch')}
+                                                    </SelectItem>
+                                                    <SelectItem value='fanout'>
+                                                      {t('Sequential fanout')}
+                                                    </SelectItem>
+                                                  </SelectGroup>
+                                                </SelectContent>
+                                              </Select>
+                                              <FormMessage />
+                                            </FormItem>
+                                          )}
+                                        />
+                                        <Button
+                                          type='button'
+                                          variant='ghost'
+                                          size='icon'
+                                          aria-label={t(
+                                            'Remove model override'
+                                          )}
+                                          onClick={() =>
+                                            imageBatchModelModes.remove(index)
+                                          }
+                                        >
+                                          <Trash2 aria-hidden='true' />
+                                        </Button>
+                                      </div>
+                                    )
+                                  )}
+                                </div>
+                              )}
                             </div>
 
                             <FormField

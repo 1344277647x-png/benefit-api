@@ -71,6 +71,7 @@ export type GenerationJobStatus =
   | 'archiving'
   | 'archive_failed'
   | 'succeeded'
+  | 'partially_completed'
   | 'failed'
 
 export interface GenerationJob {
@@ -89,6 +90,7 @@ export interface GenerationJob {
   expires_at: number
   requested_count?: number
   result_count?: number
+  failed_count?: number
   assets?: GenerationAsset[]
 }
 

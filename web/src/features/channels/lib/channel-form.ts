@@ -76,6 +76,32 @@ function isOptionalProxyURL(value: string | undefined): boolean {
 export const HTTP_PROTOCOL_AUTO = 'auto'
 export const HTTP_PROTOCOL_HTTP1 = 'http1'
 export const MAX_HTTP2_CONNECTION_SHARDS = 8
+export const IMAGE_BATCH_MODE_NATIVE = 'native'
+export const IMAGE_BATCH_MODE_FANOUT = 'fanout'
+
+export type ImageBatchMode = 'native' | 'fanout'
+export interface ImageBatchModelMode {
+  model: string
+  mode: ImageBatchMode
+}
+
+export function normalizeImageBatchMode(value: unknown): ImageBatchMode {
+  return value === IMAGE_BATCH_MODE_FANOUT
+    ? IMAGE_BATCH_MODE_FANOUT
+    : IMAGE_BATCH_MODE_NATIVE
+}
+
+export function parseImageBatchModelModes(
+  value: unknown
+): ImageBatchModelMode[] {
+  if (!isJsonObjectValue(value)) return []
+  return Object.entries(value)
+    .filter(([model]) => model.trim().length > 0)
+    .map(([model, mode]) => ({
+      model: model.trim(),
+      mode: normalizeImageBatchMode(mode),
+    }))
+}
 
 export function normalizeHttpProtocol(
   value: string | undefined | null
@@ -264,6 +290,17 @@ export const channelFormSchema = z
     pass_through_body_enabled: z.boolean().optional(),
     system_prompt: z.string().optional(),
     system_prompt_override: z.boolean().optional(),
+    image_batch_mode: z.enum(['native', 'fanout']).optional(),
+    image_batch_model_modes: z
+      .array(
+        z.object({
+          model: z.string().refine((value) => value.trim().length > 0, {
+            message: 'Model name is required',
+          }),
+          mode: z.enum(['native', 'fanout']),
+        })
+      )
+      .optional(),
     // Type-specific settings (stored in settings JSON)
     is_enterprise_account: z.boolean().optional(), // OpenRouter specific
     vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
@@ -393,6 +430,23 @@ export const channelFormSchema = z
         ERROR_MESSAGES.INVALID_HTTP1_WITH_SHARDS
       )
     }
+
+    const seenImageBatchModels = new Set<string>()
+    for (const [index, override] of (
+      data.image_batch_model_modes ?? []
+    ).entries()) {
+      const model = override.model.trim()
+      if (!model || seenImageBatchModels.has(model)) {
+        addRequiredIssue(
+          ctx,
+          `image_batch_model_modes.${index}.model`,
+          model
+            ? 'Image batch model overrides must be unique'
+            : 'Model name is required'
+        )
+      }
+      seenImageBatchModels.add(model)
+    }
   })
 
 export type ChannelFormValues = z.infer<typeof channelFormSchema>
@@ -436,6 +490,8 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   pass_through_body_enabled: false,
   system_prompt: '',
   system_prompt_override: false,
+  image_batch_mode: IMAGE_BATCH_MODE_NATIVE,
+  image_batch_model_modes: [],
   // Type-specific settings
   is_enterprise_account: false,
   vertex_key_type: 'json',
@@ -476,6 +532,8 @@ export function transformChannelToFormDefaults(
     pass_through_body_enabled: false,
     system_prompt: '',
     system_prompt_override: false,
+    image_batch_mode: IMAGE_BATCH_MODE_NATIVE as ImageBatchMode,
+    image_batch_model_modes: [] as ImageBatchModelMode[],
   }
 
   if (channel.setting) {
@@ -494,6 +552,10 @@ export function transformChannelToFormDefaults(
         pass_through_body_enabled: parsed.pass_through_body_enabled || false,
         system_prompt: parsed.system_prompt || '',
         system_prompt_override: parsed.system_prompt_override || false,
+        image_batch_mode: normalizeImageBatchMode(parsed.image_batch_mode),
+        image_batch_model_modes: parseImageBatchModelModes(
+          parsed.image_batch_model_modes
+        ),
       }
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -611,6 +673,19 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
     pass_through_body_enabled: formData.pass_through_body_enabled || false,
     system_prompt: formData.system_prompt || '',
     system_prompt_override: formData.system_prompt_override || false,
+  }
+
+  if (formData.image_batch_mode === IMAGE_BATCH_MODE_FANOUT) {
+    settingObj.image_batch_mode = IMAGE_BATCH_MODE_FANOUT
+  }
+  const modelModes = Object.fromEntries(
+    (formData.image_batch_model_modes ?? []).map((override) => [
+      override.model.trim(),
+      normalizeImageBatchMode(override.mode),
+    ])
+  )
+  if (Object.keys(modelModes).length > 0) {
+    settingObj.image_batch_model_modes = modelModes
   }
 
   const protocol = normalizeHttpProtocol(formData.http_protocol)

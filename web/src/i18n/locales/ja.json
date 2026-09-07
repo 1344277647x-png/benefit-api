@@ -5393,6 +5393,22 @@
     "Markdown supports headings, lists, links, tables, and code blocks.": "Markdown supports headings, lists, links, tables, and code blocks.",
     "No content to preview.": "No content to preview.",
     "The documentation is not configured yet.": "The documentation is not configured yet.",
-    "Write your API guide in Markdown...": "Write your API guide in Markdown..."
+    "Write your API guide in Markdown...": "Write your API guide in Markdown...",
+    "Partially completed": "一部完了",
+    "Native batch": "ネイティブ一括",
+    "Sequential fanout": "順次単一画像リクエスト",
+    "Image batch mode": "画像バッチモード",
+    "Creation center sends one native multi-image request on this channel.": "創作センターは、このチャネルに1回のネイティブ複数画像リクエストを送信します。",
+    "Creation center sends sequential single-image requests on this channel.": "創作センターは、このチャネルに複数の単一画像リクエストを順番に送信します。",
+    "Image batch model overrides": "モデル別画像バッチ設定",
+    "Exact requested or mapped model names override the channel default.": "リクエスト時またはマッピング後のモデル名が完全一致すると、チャネルの既定値より優先されます。",
+    "Add model override": "モデル設定を追加",
+    "No model overrides": "モデル別設定はありません",
+    "Remove model override": "モデル設定を削除",
+    "Model name": "モデル名",
+    "Model name is required": "モデル名は必須です",
+    "Image batch model overrides must be unique": "モデル別画像バッチ設定は重複できません",
+    "{{succeeded}} succeeded, {{failed}} failed": "成功 {{succeeded}} 件、失敗 {{failed}} 件",
+    "{{requested}} requested · {{succeeded}} succeeded · {{failed}} failed": "リクエスト {{requested}} 件 · 成功 {{succeeded}} 件 · 失敗 {{failed}} 件"
   }
 }

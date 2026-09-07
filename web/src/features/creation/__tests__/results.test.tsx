@@ -60,9 +60,10 @@ describe('creation result gallery', () => {
       protocol: 'openai-image',
       model: 'gpt-image-2',
       prompt: 'campaign set',
-      status: 'succeeded',
+      status: 'partially_completed',
       requested_count: 4,
       result_count: 3,
+      failed_count: 1,
       created_at: 1,
       updated_at: 1,
       expires_at: 2,
@@ -87,6 +88,7 @@ describe('creation result gallery', () => {
       within(outputs).getAllByRole('button', { name: /Download result/ })
     ).toHaveLength(3)
     expect(screen.getByText('3 generated images')).toBeInTheDocument()
+    expect(screen.getByText('3 succeeded, 1 failed')).toBeInTheDocument()
     expect(
       screen.getByText(
         'The model returned 3 of 4 requested images. Billing follows actual upstream usage.'

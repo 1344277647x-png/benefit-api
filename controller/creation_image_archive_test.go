@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -47,21 +48,26 @@ func TestArchiveOpenAICreationImagesStoresPartialResultsAndReleasesReservation(t
 	})
 	require.NoError(t, err)
 
-	assets, err := archiveOpenAICreationImages(job, body)
+	assets, err := archiveOpenAICreationImages(job, body, 4)
 	require.NoError(t, err)
 	require.Len(t, assets, 2)
 	for index := range assets {
 		asset := assets[index]
 		t.Cleanup(func() { _ = service.RemoveGenerationAssetFile(&asset) })
 	}
-	require.NoError(t, model.FinishGenerationJob(job.ID, model.GenerationJobSucceeded, "", ""))
+	require.NoError(t, model.FinishGenerationJob(job.ID, model.GenerationJobPartiallyCompleted, "", ""))
 
 	stored, err := model.GetGenerationJobForUser(42, job.PublicID)
 	require.NoError(t, err)
 	decorateCreationJob(stored)
 	assert.Equal(t, 4, stored.RequestedCount)
 	assert.Equal(t, 2, stored.ResultCount)
+	assert.Equal(t, 2, stored.FailedCount)
+	assert.Equal(t, model.GenerationJobPartiallyCompleted, stored.Status)
 	assert.Zero(t, stored.ReservedBytes)
+	publicJSON, err := json.Marshal(stored)
+	require.NoError(t, err)
+	assert.NotContains(t, string(publicJSON), "parameters")
 	usage, err := model.GetGenerationStorageUsage(42)
 	require.NoError(t, err)
 	assert.Equal(t, assets[0].SizeBytes+assets[1].SizeBytes, usage.UserBytes)
@@ -71,7 +77,50 @@ func TestArchiveOpenAICreationImagesReturnsNoAssetsForEmptyResponse(t *testing.T
 	body, err := common.Marshal(map[string]any{"data": []any{}})
 	require.NoError(t, err)
 
-	assets, err := archiveOpenAICreationImages(&model.GenerationJob{UserID: 42}, body)
+	assets, err := archiveOpenAICreationImages(&model.GenerationJob{UserID: 42}, body, 4)
 	require.NoError(t, err)
 	assert.Empty(t, assets)
+}
+
+func TestDecorateCreationJobDoesNotMarkPendingImagesAsFailed(t *testing.T) {
+	parameters, err := common.Marshal(map[string]any{"count": 4})
+	require.NoError(t, err)
+	job := &model.GenerationJob{
+		Kind:       model.GenerationKindImage,
+		Status:     model.GenerationJobProcessing,
+		Parameters: string(parameters),
+	}
+
+	decorateCreationJob(job)
+
+	assert.Equal(t, 4, job.RequestedCount)
+	assert.Zero(t, job.ResultCount)
+	assert.Zero(t, job.FailedCount)
+	assert.Empty(t, job.Parameters)
+}
+
+func TestArchiveOpenAICreationImagesReturnsArchivedPrefixWhenLaterResultIsInvalid(t *testing.T) {
+	setupCreationAssetAccessControllerTest(t)
+	root := filepath.Join("D:\\照片\\OneDrive\\桌面\\api\\.cache\\go-tests", "creation-partial-archive-error")
+	require.NoError(t, os.MkdirAll(root, 0o750))
+	t.Setenv("GENERATION_ASSET_ROOT", root)
+	t.Cleanup(func() { _ = os.Remove(root) })
+	userDir := filepath.Join(root, "user-42")
+	t.Cleanup(func() { _ = os.Remove(userDir) })
+	job := &model.GenerationJob{UserID: 42}
+	encoded := base64.StdEncoding.EncodeToString(creationAccessPNG(t))
+	body, err := common.Marshal(map[string]any{
+		"data": []map[string]string{
+			{"b64_json": encoded},
+			{"b64_json": "not-valid-base64"},
+			{"b64_json": encoded},
+		},
+	})
+	require.NoError(t, err)
+
+	assets, err := archiveOpenAICreationImages(job, body, 4)
+	require.Error(t, err)
+	require.Len(t, assets, 1)
+	asset := assets[0]
+	t.Cleanup(func() { _ = service.RemoveGenerationAssetFile(&asset) })
 }

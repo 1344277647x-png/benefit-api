@@ -88,6 +88,8 @@ export interface ChannelSettings {
   system_prompt_override?: boolean
   http_protocol?: 'auto' | 'http1' | string
   http2_connection_shards?: number
+  image_batch_mode?: 'native' | 'fanout' | string
+  image_batch_model_modes?: Record<string, 'native' | 'fanout' | string>
 }
 
 export interface ChannelOtherSettings {
