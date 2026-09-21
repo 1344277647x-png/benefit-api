@@ -76,6 +76,7 @@ import {
   uploadCreationAsset,
   uploadCreationAssets,
 } from './api'
+import { getInitialImageAspectRatio } from './image-options'
 import { downloadAuthenticatedAsset, useAuthenticatedAssetUrl } from './media'
 import {
   appendReferenceImageFiles,
@@ -422,7 +423,7 @@ export function Creation() {
     if (!selectedModel) return
     const nextCapabilities = selectedModel.capabilities
     setSize(nextCapabilities.sizes?.[0] ?? '')
-    setAspectRatio(nextCapabilities.aspect_ratios?.[0] ?? '')
+    setAspectRatio(getInitialImageAspectRatio(nextCapabilities))
     setQuality(nextCapabilities.qualities?.[0] ?? '')
     setCount((current) => {
       const max = nextCapabilities.max_count ?? 1
@@ -1060,6 +1061,7 @@ function CreationFormFields({
                 value={aspectRatio}
                 onChange={setAspectRatio}
                 options={capabilities.aspect_ratios}
+                emptyOption={capabilities.sizes?.length ? t('Auto') : undefined}
               />
             )}
           {capabilities?.qualities && capabilities.qualities.length > 0 && (
@@ -1123,16 +1125,19 @@ function FieldSelect({
   value,
   onChange,
   options,
+  emptyOption,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   options: string[]
+  emptyOption?: string
 }) {
   return (
     <div className='space-y-1.5'>
       <Label>{label}</Label>
       <NativeSelect value={value} onChange={onChange}>
+        {emptyOption && <option value=''>{emptyOption}</option>}
         {options.map((option) => (
           <option key={option} value={option}>
             {option}

@@ -124,7 +124,7 @@ func creationModelsForUser(user *model.UserBase) ([]creationModel, error) {
 					MaxReferenceImages: creationdto.MaxCreationReferenceImages,
 					MaxReferenceTotal:  creationdto.MaxCreationReferenceTotalBytes,
 					MaxCount:           creationdto.MaxCreationImageCount,
-					AspectRatios:       []string{"1:1", "16:9", "9:16", "4:3", "3:4"},
+					AspectRatios:       creationdto.CreationImageAspectRatios(),
 				},
 			})
 		} else if len(imageGroups) > 0 {
@@ -135,6 +135,7 @@ func creationModelsForUser(user *model.UserBase) ([]creationModel, error) {
 				MaxReferenceTotal:  creationdto.MaxCreationReferenceTotalBytes,
 				MaxCount:           creationdto.MaxCreationImageCount,
 				Sizes:              []string{"1024x1024", "1536x1024", "1024x1536"},
+				AspectRatios:       creationdto.CreationImageAspectRatios(),
 				Qualities:          []string{"auto", "low", "medium", "high"},
 			}
 			if strings.HasPrefix(strings.ToLower(pricing.ModelName), "imagen-") {
@@ -142,7 +143,7 @@ func creationModelsForUser(user *model.UserBase) ([]creationModel, error) {
 				capabilities.ReferenceImage = false
 				capabilities.Sizes = nil
 				capabilities.Qualities = nil
-				capabilities.AspectRatios = []string{"1:1", "16:9", "9:16", "4:3", "3:4"}
+				capabilities.AspectRatios = creationdto.CreationImageAspectRatios()
 			}
 			models = append(models, creationModel{
 				ID:           pricing.ModelName,

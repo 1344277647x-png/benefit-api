@@ -86,6 +86,10 @@ func CreationImageRequestConvert() gin.HandlerFunc {
 			abortCreationRequest(c, fmt.Errorf("count must be between 1 and %d", dto.MaxCreationImageCount))
 			return
 		}
+		if request.AspectRatio != "" && !dto.IsCreationImageAspectRatioSupported(request.AspectRatio) {
+			abortCreationRequest(c, errors.New("unsupported image aspect ratio"))
+			return
+		}
 		if request.Protocol != "openai-image" && request.Protocol != "imagen" && request.Protocol != "gemini-image" {
 			abortCreationRequest(c, errors.New("unsupported image protocol"))
 			return
@@ -137,22 +141,7 @@ func CreationImageRequestConvert() gin.HandlerFunc {
 				body, contentType, err = buildOpenAIImageEditBody(request, references)
 			} else {
 				path = "/v1/images/generations"
-				payload := map[string]any{
-					"model":           request.Model,
-					"prompt":          request.Prompt,
-					"n":               request.Count,
-					"response_format": "b64_json",
-				}
-				if request.Size != "" {
-					payload["size"] = request.Size
-				} else if request.AspectRatio != "" {
-					payload["size"] = request.AspectRatio
-					payload["aspect_ratio"] = request.AspectRatio
-				}
-				if request.Quality != "" {
-					payload["quality"] = request.Quality
-				}
-				body, err = common.Marshal(payload)
+				body, err = buildOpenAIImageGenerationBody(request)
 				contentType = gin.MIMEJSON
 			}
 		}
@@ -345,6 +334,28 @@ func buildGeminiCreationImageBody(request dto.CreationImageRequest, references [
 	})
 }
 
+func buildOpenAIImageGenerationBody(request dto.CreationImageRequest) ([]byte, error) {
+	payload := map[string]any{
+		"model":           request.Model,
+		"prompt":          request.Prompt,
+		"n":               request.Count,
+		"response_format": "b64_json",
+	}
+	if request.Size != "" {
+		payload["size"] = request.Size
+	}
+	if request.AspectRatio != "" {
+		payload["aspect_ratio"] = request.AspectRatio
+		if request.Size == "" {
+			payload["size"] = request.AspectRatio
+		}
+	}
+	if request.Quality != "" {
+		payload["quality"] = request.Quality
+	}
+	return common.Marshal(payload)
+}
+
 func buildOpenAIImageEditBody(request dto.CreationImageRequest, references []*model.GenerationAsset) ([]byte, string, error) {
 	if len(references) == 0 {
 		return nil, "", errors.New("reference image is required")
@@ -359,6 +370,9 @@ func buildOpenAIImageEditBody(request dto.CreationImageRequest, references []*mo
 	}
 	if request.Size != "" {
 		fields["size"] = request.Size
+	}
+	if request.AspectRatio != "" {
+		fields["aspect_ratio"] = request.AspectRatio
 	}
 	if request.Quality != "" {
 		fields["quality"] = request.Quality

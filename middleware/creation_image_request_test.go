@@ -114,9 +114,10 @@ func TestBuildOpenAIImageEditBodyIncludesAllReferencesInOrder(t *testing.T) {
 		{RelativePath: paths[2], MimeType: "image/webp"},
 	}
 	body, contentType, err := buildOpenAIImageEditBody(dto.CreationImageRequest{
-		Model:  "gpt-image-2",
-		Prompt: "keep the product consistent",
-		Count:  dto.MaxCreationImageCount,
+		Model:       "gpt-image-2",
+		Prompt:      "keep the product consistent",
+		Count:       dto.MaxCreationImageCount,
+		AspectRatio: "21:9",
 	}, references)
 	require.NoError(t, err)
 
@@ -145,6 +146,26 @@ func TestBuildOpenAIImageEditBodyIncludesAllReferencesInOrder(t *testing.T) {
 	assert.Equal(t, contents, imageParts)
 	assert.Equal(t, []string{"reference-1.png", "reference-2.jpg", "reference-3.webp"}, filenames)
 	assert.Equal(t, "4", fields["n"])
+	assert.Equal(t, "21:9", fields["aspect_ratio"])
+}
+
+func TestBuildOpenAIImageGenerationBodyPreservesSizeAndAspectRatio(t *testing.T) {
+	body, err := buildOpenAIImageGenerationBody(dto.CreationImageRequest{
+		Model:       "gpt-image-2",
+		Prompt:      "cinematic landscape",
+		Size:        "1536x1024",
+		AspectRatio: "3:2",
+		Quality:     "high",
+		Count:       2,
+	})
+	require.NoError(t, err)
+
+	var payload map[string]any
+	require.NoError(t, common.Unmarshal(body, &payload))
+	assert.Equal(t, "1536x1024", payload["size"])
+	assert.Equal(t, "3:2", payload["aspect_ratio"])
+	assert.Equal(t, "high", payload["quality"])
+	assert.Equal(t, float64(2), payload["n"])
 }
 
 func TestBuildGeminiCreationImageBodyIncludesAllInlineData(t *testing.T) {
@@ -161,8 +182,9 @@ func TestBuildGeminiCreationImageBodyIncludesAllInlineData(t *testing.T) {
 	}
 
 	body, err := buildGeminiCreationImageBody(dto.CreationImageRequest{
-		Prompt: "make a consistent set",
-		Count:  dto.MaxCreationImageCount,
+		Prompt:      "make a consistent set",
+		Count:       dto.MaxCreationImageCount,
+		AspectRatio: "2:3",
 	}, []*model.GenerationAsset{
 		{RelativePath: paths[0], MimeType: "image/png"},
 		{RelativePath: paths[1], MimeType: "image/jpeg"},
@@ -180,6 +202,9 @@ func TestBuildGeminiCreationImageBodyIncludesAllInlineData(t *testing.T) {
 		} `json:"contents"`
 		GenerationConfig struct {
 			CandidateCount int `json:"candidateCount"`
+			ImageConfig    struct {
+				AspectRatio string `json:"aspectRatio"`
+			} `json:"imageConfig"`
 		} `json:"generationConfig"`
 	}
 	require.NoError(t, common.Unmarshal(body, &payload))
@@ -191,4 +216,14 @@ func TestBuildGeminiCreationImageBodyIncludesAllInlineData(t *testing.T) {
 	assert.Equal(t, "image/jpeg", payload.Contents[0].Parts[2].InlineData.MimeType)
 	assert.Equal(t, base64.StdEncoding.EncodeToString(contents[1]), payload.Contents[0].Parts[2].InlineData.Data)
 	assert.Equal(t, dto.MaxCreationImageCount, payload.GenerationConfig.CandidateCount)
+	assert.Equal(t, "2:3", payload.GenerationConfig.ImageConfig.AspectRatio)
+}
+
+func TestCreationImageAspectRatiosMatchCreationCenterOptions(t *testing.T) {
+	expected := []string{"1:1", "3:2", "2:3", "16:9", "9:16", "4:3", "3:4", "21:9"}
+	assert.Equal(t, expected, dto.CreationImageAspectRatios())
+	for _, ratio := range expected {
+		assert.True(t, dto.IsCreationImageAspectRatioSupported(ratio), ratio)
+	}
+	assert.False(t, dto.IsCreationImageAspectRatioSupported("4:1"))
 }

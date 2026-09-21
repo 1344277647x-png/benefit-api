@@ -29,6 +29,7 @@ func TestGetAndValidOpenAIImageRequestMultipartStream(t *testing.T) {
 		require.NoError(t, writer.WriteField("model", "gpt-image-1"))
 		require.NoError(t, writer.WriteField("prompt", "edit this image"))
 		require.NoError(t, writer.WriteField("stream", streamValue))
+		require.NoError(t, writer.WriteField("aspect_ratio", "21:9"))
 		if withImage {
 			part, err := writer.CreateFormFile("image", "input.png")
 			require.NoError(t, err)
@@ -51,6 +52,7 @@ func TestGetAndValidOpenAIImageRequestMultipartStream(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, req.Stream)
 		require.True(t, *req.Stream)
+		require.Equal(t, "21:9", req.AspectRatio)
 		require.True(t, req.IsStream(c.Request))
 
 		bodyAfterValidation, err := io.ReadAll(c.Request.Body)
@@ -70,6 +72,25 @@ func TestGetAndValidOpenAIImageRequestMultipartStream(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid stream value")
 	})
+}
+
+func TestGetAndValidOpenAIImageRequestPreservesAspectRatio(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(
+		http.MethodPost,
+		"/v1/images/generations",
+		bytes.NewBufferString(`{"model":"gpt-image-2","prompt":"a panorama","aspect_ratio":"21:9"}`),
+	)
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	request, err := GetAndValidOpenAIImageRequest(c, relayconstant.RelayModeImagesGenerations)
+	require.NoError(t, err)
+	require.Equal(t, "21:9", request.AspectRatio)
+
+	encoded, err := common.Marshal(request)
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), `"aspect_ratio":"21:9"`)
 }
 
 // TestGetAndValidOpenAIImageRequestNBounds guards the billing invariant that

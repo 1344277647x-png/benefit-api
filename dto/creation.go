@@ -10,6 +10,19 @@ const (
 	MaxCreationReferenceTotalBytes int64 = 40 * 1024 * 1024
 )
 
+func CreationImageAspectRatios() []string {
+	return []string{"1:1", "3:2", "2:3", "16:9", "9:16", "4:3", "3:4", "21:9"}
+}
+
+func IsCreationImageAspectRatioSupported(value string) bool {
+	switch value {
+	case "1:1", "3:2", "2:3", "16:9", "9:16", "4:3", "3:4", "21:9":
+		return true
+	default:
+		return false
+	}
+}
+
 type CreationImageRequest struct {
 	Model             string   `json:"model"`
 	Protocol          string   `json:"protocol"`
