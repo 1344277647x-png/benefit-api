@@ -24,3 +24,25 @@ export function getInitialImageAspectRatio(
   if (capabilities.sizes?.length) return ''
   return capabilities.aspect_ratios?.[0] ?? ''
 }
+
+export function getInitialImageResolution(
+  capabilities: CreationCapabilities
+): string {
+  if (!capabilities.resolution_tiers?.length) return ''
+  const defaultResolution = capabilities.default_resolution
+  if (
+    defaultResolution &&
+    capabilities.resolution_tiers.includes(defaultResolution)
+  ) {
+    return defaultResolution
+  }
+  return capabilities.resolution_tiers[0]
+}
+
+export function getResolvedImageSize(
+  capabilities: CreationCapabilities,
+  resolution: string,
+  aspectRatio: string
+): string {
+  return capabilities.size_presets?.[resolution]?.[aspectRatio] ?? ''
+}

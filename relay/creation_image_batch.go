@@ -30,6 +30,9 @@ var creationImageBatchSecretPatterns = []*regexp.Regexp{
 type creationImageExecutionState struct {
 	ReferenceCount int
 	RequestedCount int
+	Resolution     string
+	AspectRatio    string
+	ResolvedSize   string
 	Result         *CreationImageExecutionResult
 }
 
@@ -42,14 +45,24 @@ type CreationImageExecutionResult struct {
 	finalized  bool
 }
 
-func BeginCreationImageExecution(c *gin.Context, referenceCount int, requestedCount int) {
+func BeginCreationImageExecution(c *gin.Context, referenceCount int, requestedCount int, imageOptions ...string) {
 	if c == nil {
 		return
 	}
-	c.Set(creationImageExecutionStateKey, &creationImageExecutionState{
+	state := &creationImageExecutionState{
 		ReferenceCount: referenceCount,
 		RequestedCount: requestedCount,
-	})
+	}
+	if len(imageOptions) > 0 {
+		state.Resolution = imageOptions[0]
+	}
+	if len(imageOptions) > 1 {
+		state.AspectRatio = imageOptions[1]
+	}
+	if len(imageOptions) > 2 {
+		state.ResolvedSize = imageOptions[2]
+	}
+	c.Set(creationImageExecutionStateKey, state)
 }
 
 func ApplyCreationImageCountToPrice(c *gin.Context, info *relaycommon.RelayInfo) error {
@@ -163,6 +176,9 @@ func newCreationImageBatchInfo(c *gin.Context, info *relaycommon.RelayInfo, requ
 	}
 	if state := getCreationImageExecutionState(c); state != nil {
 		batch.ReferenceCount = state.ReferenceCount
+		batch.Resolution = state.Resolution
+		batch.AspectRatio = state.AspectRatio
+		batch.ResolvedSize = state.ResolvedSize
 	}
 	return batch
 }

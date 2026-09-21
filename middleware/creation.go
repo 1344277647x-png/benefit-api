@@ -58,7 +58,9 @@ func CreationImageRequestConvert() gin.HandlerFunc {
 		request.Group = strings.TrimSpace(request.Group)
 		request.Prompt = strings.TrimSpace(request.Prompt)
 		request.Size = strings.TrimSpace(request.Size)
+		request.Resolution = strings.ToUpper(strings.TrimSpace(request.Resolution))
 		request.AspectRatio = strings.TrimSpace(request.AspectRatio)
+		request.ResolvedSize = ""
 		request.Quality = strings.TrimSpace(request.Quality)
 		request.ReferenceAssetID = strings.TrimSpace(request.ReferenceAssetID)
 		referenceAssetIDs, err := normalizeCreationReferenceAssetIDs(request.ReferenceAssetID, request.ReferenceAssetIDs)
@@ -88,6 +90,10 @@ func CreationImageRequestConvert() gin.HandlerFunc {
 		}
 		if request.AspectRatio != "" && !dto.IsCreationImageAspectRatioSupported(request.AspectRatio) {
 			abortCreationRequest(c, errors.New("unsupported image aspect ratio"))
+			return
+		}
+		if err := normalizeImage2CreationOptions(&request); err != nil {
+			abortCreationRequest(c, err)
 			return
 		}
 		if request.Protocol != "openai-image" && request.Protocol != "imagen" && request.Protocol != "gemini-image" {
@@ -153,6 +159,33 @@ func CreationImageRequestConvert() gin.HandlerFunc {
 		setCreationRelayRequest(c, path, contentType, body)
 		c.Next()
 	}
+}
+
+func normalizeImage2CreationOptions(request *dto.CreationImageRequest) error {
+	if request == nil {
+		return nil
+	}
+	if !dto.IsImage2Model(request.Model) {
+		request.Resolution = ""
+		request.ResolvedSize = ""
+		return nil
+	}
+	if request.Resolution != "" && request.AspectRatio == "" {
+		return errors.New("aspect ratio is required when Image2 resolution is set")
+	}
+	if request.AspectRatio == "" {
+		return nil
+	}
+	if request.Resolution == "" {
+		request.Resolution = dto.DefaultCreationImageResolution
+	}
+	resolvedSize, ok := dto.ResolveImage2Size(request.Resolution, request.AspectRatio)
+	if !ok {
+		return errors.New("unsupported Image2 resolution and aspect ratio combination")
+	}
+	request.Size = resolvedSize
+	request.ResolvedSize = resolvedSize
+	return nil
 }
 
 func CreationVideoRequestConvert() gin.HandlerFunc {
@@ -344,7 +377,7 @@ func buildOpenAIImageGenerationBody(request dto.CreationImageRequest) ([]byte, e
 	if request.Size != "" {
 		payload["size"] = request.Size
 	}
-	if request.AspectRatio != "" {
+	if request.AspectRatio != "" && !dto.IsImage2Model(request.Model) {
 		payload["aspect_ratio"] = request.AspectRatio
 		if request.Size == "" {
 			payload["size"] = request.AspectRatio
@@ -371,7 +404,7 @@ func buildOpenAIImageEditBody(request dto.CreationImageRequest, references []*mo
 	if request.Size != "" {
 		fields["size"] = request.Size
 	}
-	if request.AspectRatio != "" {
+	if request.AspectRatio != "" && !dto.IsImage2Model(request.Model) {
 		fields["aspect_ratio"] = request.AspectRatio
 	}
 	if request.Quality != "" {

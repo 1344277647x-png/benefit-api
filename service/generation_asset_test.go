@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,6 +17,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type generationZeroReader struct{}
+
+func (generationZeroReader) Read(data []byte) (int, error) {
+	for index := range data {
+		data[index] = 0
+	}
+	return len(data), nil
+}
 
 func generationPNG(t *testing.T) []byte {
 	t.Helper()
@@ -132,4 +142,43 @@ func TestInspectGenerationVideoRejectsImageBytes(t *testing.T) {
 		Reader: bytes.NewReader(generationPNG(t)),
 	})
 	assert.True(t, errors.Is(err, ErrUnsupportedAssetType))
+}
+
+func TestGenerationOutputAssetLimitAllowsLargerGeneratedImagesOnly(t *testing.T) {
+	assert.Equal(t, int64(50*1024*1024), GenerationOutputAssetLimit(model.GenerationKindImage))
+	assert.Equal(t, GenerationAssetLimit(model.GenerationKindVideo), GenerationOutputAssetLimit(model.GenerationKindVideo))
+	assert.Less(t, GenerationAssetLimit(model.GenerationKindImage), GenerationOutputAssetLimit(model.GenerationKindImage))
+}
+
+func TestSaveGenerationAssetUsesFiftyMegabyteOutputLimit(t *testing.T) {
+	root := filepath.Join("D:\\照片\\OneDrive\\桌面\\api\\.cache\\go-tests", "generation-output-limit")
+	require.NoError(t, os.MkdirAll(root, 0o750))
+	t.Setenv("GENERATION_ASSET_ROOT", root)
+	require.NoError(t, model.DB.Exec("DELETE FROM generation_assets").Error)
+	require.NoError(t, model.DB.Exec("DELETE FROM generation_jobs").Error)
+
+	imageBytes := generationPNG(t)
+	acceptedSize := int64(21 * 1024 * 1024)
+	accepted, err := SaveGenerationAsset(GenerationAssetSaveRequest{
+		UserID:   4242,
+		Role:     "output",
+		Kind:     model.GenerationKindImage,
+		Reader:   io.MultiReader(bytes.NewReader(imageBytes), io.LimitReader(generationZeroReader{}, acceptedSize-int64(len(imageBytes)))),
+		MaxBytes: GenerationOutputAssetLimit(model.GenerationKindImage),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, acceptedSize, accepted.SizeBytes)
+	require.NoError(t, RemoveGenerationAssetFile(accepted))
+
+	_, err = SaveGenerationAsset(GenerationAssetSaveRequest{
+		UserID:   4242,
+		Role:     "output",
+		Kind:     model.GenerationKindImage,
+		Reader:   io.MultiReader(bytes.NewReader(imageBytes), io.LimitReader(generationZeroReader{}, MaxGenerationImageOutputBytes+1-int64(len(imageBytes)))),
+		MaxBytes: GenerationOutputAssetLimit(model.GenerationKindImage),
+	})
+	assert.ErrorIs(t, err, ErrGenerationAssetTooLarge)
+
+	require.NoError(t, os.Remove(filepath.Join(root, "user-4242")))
+	require.NoError(t, os.Remove(root))
 }

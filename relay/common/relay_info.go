@@ -68,6 +68,9 @@ type ImageBatchInfo struct {
 	ResultCount    int               `json:"result_count"`
 	FailedCount    int               `json:"failed_count"`
 	ReferenceCount int               `json:"reference_count"`
+	Resolution     string            `json:"resolution,omitempty"`
+	AspectRatio    string            `json:"aspect_ratio,omitempty"`
+	ResolvedSize   string            `json:"resolved_size,omitempty"`
 	Errors         []ImageBatchError `json:"-"`
 }
 

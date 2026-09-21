@@ -34,6 +34,9 @@ export interface CreationCapabilities {
   qualities?: string[]
   durations?: number[]
   resolutions?: string[]
+  resolution_tiers?: string[]
+  default_resolution?: string
+  size_presets?: Record<string, Record<string, string>>
 }
 
 export interface CreationModel {
@@ -119,6 +122,7 @@ export interface CreationImagePayload {
   group?: string
   prompt: string
   size?: string
+  resolution?: string
   aspect_ratio?: string
   quality?: string
   count: number

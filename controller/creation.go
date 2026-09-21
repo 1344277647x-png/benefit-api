@@ -24,15 +24,18 @@ import (
 )
 
 type creationModelCapabilities struct {
-	ReferenceImage     bool     `json:"reference_image"`
-	MaxReferenceImages int      `json:"max_reference_images,omitempty"`
-	MaxReferenceTotal  int64    `json:"max_reference_total_bytes,omitempty"`
-	MaxCount           int      `json:"max_count,omitempty"`
-	Sizes              []string `json:"sizes,omitempty"`
-	AspectRatios       []string `json:"aspect_ratios,omitempty"`
-	Qualities          []string `json:"qualities,omitempty"`
-	Durations          []int    `json:"durations,omitempty"`
-	Resolutions        []string `json:"resolutions,omitempty"`
+	ReferenceImage     bool                         `json:"reference_image"`
+	MaxReferenceImages int                          `json:"max_reference_images,omitempty"`
+	MaxReferenceTotal  int64                        `json:"max_reference_total_bytes,omitempty"`
+	MaxCount           int                          `json:"max_count,omitempty"`
+	Sizes              []string                     `json:"sizes,omitempty"`
+	AspectRatios       []string                     `json:"aspect_ratios,omitempty"`
+	Qualities          []string                     `json:"qualities,omitempty"`
+	Durations          []int                        `json:"durations,omitempty"`
+	Resolutions        []string                     `json:"resolutions,omitempty"`
+	ResolutionTiers    []string                     `json:"resolution_tiers,omitempty"`
+	DefaultResolution  string                       `json:"default_resolution,omitempty"`
+	SizePresets        map[string]map[string]string `json:"size_presets,omitempty"`
 }
 
 type creationModel struct {
@@ -144,6 +147,11 @@ func creationModelsForUser(user *model.UserBase) ([]creationModel, error) {
 				capabilities.Sizes = nil
 				capabilities.Qualities = nil
 				capabilities.AspectRatios = creationdto.CreationImageAspectRatios()
+			} else if creationdto.IsImage2Model(pricing.ModelName) {
+				capabilities.Sizes = nil
+				capabilities.ResolutionTiers = creationdto.CreationImageResolutionTiers()
+				capabilities.DefaultResolution = creationdto.DefaultCreationImageResolution
+				capabilities.SizePresets = creationdto.CreationImageSizePresets()
 			}
 			models = append(models, creationModel{
 				ID:           pricing.ModelName,

@@ -76,7 +76,11 @@ import {
   uploadCreationAsset,
   uploadCreationAssets,
 } from './api'
-import { getInitialImageAspectRatio } from './image-options'
+import {
+  getInitialImageAspectRatio,
+  getInitialImageResolution,
+  getResolvedImageSize,
+} from './image-options'
 import { downloadAuthenticatedAsset, useAuthenticatedAssetUrl } from './media'
 import {
   appendReferenceImageFiles,
@@ -359,7 +363,8 @@ export function Creation() {
   const [aspectRatio, setAspectRatio] = useState('')
   const [quality, setQuality] = useState('')
   const [duration, setDuration] = useState('5')
-  const [resolution, setResolution] = useState('720p')
+  const [imageResolution, setImageResolution] = useState('')
+  const [videoResolution, setVideoResolution] = useState('720p')
   const [imageReferenceFiles, setImageReferenceFiles] = useState<File[]>([])
   const [videoReferenceFile, setVideoReferenceFile] = useState<File | null>(
     null
@@ -424,13 +429,14 @@ export function Creation() {
     const nextCapabilities = selectedModel.capabilities
     setSize(nextCapabilities.sizes?.[0] ?? '')
     setAspectRatio(getInitialImageAspectRatio(nextCapabilities))
+    setImageResolution(getInitialImageResolution(nextCapabilities))
     setQuality(nextCapabilities.qualities?.[0] ?? '')
     setCount((current) => {
       const max = nextCapabilities.max_count ?? 1
       return String(Math.min(Math.max(Number(current) || 1, 1), max))
     })
     setDuration(String(nextCapabilities.durations?.[0] ?? 5))
-    setResolution(nextCapabilities.resolutions?.[0] ?? '720p')
+    setVideoResolution(nextCapabilities.resolutions?.[0] ?? '720p')
   }, [selectedModel])
 
   useEffect(() => {
@@ -573,6 +579,7 @@ export function Creation() {
                 capabilities?.max_count ?? 4
               ),
               size: size || undefined,
+              resolution: imageResolution || undefined,
               aspect_ratio: aspectRatio || undefined,
               quality: quality || undefined,
               reference_asset_ids: referenceAssetIds,
@@ -582,7 +589,7 @@ export function Creation() {
               group: selectedGroup,
               prompt: prompt.trim(),
               duration: Number(duration) || 5,
-              resolution,
+              resolution: videoResolution,
               reference_asset_id: referenceAssetId,
             })
       if (!created.success || !created.data) {
@@ -755,8 +762,10 @@ export function Creation() {
                       setQuality={setQuality}
                       duration={duration}
                       setDuration={setDuration}
-                      resolution={resolution}
-                      setResolution={setResolution}
+                      imageResolution={imageResolution}
+                      setImageResolution={setImageResolution}
+                      videoResolution={videoResolution}
+                      setVideoResolution={setVideoResolution}
                       t={t}
                     />
                     {capabilities?.reference_image && (
@@ -824,8 +833,10 @@ export function Creation() {
                       setQuality={setQuality}
                       duration={duration}
                       setDuration={setDuration}
-                      resolution={resolution}
-                      setResolution={setResolution}
+                      imageResolution={imageResolution}
+                      setImageResolution={setImageResolution}
+                      videoResolution={videoResolution}
+                      setVideoResolution={setVideoResolution}
                       t={t}
                     />
                     <ReferencePicker
@@ -966,8 +977,10 @@ function CreationFormFields({
   setQuality,
   duration,
   setDuration,
-  resolution,
-  setResolution,
+  imageResolution,
+  setImageResolution,
+  videoResolution,
+  setVideoResolution,
   t,
 }: {
   kind: CreationKind
@@ -990,10 +1003,15 @@ function CreationFormFields({
   setQuality: (value: string) => void
   duration: string
   setDuration: (value: string) => void
-  resolution: string
-  setResolution: (value: string) => void
+  imageResolution: string
+  setImageResolution: (value: string) => void
+  videoResolution: string
+  setVideoResolution: (value: string) => void
   t: (key: string, options?: Record<string, unknown>) => string
 }) {
+  const resolvedImageSize = capabilities
+    ? getResolvedImageSize(capabilities, imageResolution, aspectRatio)
+    : ''
   return (
     <>
       <div className='space-y-1.5'>
@@ -1046,6 +1064,15 @@ function CreationFormFields({
       </div>
       {kind === 'image' ? (
         <div className='grid gap-3 sm:grid-cols-2'>
+          {capabilities?.resolution_tiers &&
+            capabilities.resolution_tiers.length > 0 && (
+              <FieldSelect
+                label={t('Resolution')}
+                value={imageResolution}
+                onChange={setImageResolution}
+                options={capabilities.resolution_tiers}
+              />
+            )}
           {capabilities?.sizes && capabilities.sizes.length > 0 && (
             <FieldSelect
               label={t('Size')}
@@ -1071,6 +1098,11 @@ function CreationFormFields({
               onChange={setQuality}
               options={capabilities.qualities}
             />
+          )}
+          {resolvedImageSize && (
+            <p className='text-muted-foreground text-xs sm:col-span-2'>
+              {t('Will use {{size}}', { size: resolvedImageSize })}
+            </p>
           )}
           <div className='space-y-1.5'>
             <Label htmlFor='image-count'>{t('Images')}</Label>
@@ -1110,8 +1142,8 @@ function CreationFormFields({
           </div>
           <FieldSelect
             label={t('Resolution')}
-            value={resolution}
-            onChange={setResolution}
+            value={videoResolution}
+            onChange={setVideoResolution}
             options={capabilities?.resolutions ?? ['720p', '1080p']}
           />
         </div>

@@ -117,6 +117,7 @@ func TestBuildOpenAIImageEditBodyIncludesAllReferencesInOrder(t *testing.T) {
 		Model:       "gpt-image-2",
 		Prompt:      "keep the product consistent",
 		Count:       dto.MaxCreationImageCount,
+		Size:        "3840x1600",
 		AspectRatio: "21:9",
 	}, references)
 	require.NoError(t, err)
@@ -146,14 +147,15 @@ func TestBuildOpenAIImageEditBodyIncludesAllReferencesInOrder(t *testing.T) {
 	assert.Equal(t, contents, imageParts)
 	assert.Equal(t, []string{"reference-1.png", "reference-2.jpg", "reference-3.webp"}, filenames)
 	assert.Equal(t, "4", fields["n"])
-	assert.Equal(t, "21:9", fields["aspect_ratio"])
+	assert.Equal(t, "3840x1600", fields["size"])
+	assert.NotContains(t, fields, "aspect_ratio")
 }
 
-func TestBuildOpenAIImageGenerationBodyPreservesSizeAndAspectRatio(t *testing.T) {
+func TestBuildOpenAIImageGenerationBodySendsOnlyResolvedSizeForImage2(t *testing.T) {
 	body, err := buildOpenAIImageGenerationBody(dto.CreationImageRequest{
 		Model:       "gpt-image-2",
 		Prompt:      "cinematic landscape",
-		Size:        "1536x1024",
+		Size:        "3840x2160",
 		AspectRatio: "3:2",
 		Quality:     "high",
 		Count:       2,
@@ -162,10 +164,26 @@ func TestBuildOpenAIImageGenerationBodyPreservesSizeAndAspectRatio(t *testing.T)
 
 	var payload map[string]any
 	require.NoError(t, common.Unmarshal(body, &payload))
-	assert.Equal(t, "1536x1024", payload["size"])
-	assert.Equal(t, "3:2", payload["aspect_ratio"])
+	assert.Equal(t, "3840x2160", payload["size"])
+	assert.NotContains(t, payload, "aspect_ratio")
 	assert.Equal(t, "high", payload["quality"])
 	assert.Equal(t, float64(2), payload["n"])
+}
+
+func TestBuildOpenAIImageGenerationBodyKeepsNonImage2Behavior(t *testing.T) {
+	body, err := buildOpenAIImageGenerationBody(dto.CreationImageRequest{
+		Model:       "gpt-image-1",
+		Prompt:      "cinematic landscape",
+		Size:        "1536x1024",
+		AspectRatio: "3:2",
+		Count:       1,
+	})
+	require.NoError(t, err)
+
+	var payload map[string]any
+	require.NoError(t, common.Unmarshal(body, &payload))
+	assert.Equal(t, "1536x1024", payload["size"])
+	assert.Equal(t, "3:2", payload["aspect_ratio"])
 }
 
 func TestBuildGeminiCreationImageBodyIncludesAllInlineData(t *testing.T) {
@@ -226,4 +244,56 @@ func TestCreationImageAspectRatiosMatchCreationCenterOptions(t *testing.T) {
 		assert.True(t, dto.IsCreationImageAspectRatioSupported(ratio), ratio)
 	}
 	assert.False(t, dto.IsCreationImageAspectRatioSupported("4:1"))
+}
+
+func TestNormalizeImage2CreationOptionsResolvesAndOverridesLegacySize(t *testing.T) {
+	request := dto.CreationImageRequest{
+		Model:       "gpt-image-2",
+		Size:        "1024x1024",
+		AspectRatio: "9:16",
+	}
+	require.NoError(t, normalizeImage2CreationOptions(&request))
+	assert.Equal(t, dto.DefaultCreationImageResolution, request.Resolution)
+	assert.Equal(t, "2160x3840", request.Size)
+	assert.Equal(t, "2160x3840", request.ResolvedSize)
+
+	request = dto.CreationImageRequest{
+		Model:       "gpt-image-2.5-flare",
+		Resolution:  "4K",
+		AspectRatio: "16:9",
+	}
+	require.NoError(t, normalizeImage2CreationOptions(&request))
+	assert.Equal(t, "3840x2160", request.Size)
+}
+
+func TestNormalizeImage2CreationOptionsPreservesLegacySizeWithoutRatio(t *testing.T) {
+	request := dto.CreationImageRequest{Model: "gpt-image-2", Size: "1536x1024"}
+	require.NoError(t, normalizeImage2CreationOptions(&request))
+	assert.Equal(t, "1536x1024", request.Size)
+	assert.Empty(t, request.Resolution)
+	assert.Empty(t, request.ResolvedSize)
+}
+
+func TestNormalizeImage2CreationOptionsIgnoresResolutionForOtherModels(t *testing.T) {
+	request := dto.CreationImageRequest{
+		Model:        "gpt-image-1",
+		Resolution:   "4K",
+		AspectRatio:  "16:9",
+		ResolvedSize: "spoofed",
+	}
+	require.NoError(t, normalizeImage2CreationOptions(&request))
+	assert.Empty(t, request.Resolution)
+	assert.Empty(t, request.ResolvedSize)
+	assert.Equal(t, "16:9", request.AspectRatio)
+}
+
+func TestNormalizeImage2CreationOptionsRejectsInvalidCombinations(t *testing.T) {
+	tests := []dto.CreationImageRequest{
+		{Model: "gpt-image-2", Resolution: "8K", AspectRatio: "16:9"},
+		{Model: "gpt-image-2", Resolution: "4K"},
+	}
+	for _, request := range tests {
+		request := request
+		require.Error(t, normalizeImage2CreationOptions(&request))
+	}
 }

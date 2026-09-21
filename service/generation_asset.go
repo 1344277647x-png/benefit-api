@@ -25,7 +25,10 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
-const generationSniffBytes = 512
+const (
+	generationSniffBytes          = 512
+	MaxGenerationImageOutputBytes = int64(50 * 1024 * 1024)
+)
 
 var (
 	ErrGenerationAssetTooLarge = errors.New("generation asset exceeds the file size limit")
@@ -48,6 +51,13 @@ func GenerationAssetLimit(kind string) int64 {
 		return int64(setting.MaxVideoMB) * 1024 * 1024
 	}
 	return int64(setting.MaxImageMB) * 1024 * 1024
+}
+
+func GenerationOutputAssetLimit(kind string) int64 {
+	if kind == model.GenerationKindImage {
+		return MaxGenerationImageOutputBytes
+	}
+	return GenerationAssetLimit(kind)
 }
 
 func SaveGenerationAsset(request GenerationAssetSaveRequest) (*model.GenerationAsset, error) {

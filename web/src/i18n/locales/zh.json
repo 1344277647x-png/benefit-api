@@ -5486,6 +5486,7 @@
     "Images": "图片数量",
     "Duration (seconds)": "时长（秒）",
     "Resolution": "分辨率",
+    "Will use {{size}}": "将使用 {{size}}",
     "Reference image": "参考图",
     "Add reference image": "添加参考图",
     "Reference image selected": "已选择参考图",

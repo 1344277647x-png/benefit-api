@@ -115,13 +115,16 @@ func CreationImage(c *gin.Context) {
 		RequestedCount: request.Count,
 		FailedCount:    request.Count,
 		ReferenceCount: len(request.ReferenceAssetIDs),
+		Resolution:     request.Resolution,
+		AspectRatio:    request.AspectRatio,
+		ResolvedSize:   request.ResolvedSize,
 	}
 	parameters, err := creationImageParameters(request, initialBatch)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	reservedBytes := service.GenerationAssetLimit(model.GenerationKindImage) * int64(request.Count)
+	reservedBytes := service.GenerationOutputAssetLimit(model.GenerationKindImage) * int64(request.Count)
 	job := &model.GenerationJob{
 		UserID:     c.GetInt("id"),
 		Kind:       model.GenerationKindImage,
@@ -143,7 +146,14 @@ func CreationImage(c *gin.Context) {
 	}
 
 	responseLimit := reservedBytes + reservedBytes/2 + 2*1024*1024
-	relaypkg.BeginCreationImageExecution(c, len(request.ReferenceAssetIDs), request.Count)
+	relaypkg.BeginCreationImageExecution(
+		c,
+		len(request.ReferenceAssetIDs),
+		request.Count,
+		request.Resolution,
+		request.AspectRatio,
+		request.ResolvedSize,
+	)
 	capture := newCreationResponseCapture(c.Writer, responseLimit)
 	originalWriter := c.Writer
 	c.Writer = capture
@@ -476,7 +486,7 @@ func archiveCreationImage(job *model.GenerationJob, encoded string, rawURL strin
 		JobID:              job.ID,
 		Role:               "output",
 		Kind:               model.GenerationKindImage,
-		MaxBytes:           service.GenerationAssetLimit(model.GenerationKindImage),
+		MaxBytes:           service.GenerationOutputAssetLimit(model.GenerationKindImage),
 		ConsumeReservation: true,
 	})
 }
@@ -485,7 +495,7 @@ func saveBase64CreationImage(job *model.GenerationJob, encoded string) (*model.G
 	if comma := strings.Index(encoded, ","); strings.HasPrefix(encoded, "data:") && comma >= 0 {
 		encoded = encoded[comma+1:]
 	}
-	maxBytes := service.GenerationAssetLimit(model.GenerationKindImage)
+	maxBytes := service.GenerationOutputAssetLimit(model.GenerationKindImage)
 	if int64(len(encoded)) > maxBytes*4/3+8 {
 		return nil, errCreationResponseTooLarge
 	}

@@ -5486,6 +5486,7 @@
     "Images": "Images",
     "Duration (seconds)": "Duration (seconds)",
     "Resolution": "Resolution",
+    "Will use {{size}}": "Will use {{size}}",
     "Reference image": "Reference image",
     "Add reference image": "Add reference image",
     "Reference image selected": "Reference image selected",

@@ -59,6 +59,15 @@ func AppendImageBatchLogInfo(other map[string]interface{}, batch *relaycommon.Im
 	other["result_count"] = batch.ResultCount
 	other["failed_count"] = batch.FailedCount
 	other["reference_count"] = batch.ReferenceCount
+	if batch.Resolution != "" {
+		other["resolution"] = batch.Resolution
+	}
+	if batch.AspectRatio != "" {
+		other["aspect_ratio"] = batch.AspectRatio
+	}
+	if batch.ResolvedSize != "" {
+		other["resolved_size"] = batch.ResolvedSize
+	}
 	if len(batch.Errors) == 0 {
 		return
 	}
