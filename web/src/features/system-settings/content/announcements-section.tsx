@@ -22,7 +22,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import * as z from 'zod'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { StaticRowActions } from '@/components/data-table/static/static-row-actions'
@@ -65,6 +64,12 @@ import dayjs from '@/lib/dayjs'
 import { SettingsSwitchField } from '../components/settings-form-layout'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
+import {
+  announcementSchema,
+  countAnnouncementCharacters,
+  MAX_ANNOUNCEMENT_CONTENT_CHARACTERS,
+  type AnnouncementFormValues,
+} from './announcement-validation'
 
 type Announcement = {
   id: number
@@ -80,23 +85,6 @@ type AnnouncementsSectionProps = {
   enabled: boolean
   data: string
 }
-
-const announcementSchema = z.object({
-  content: z
-    .string()
-    .min(1, 'Content is required')
-    .max(500, 'Content must be less than 500 characters'),
-  publishDate: z.string().min(1, 'Publish date is required'),
-  type: z.enum(['default', 'ongoing', 'success', 'warning', 'error']),
-  extra: z
-    .string()
-    .max(100, 'Extra must be less than 100 characters')
-    .optional(),
-  popupEnabled: z.boolean(),
-  popupFrequency: z.enum(['once', 'daily', 'session']),
-})
-
-type AnnouncementFormValues = z.infer<typeof announcementSchema>
 
 const ANNOUNCEMENT_FORM_ID = 'announcement-form'
 
@@ -507,11 +495,18 @@ export function AnnouncementsSection({
                         'Enter announcement content (supports Markdown/HTML)'
                       )}
                       rows={4}
+                      maxLength={MAX_ANNOUNCEMENT_CONTENT_CHARACTERS}
                       {...field}
                     />
                   </FormControl>
                   <FormDescription>
-                    {t('Maximum 500 characters. Supports Markdown and HTML.')}
+                    {t(
+                      'Maximum 10,000 characters. Supports Markdown and HTML.'
+                    )}{' '}
+                    {t('{{count}} / {{max}} characters', {
+                      count: countAnnouncementCharacters(field.value),
+                      max: MAX_ANNOUNCEMENT_CONTENT_CHARACTERS.toLocaleString(),
+                    })}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

@@ -12,6 +12,8 @@ import (
 	"github.com/QuantumNous/new-api/common"
 )
 
+const maxAnnouncementContentCharacters = 10000
+
 var (
 	urlRegex       = regexp.MustCompile(`^https?://(?:(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?|(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?))(?:\:[0-9]{1,5})?(?:/.*)?$`)
 	dangerousChars = []string{"<script", "<iframe", "javascript:", "onload=", "onerror=", "onclick="}
@@ -181,8 +183,8 @@ func validateAnnouncements(announcementsStr string) error {
 				}
 			}
 		}
-		if exceedsMaxCharacters(content, 500) {
-			return fmt.Errorf("第%d个公告的内容长度不能超过500字符", i+1)
+		if exceedsMaxCharacters(content, maxAnnouncementContentCharacters) {
+			return fmt.Errorf("第%d个公告的内容长度不能超过%d字符", i+1, maxAnnouncementContentCharacters)
 		}
 		if extra, exists := ann["extra"]; exists {
 			if extraStr, ok := extra.(string); ok && exceedsMaxCharacters(extraStr, 100) {

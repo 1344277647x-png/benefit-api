@@ -19,6 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 package console_setting
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -60,4 +62,26 @@ func TestValidateAnnouncementsPopupFields(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+func TestValidateAnnouncementsAcceptsLongContentWithinNewLimit(t *testing.T) {
+	content := strings.Repeat("公告内容", 2000)
+	value := fmt.Sprintf(
+		`[{"id":1,"content":%q,"publishDate":"2026-09-23T00:00:00Z","type":"default"}]`,
+		content,
+	)
+	require.NoError(t, ValidateConsoleSettings(value, "Announcements"))
+}
+
+func TestValidateAnnouncementsRejectsContentOverNewLimit(t *testing.T) {
+	content := strings.Repeat("a", maxAnnouncementContentCharacters+1)
+	value := fmt.Sprintf(
+		`[{"id":1,"content":%q,"publishDate":"2026-09-23T00:00:00Z","type":"default"}]`,
+		content,
+	)
+	require.ErrorContains(
+		t,
+		ValidateConsoleSettings(value, "Announcements"),
+		"10000字符",
+	)
 }
