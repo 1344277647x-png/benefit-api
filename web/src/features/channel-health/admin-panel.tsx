@@ -179,7 +179,7 @@ export function ChannelHealthItems(props: {
         role='list'
         aria-label={props.t('Channel health')}
         data-channel-health-layout='mobile'
-        className='max-h-[28rem] divide-y overflow-y-auto sm:hidden'
+        className='max-h-[min(28rem,26svh)] divide-y overflow-y-auto sm:hidden'
       >
         {props.items.map((item) => (
           <MobileHealthRow
@@ -194,7 +194,7 @@ export function ChannelHealthItems(props: {
         data-channel-health-layout='desktop'
         className='hidden overflow-x-auto sm:block'
       >
-        <div className='max-h-96 min-w-[760px] overflow-y-auto'>
+        <div className='max-h-[min(24rem,26svh)] min-w-[760px] overflow-y-auto'>
           <div className='bg-muted/95 text-muted-foreground sticky top-0 z-10 grid grid-cols-[72px_minmax(210px,1fr)_110px_100px_100px_90px] gap-3 border-b px-3 py-2 text-[11px] font-medium tracking-wide uppercase backdrop-blur'>
             <span>{props.t('Channel')}</span>
             <span>{props.t('Model')}</span>
@@ -270,7 +270,7 @@ export function ChannelHealthPanel() {
     content = <ChannelHealthItems items={items} t={t} />
   }
   return (
-    <Card className='bg-card/80 mb-4 overflow-hidden shadow-sm'>
+    <Card className='bg-card/80 mb-4 shrink-0 overflow-hidden shadow-sm'>
       <CardHeader className='flex flex-row items-center justify-between gap-3 border-b'>
         <div>
           <CardTitle className='flex items-center gap-2 text-base'>

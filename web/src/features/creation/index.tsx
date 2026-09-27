@@ -35,6 +35,7 @@ import {
 } from 'lucide-react'
 import {
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -689,7 +690,7 @@ export function Creation() {
   return (
     <Main className='overflow-auto'>
       <div className='mx-auto w-full max-w-6xl space-y-4 p-3 sm:space-y-5 sm:p-5'>
-        <header className='flex flex-wrap items-end justify-between gap-3'>
+        <header className='benefit-feature-heading flex flex-wrap items-end justify-between gap-3'>
           <div className='min-w-0'>
             <div className='text-primary mb-1 flex items-center gap-2 text-xs font-medium tracking-[0.18em] uppercase'>
               <Sparkles className='size-3.5' />
@@ -956,7 +957,7 @@ export function Creation() {
   )
 }
 
-function CreationFormFields({
+export function CreationFormFields({
   kind,
   models,
   modelId,
@@ -1017,6 +1018,7 @@ function CreationFormFields({
       <div className='space-y-1.5'>
         <Label htmlFor={`${kind}-model`}>{t('Model')}</Label>
         <NativeSelect
+          id={`${kind}-model`}
           value={modelId}
           onChange={setModelId}
           disabled={models.length === 0}
@@ -1036,6 +1038,7 @@ function CreationFormFields({
         <div className='space-y-1.5'>
           <Label htmlFor={`${kind}-group`}>{t('Channel group')}</Label>
           <NativeSelect
+            id={`${kind}-group`}
             value={group}
             onChange={setGroup}
             disabled={models.length === 0}
@@ -1132,7 +1135,11 @@ function CreationFormFields({
         <div className='grid gap-3 sm:grid-cols-2'>
           <div className='space-y-1.5'>
             <Label htmlFor='video-duration'>{t('Duration (seconds)')}</Label>
-            <NativeSelect value={duration} onChange={setDuration}>
+            <NativeSelect
+              id='video-duration'
+              value={duration}
+              onChange={setDuration}
+            >
               {(capabilities?.durations ?? [4, 5, 6, 8, 10]).map((value) => (
                 <option key={value} value={value}>
                   {value}s
@@ -1165,10 +1172,11 @@ function FieldSelect({
   options: string[]
   emptyOption?: string
 }) {
+  const id = useId()
   return (
     <div className='space-y-1.5'>
-      <Label>{label}</Label>
-      <NativeSelect value={value} onChange={onChange}>
+      <Label htmlFor={id}>{label}</Label>
+      <NativeSelect id={id} value={value} onChange={onChange}>
         {emptyOption && <option value=''>{emptyOption}</option>}
         {options.map((option) => (
           <option key={option} value={option}>

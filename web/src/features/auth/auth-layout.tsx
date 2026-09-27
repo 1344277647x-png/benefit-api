@@ -64,7 +64,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
       </Link>
       <div className='relative flex min-h-svh items-center px-4 pt-24 pb-8 sm:px-6 sm:pt-20 lg:px-10'>
         <div className='mx-auto grid w-full max-w-6xl items-center gap-12 lg:grid-cols-[minmax(0,1fr)_460px] xl:gap-20'>
-          <aside className='hidden min-w-0 flex-col justify-center lg:flex'>
+          <aside className='benefit-auth-story hidden min-w-0 flex-col justify-center lg:flex'>
             <p className='text-primary text-sm font-semibold'>
               {t('Unified AI access, ready for production')}
             </p>
@@ -97,7 +97,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
               })}
             </ul>
           </aside>
-          <div className='benefit-auth-panel benefit-solid-surface mx-auto flex w-full max-w-[460px] flex-col justify-center space-y-2 rounded-[8px] px-5 py-8 sm:px-9 sm:py-10 lg:mx-0'>
+          <div className='benefit-auth-panel benefit-solid-surface mx-auto flex w-full max-w-[460px] min-w-0 flex-col justify-center space-y-2 rounded-2xl px-5 py-8 sm:px-9 sm:py-10 lg:mx-0'>
             {children}
           </div>
         </div>

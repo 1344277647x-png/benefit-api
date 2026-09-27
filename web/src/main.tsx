@@ -28,6 +28,7 @@ import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import { toast } from 'sonner'
 
+import { SiteAtmosphere } from '@/components/layout/components/site-atmosphere'
 import { getStatus } from '@/lib/api'
 import { installBuildMetadata } from '@/lib/build-metadata'
 import { applyFaviconToDom } from '@/lib/dom-utils'
@@ -163,6 +164,7 @@ if (!rootElement.innerHTML) {
         <ThemeProvider>
           <FontProvider>
             <DirectionProvider>
+              <SiteAtmosphere />
               <RouterProvider router={router} />
             </DirectionProvider>
           </FontProvider>

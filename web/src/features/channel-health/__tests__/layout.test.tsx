@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -19,7 +20,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { render, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import { ChannelHealthItems } from '../admin-panel'
+import { ChannelHealthItems, ChannelHealthPanel } from '../admin-panel'
 import type { ChannelHealthView } from '../api'
 
 const item: ChannelHealthView = {
@@ -38,6 +39,24 @@ const item: ChannelHealthView = {
 }
 
 describe('ChannelHealthItems layout', () => {
+  it('keeps the health panel from shrinking and clipping its rows beside a flex table', () => {
+    const client = new QueryClient()
+    client.setQueryData(['channel-health'], {
+      success: true,
+      data: { enabled: true, items: [item], refresh_interval_seconds: 300 },
+    })
+    const view = render(
+      <QueryClientProvider client={client}>
+        <ChannelHealthPanel />
+      </QueryClientProvider>
+    )
+    expect(view.container.querySelector('[data-slot="card"]')).toHaveClass(
+      'shrink-0'
+    )
+    view.unmount()
+    client.clear()
+  })
+
   it('uses a vertical bounded list on mobile without the wide desktop grid', () => {
     const view = render(<ChannelHealthItems items={[item]} t={(key) => key} />)
     const mobile = view.container.querySelector(
@@ -45,6 +64,7 @@ describe('ChannelHealthItems layout', () => {
     )
 
     expect(mobile).toHaveClass('sm:hidden', 'overflow-y-auto')
+    expect(mobile).toHaveClass('max-h-[min(28rem,26svh)]')
     expect(mobile).not.toHaveClass('overflow-x-auto')
     expect(
       within(mobile as HTMLElement).getByRole('listitem')
@@ -59,5 +79,9 @@ describe('ChannelHealthItems layout', () => {
 
     expect(desktop).toHaveClass('overflow-x-auto', 'sm:block')
     expect(desktop?.firstElementChild).toHaveClass('min-w-[760px]')
+    expect(desktop?.firstElementChild).toHaveClass(
+      'max-h-[min(24rem,26svh)]',
+      'overflow-y-auto'
+    )
   })
 })

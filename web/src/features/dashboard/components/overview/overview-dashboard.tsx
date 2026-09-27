@@ -690,7 +690,7 @@ export function OverviewDashboard() {
 
       {setupGuideExpanded ? (
         <CardStaggerContainer className='grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]'>
-          <CardStaggerItem className='bg-card h-full overflow-hidden rounded-2xl border shadow-xs'>
+          <CardStaggerItem className='benefit-cinema-panel bg-card h-full overflow-hidden rounded-2xl border shadow-xs'>
             <div className='relative h-full overflow-hidden p-4 sm:p-5'>
               <SetupGuideBackdrop />
               <div className='relative grid gap-5 lg:grid-cols-[minmax(0,1fr)_21rem]'>
@@ -746,7 +746,7 @@ export function OverviewDashboard() {
             </div>
           </CardStaggerItem>
 
-          <CardStaggerItem className='bg-card h-full rounded-2xl border p-4 shadow-xs sm:p-5'>
+          <CardStaggerItem className='benefit-cinema-panel bg-card h-full rounded-2xl border p-4 shadow-xs sm:p-5'>
             <div className='flex h-full flex-col gap-4'>
               <div className='flex flex-col gap-1'>
                 <div className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
@@ -766,7 +766,7 @@ export function OverviewDashboard() {
         </CardStaggerContainer>
       ) : (
         <CardStaggerContainer>
-          <CardStaggerItem className='bg-card overflow-hidden rounded-2xl border shadow-xs'>
+          <CardStaggerItem className='benefit-cinema-panel bg-card overflow-hidden rounded-2xl border shadow-xs'>
             <div className='relative overflow-hidden px-4 py-3 sm:px-5'>
               <SetupGuideBackdrop compact />
               <div className='relative flex flex-wrap items-center justify-between gap-3'>

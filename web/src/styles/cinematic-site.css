@@ -1,0 +1,461 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+
+/* Default brand palette; explicit user-selected presets still override on body. */
+:root {
+  --background: #edf3ee;
+  --foreground: #163b32;
+  --card: #f9fcf9;
+  --card-foreground: #163b32;
+  --popover: #f9fcf9;
+  --popover-foreground: #163b32;
+  --primary: #806026;
+  --primary-foreground: #ffffff;
+  --secondary: #dceae1;
+  --secondary-foreground: #285344;
+  --muted: #e1eae3;
+  --muted-foreground: #51695e;
+  --accent: #e3e9d9;
+  --accent-foreground: #294c3f;
+  --border: #cad8ce;
+  --input: #b5c7ba;
+  --ring: #8a6830;
+  --sidebar: #e5eee7;
+  --sidebar-foreground: #224538;
+  --sidebar-primary: #806026;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #d7e5da;
+  --sidebar-accent-foreground: #244c3a;
+  --sidebar-border: #c8d7cb;
+  --sidebar-ring: #8a6830;
+  --chart-1: #31765b;
+  --chart-2: #367788;
+  --chart-3: #97702a;
+  --overview-accent-1: #31765b;
+  --overview-accent-2: #367788;
+  --overview-accent-3: #97702a;
+  --cinema-site-gold: #806026;
+  --cinema-site-shadow: rgb(20 52 38 / 0.09);
+  --cinema-site-glint: rgb(255 255 255 / 0.8);
+}
+
+.dark {
+  --background: #081815;
+  --foreground: #e7efea;
+  --card: #10271f;
+  --card-foreground: #e7efea;
+  --popover: #132b23;
+  --popover-foreground: #e7efea;
+  --primary: #ebcb91;
+  --primary-foreground: #18291e;
+  --secondary: #1a382e;
+  --secondary-foreground: #c8ded2;
+  --muted: #19362d;
+  --muted-foreground: #a5bbb0;
+  --accent: #284337;
+  --accent-foreground: #f2e5c4;
+  --border: #2a493c;
+  --input: #3a5b4c;
+  --ring: #d6b77f;
+  --sidebar: #0b201a;
+  --sidebar-foreground: #c4d7ca;
+  --sidebar-primary: #ebcb91;
+  --sidebar-primary-foreground: #18291e;
+  --sidebar-accent: #203d30;
+  --sidebar-accent-foreground: #f0d7aa;
+  --sidebar-border: #294638;
+  --sidebar-ring: #d6b77f;
+  --chart-1: #86c8a5;
+  --chart-2: #80bac6;
+  --chart-3: #dfbe80;
+  --overview-accent-1: #86c8a5;
+  --overview-accent-2: #80bac6;
+  --overview-accent-3: #dfbe80;
+  --cinema-site-gold: #ebcb91;
+  --cinema-site-shadow: rgb(0 8 5 / 0.32);
+  --cinema-site-glint: rgb(231 239 234 / 0.09);
+}
+
+body.benefit-cinematic-site {
+  background: var(--background);
+}
+
+.benefit-cinematic-site #root {
+  isolation: isolate;
+  min-height: 100svh;
+}
+
+.benefit-site-atmosphere {
+  --site-motion: paused;
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--cinema-site-gold);
+}
+
+.benefit-site-atmosphere[data-motion='running'] {
+  --site-motion: running;
+}
+
+body:has(.benefit-cinema-hero) .benefit-site-atmosphere {
+  display: none;
+}
+
+.benefit-site-nebula {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      ellipse at 87% 12%,
+      color-mix(in srgb, var(--chart-1) 13%, transparent),
+      transparent 48%
+    ),
+    radial-gradient(
+      ellipse at 2% 90%,
+      color-mix(in srgb, var(--cinema-site-gold) 7%, transparent),
+      transparent 40%
+    );
+}
+
+.benefit-site-stars {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.48;
+}
+
+.benefit-site-stars circle {
+  animation: benefit-site-starlight 7s ease-in-out infinite alternate;
+  animation-play-state: var(--site-motion);
+}
+.benefit-site-stars circle:nth-child(3n) {
+  animation-delay: -3s;
+}
+.benefit-site-stars circle:nth-child(3n + 1) {
+  animation-delay: -5s;
+  animation-duration: 11s;
+}
+
+.benefit-site-orbit {
+  position: absolute;
+  width: clamp(260px, 35vw, 600px);
+  aspect-ratio: 1;
+  opacity: 0.15;
+}
+.benefit-site-orbit svg {
+  width: 100%;
+  height: 100%;
+  animation: benefit-site-orbit 120s linear infinite;
+  animation-play-state: var(--site-motion);
+}
+.benefit-site-orbit-far {
+  right: -9%;
+  top: -18%;
+  transform: rotate(-22deg) scaleY(0.68);
+}
+.benefit-site-orbit-near {
+  left: -19%;
+  bottom: -28%;
+  width: min(76vw, 880px);
+  transform: rotate(-28deg);
+  opacity: 0.12;
+}
+.benefit-site-orbit-near svg {
+  animation-direction: reverse;
+  animation-duration: 160s;
+}
+.benefit-site-planet {
+  position: absolute;
+  right: -110px;
+  bottom: -170px;
+  width: 400px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  opacity: 0.27;
+  box-shadow: -12px -14px 55px -25px var(--chart-1);
+  background: radial-gradient(
+    circle at 30% 20%,
+    color-mix(in srgb, var(--chart-1) 35%, var(--background)),
+    var(--background) 68%
+  );
+}
+
+body.benefit-cinematic-site .benefit-workspace,
+body.benefit-cinematic-site [data-slot='sidebar-inset'],
+body.benefit-cinematic-site .benefit-public-shell,
+body.benefit-cinematic-site .benefit-auth-stage {
+  background: transparent;
+}
+
+body.benefit-cinematic-site [data-slot='sidebar-inner'] {
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--sidebar) 95%, transparent),
+    var(--sidebar)
+  );
+  border-inline-end: 1px solid var(--sidebar-border);
+}
+body.benefit-cinematic-site [data-sidebar='menu-button'][data-active='true'] {
+  color: var(--sidebar-accent-foreground);
+  background: linear-gradient(
+    110deg,
+    var(--sidebar-accent),
+    color-mix(in srgb, var(--sidebar-accent) 35%, transparent)
+  );
+  box-shadow: inset 2px 0 var(--cinema-site-gold);
+}
+body.benefit-cinematic-site .benefit-workspace-header {
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--background) 92%, transparent);
+  box-shadow: 0 4px 24px -15px var(--cinema-site-shadow);
+}
+
+body.benefit-cinematic-site [data-slot='card'],
+body.benefit-cinematic-site .benefit-cinema-panel {
+  min-width: 0;
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--card) 95%, var(--chart-1)),
+    var(--card) 55%
+  );
+  border-color: var(--border);
+  box-shadow:
+    0 14px 38px -24px var(--cinema-site-shadow),
+    inset 0 1px var(--cinema-site-glint);
+}
+/* Operational cards never move under the pointer or create containing blocks for menus. */
+body.benefit-cinematic-site [data-slot='card']:hover {
+  transform: none;
+  box-shadow:
+    0 14px 38px -24px var(--cinema-site-shadow),
+    inset 0 1px var(--cinema-site-glint);
+}
+
+body.benefit-cinematic-site .benefit-page-heading h2 {
+  position: relative;
+  padding-inline-start: 14px;
+  line-height: 1.55;
+}
+.benefit-page-heading h2::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 24%;
+  bottom: 24%;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--cinema-site-gold);
+  box-shadow: 0 0 12px
+    color-mix(in srgb, var(--cinema-site-gold) 30%, transparent);
+}
+body.benefit-cinematic-site [data-slot='page-content'] {
+  min-width: 0;
+}
+/* Grid form items must let nested editors own their horizontal scrolling. */
+body.benefit-cinematic-site [data-slot='form-item'] > * {
+  min-width: 0;
+}
+body.benefit-cinematic-site [data-slot='page-footer'] {
+  background: var(--card);
+}
+
+body.benefit-cinematic-site .benefit-feature-heading {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(
+    110deg,
+    var(--card),
+    color-mix(in srgb, var(--card) 70%, transparent)
+  );
+  box-shadow: inset 0 1px var(--cinema-site-glint);
+}
+body.benefit-cinematic-site .benefit-metric-band {
+  overflow: hidden;
+  background: linear-gradient(
+    120deg,
+    color-mix(in srgb, var(--card) 85%, var(--cinema-site-gold)),
+    var(--card) 55%
+  );
+  box-shadow: inset 0 1px var(--cinema-site-glint);
+}
+body.benefit-cinematic-site .benefit-metric-band > :first-child {
+  border-top: 2px solid var(--cinema-site-gold);
+}
+
+body.benefit-cinematic-site .benefit-auth-panel {
+  position: relative;
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--card) 97%, transparent);
+  border-color: color-mix(in srgb, var(--border) 70%, var(--cinema-site-gold));
+  box-shadow:
+    0 32px 100px -40px var(--cinema-site-shadow),
+    inset 0 1px var(--cinema-site-glint);
+}
+.benefit-auth-panel::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 24%;
+  right: 24%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--cinema-site-gold),
+    transparent
+  );
+  pointer-events: none;
+}
+.benefit-auth-story h2 {
+  letter-spacing: -0.045em;
+  line-height: 1.18;
+  text-wrap: balance;
+}
+.benefit-auth-story > p:first-child {
+  color: var(--cinema-site-gold);
+  letter-spacing: 0.09em;
+}
+
+body.benefit-cinematic-site .benefit-button-3d-primary,
+body.benefit-cinematic-site .benefit-liquid-primary {
+  background: linear-gradient(
+    130deg,
+    var(--primary),
+    color-mix(in srgb, var(--primary) 86%, var(--primary-foreground))
+  );
+  color: var(--primary-foreground);
+  border-color: color-mix(
+    in srgb,
+    var(--primary) 70%,
+    var(--primary-foreground)
+  );
+  box-shadow:
+    inset 0 1px rgb(255 255 255 / 0.22),
+    0 6px 18px -10px var(--primary);
+}
+body.benefit-cinematic-site .benefit-button-3d {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+body.benefit-cinematic-site
+  :is(
+    [data-slot='input'],
+    [data-slot='textarea'],
+    [data-slot='select-trigger']
+  ) {
+  background-color: color-mix(in srgb, var(--background) 90%, var(--card));
+}
+body.benefit-cinematic-site [data-slot='tabs-list'][data-variant='default'] {
+  background: color-mix(in srgb, var(--muted) 75%, transparent);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+body.benefit-cinematic-site [data-slot='tabs-trigger'][data-active] {
+  color: var(--foreground);
+}
+body.benefit-cinematic-site
+  [data-slot='tabs-list'][data-variant='default']
+  [data-slot='tabs-trigger'][data-active] {
+  background: var(--card);
+  box-shadow: inset 0 -2px var(--cinema-site-gold);
+}
+
+body.benefit-cinematic-site
+  :is(
+    .benefit-3d-surface,
+    .benefit-3d-popup,
+    [data-slot='alert-dialog-content'],
+    [data-slot='drawer-content'],
+    [data-slot='combobox-content'],
+    [data-slot='context-menu-content'],
+    [data-slot='hover-card-content']
+  ) {
+  background: var(--popover);
+  border-color: color-mix(in srgb, var(--border) 82%, var(--cinema-site-gold));
+  box-shadow:
+    0 32px 96px -24px rgb(0 10 6 / 0.4),
+    inset 0 1px var(--cinema-site-glint);
+  transform-style: flat;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+body.benefit-cinematic-site [data-slot='table-container'] {
+  min-width: 0;
+  max-width: 100%;
+}
+body.benefit-cinematic-site [data-slot='table-header'] {
+  background: var(--table-header);
+}
+body.benefit-cinematic-site [data-slot='table'] tbody tr {
+  animation: none;
+}
+
+@keyframes benefit-site-starlight {
+  from {
+    opacity: 0.22;
+  }
+  to {
+    opacity: 0.85;
+  }
+}
+@keyframes benefit-site-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 767px) {
+  .benefit-site-orbit-near,
+  .benefit-site-planet {
+    display: none;
+  }
+  .benefit-site-orbit-far {
+    width: 340px;
+    right: -170px;
+    top: -90px;
+  }
+  .benefit-site-stars {
+    opacity: 0.3;
+  }
+  body.benefit-cinematic-site .benefit-feature-heading {
+    padding: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .benefit-site-atmosphere *,
+  .benefit-site-atmosphere *::before,
+  .benefit-site-atmosphere *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+@media (prefers-contrast: more), (forced-colors: active) {
+  .benefit-site-atmosphere {
+    display: none;
+  }
+  body.benefit-cinematic-site [data-slot='card'],
+  body.benefit-cinematic-site .benefit-auth-panel {
+    background: var(--card);
+  }
+}
