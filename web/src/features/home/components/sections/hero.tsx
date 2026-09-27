@@ -18,12 +18,16 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Link } from '@tanstack/react-router'
 import { ArrowRight, BookOpen } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { useStatus } from '@/hooks/use-status'
+import { cn } from '@/lib/utils'
 
-import { Hero3DScene } from '../hero-3d-scene'
+import { observeHeroMotion } from '../../lib/hero-motion'
+import { HeroCosmicBackdrop } from '../hero-cosmic-backdrop'
+import { HeroRoutingVisual } from '../hero-routing-visual'
 
 interface HeroProps {
   className?: string
@@ -31,6 +35,10 @@ interface HeroProps {
 }
 
 export function Hero(props: HeroProps) {
+  const heroRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (heroRef.current) return observeHeroMotion(heroRef.current)
+  }, [])
   const { t } = useTranslation()
   const { status } = useStatus()
   const docsUrl =
@@ -42,71 +50,64 @@ export function Hero(props: HeroProps) {
     if (isExternal) {
       return (
         <Button
+          role='link'
           variant='outline'
-          className='benefit-liquid-glass-clear group hover:bg-background/80 inline-flex h-12 items-center gap-1.5 rounded-full px-5 text-sm font-medium'
+          className='benefit-cinema-secondary group inline-flex h-12 items-center gap-2 rounded-full px-6 text-sm font-medium'
           render={
             <a href={docsUrl} target='_blank' rel='noopener noreferrer' />
           }
         >
-          <BookOpen className='text-muted-foreground/80 group-hover:text-foreground size-4 transition-colors duration-200' />
+          <BookOpen aria-hidden='true' className='size-4' />
           <span>{t('Docs')}</span>
         </Button>
       )
     }
     return (
       <Button
+        role='link'
         variant='outline'
-        className='benefit-liquid-glass-clear group hover:bg-background/80 inline-flex h-12 items-center gap-1.5 rounded-full px-5 text-sm font-medium'
+        className='benefit-cinema-secondary group inline-flex h-12 items-center gap-2 rounded-full px-6 text-sm font-medium'
         render={<Link to={docsUrl} />}
       >
-        <BookOpen className='text-muted-foreground/80 group-hover:text-foreground size-4 transition-colors duration-200' />
+        <BookOpen aria-hidden='true' className='size-4' />
         <span>{t('Docs')}</span>
       </Button>
     )
   }
 
   return (
-    <section className='benefit-apple-shell benefit-hero-3d relative z-10 overflow-hidden border-b px-5 pt-28 pb-20 sm:pt-32 md:pt-36 md:pb-24'>
-      <Hero3DScene />
-      <div className='relative z-[2] mx-auto max-w-6xl'>
-        <div className='benefit-hero-3d-content mx-auto flex max-w-4xl flex-col items-center text-center'>
-          <div
-            className='benefit-liquid-glass-clear landing-animate-fade-up inline-flex min-h-8 items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium text-teal-700 dark:text-teal-300'
-            style={{ animationDelay: '0ms' }}
-          >
-            <span className='size-1.5 rounded-full bg-teal-500' />
+    <section
+      ref={heroRef}
+      data-decorative-motion='paused'
+      className={cn('benefit-cinema-hero', props.className)}
+      aria-labelledby='benefit-home-title'
+    >
+      <HeroCosmicBackdrop />
+      <div className='benefit-cinema-hero-grid'>
+        <div className='benefit-cinema-copy'>
+          <div className='benefit-cinema-eyebrow'>
+            <span aria-hidden='true' className='benefit-cinema-rule' />
             <span>{t('Unified AI access, ready for production')}</span>
           </div>
 
-          <h1
-            className='landing-animate-fade-up mt-5 text-5xl leading-none font-semibold sm:text-6xl md:text-7xl'
-            style={{ animationDelay: '60ms' }}
-          >
-            Benefit API
+          <h1 id='benefit-home-title' className='benefit-cinema-title'>
+            Benefit <span>API</span>
           </h1>
-          <p
-            className='landing-animate-fade-up mt-5 max-w-3xl text-2xl leading-tight font-semibold md:text-4xl'
-            style={{ animationDelay: '90ms' }}
-          >
+          <p className='benefit-cinema-headline'>
             {t('More models. Lower access cost.')}
           </p>
-          <p
-            className='landing-animate-fade-up text-muted-foreground mt-5 max-w-2xl text-base leading-relaxed md:text-lg'
-            style={{ animationDelay: '120ms' }}
-          >
+          <p className='benefit-cinema-description'>
             {t(
               'One OpenAI-compatible address connects leading models. Pay by actual usage, with balance and billing always visible.'
             )}
           </p>
 
-          <div
-            className='landing-animate-fade-up mt-7 flex w-full flex-col items-center justify-center gap-3 sm:w-auto sm:flex-row'
-            style={{ animationDelay: '180ms' }}
-          >
+          <div className='benefit-cinema-actions'>
             {props.isAuthenticated ? (
               <>
                 <Button
-                  className='benefit-liquid-primary group h-12 w-full rounded-full px-6 text-sm font-semibold sm:w-auto'
+                  role='link'
+                  className='benefit-cinema-primary group h-12 rounded-full px-6 text-sm font-semibold'
                   render={<Link to='/dashboard' />}
                 >
                   {t('Go to Dashboard')}
@@ -117,15 +118,17 @@ export function Hero(props: HeroProps) {
             ) : (
               <>
                 <Button
-                  className='benefit-liquid-primary group h-12 w-full rounded-full px-6 text-sm font-semibold sm:w-auto'
+                  role='link'
+                  className='benefit-cinema-primary group h-12 rounded-full px-6 text-sm font-semibold'
                   render={<Link to='/sign-up' />}
                 >
                   {t('Get Started')}
                   <ArrowRight className='ml-1.5 size-4 transition-transform duration-200 group-hover:translate-x-0.5' />
                 </Button>
                 <Button
+                  role='link'
                   variant='outline'
-                  className='benefit-liquid-glass-clear hover:bg-background/80 h-12 w-full rounded-full px-6 text-sm font-medium sm:w-auto'
+                  className='benefit-cinema-secondary h-12 rounded-full px-6 text-sm font-medium'
                   render={<Link to='/pricing' />}
                 >
                   {t('View Pricing')}
@@ -134,6 +137,11 @@ export function Hero(props: HeroProps) {
             )}
           </div>
         </div>
+        <HeroRoutingVisual />
+      </div>
+      <div className='benefit-cinema-caption'>
+        <span>{t('One endpoint, many models')}</span>
+        <span className='font-mono'>/v1</span>
       </div>
     </section>
   )

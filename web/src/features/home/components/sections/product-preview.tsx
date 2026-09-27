@@ -28,7 +28,7 @@ export function ProductPreview() {
   const { t } = useTranslation()
 
   return (
-    <section className='benefit-apple-shell bg-muted/15 relative z-10 border-b px-5 py-16 md:py-20'>
+    <section className='benefit-cinema-product relative z-10 border-b px-5 py-20 md:py-28'>
       <div className='mx-auto grid max-w-6xl items-center gap-10 lg:grid-cols-[minmax(260px,0.7fr)_minmax(0,1.3fr)] lg:gap-14'>
         <AnimateInView className='max-w-lg' animation='fade-up'>
           <div className='text-primary flex items-center gap-2 text-xs font-semibold'>

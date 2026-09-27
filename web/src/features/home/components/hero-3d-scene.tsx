@@ -21,6 +21,8 @@ import * as THREE from 'three'
 
 import { useTheme } from '@/context/theme-provider'
 
+import { startSceneMotion } from '../lib/scene-motion'
+
 type AnimatedNode = {
   mesh: THREE.Mesh
   phase: number
@@ -35,16 +37,16 @@ export function Hero3DScene() {
     const host = canvas?.parentElement
     if (!canvas || !host) return
 
-    const reducedMotion = window.matchMedia(
+    const motionPreference = window.matchMedia(
       '(prefers-reduced-motion: reduce)'
-    ).matches
+    )
     const dark = resolvedTheme === 'dark'
     const palette = dark
       ? {
-          primary: 0x35e4c4,
-          secondary: 0xf4bd55,
-          line: 0xa9fff0,
-          core: 0x0b2924,
+          primary: 0x70c9ae,
+          secondary: 0xebcb91,
+          line: 0xaed6c4,
+          core: 0x164d40,
         }
       : {
           primary: 0x008f7b,
@@ -59,7 +61,7 @@ export function Hero3DScene() {
         canvas,
         alpha: true,
         antialias: true,
-        powerPreference: 'high-performance',
+        powerPreference: 'low-power',
       })
     } catch {
       canvas.dataset.webglState = 'unavailable'
@@ -69,7 +71,7 @@ export function Hero3DScene() {
 
     canvas.dataset.webglState = 'ready'
     renderer.setClearColor(0x000000, 0)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75))
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = dark ? 1.2 : 0.95
@@ -82,19 +84,13 @@ export function Hero3DScene() {
     const network = new THREE.Group()
     scene.add(network)
 
-    const coreGeometry = new THREE.TorusKnotGeometry(1.05, 0.2, 128, 18, 2, 3)
-    const coreMaterial = new THREE.MeshPhysicalMaterial({
+    const coreGeometry = new THREE.TorusKnotGeometry(1.05, 0.22, 96, 12, 2, 3)
+    const coreMaterial = new THREE.MeshStandardMaterial({
       color: palette.core,
       emissive: palette.primary,
       emissiveIntensity: dark ? 0.11 : 0.035,
-      transparent: true,
-      opacity: dark ? 0.46 : 0.34,
-      transmission: dark ? 0.62 : 0.48,
-      thickness: 0.85,
-      roughness: 0.16,
-      metalness: 0.08,
-      clearcoat: 1,
-      clearcoatRoughness: 0.16,
+      roughness: 0.3,
+      metalness: 0.72,
     })
     const core = new THREE.Mesh(coreGeometry, coreMaterial)
     core.rotation.set(0.35, -0.25, 0.2)
@@ -105,7 +101,7 @@ export function Hero3DScene() {
       new THREE.LineBasicMaterial({
         color: palette.line,
         transparent: true,
-        opacity: dark ? 0.22 : 0.16,
+        opacity: dark ? 0.16 : 0.12,
       })
     )
     coreWire.rotation.copy(core.rotation)
@@ -113,7 +109,7 @@ export function Hero3DScene() {
 
     const inner = new THREE.Mesh(
       new THREE.IcosahedronGeometry(0.67, 1),
-      new THREE.MeshPhysicalMaterial({
+      new THREE.MeshStandardMaterial({
         color: palette.primary,
         emissive: palette.primary,
         emissiveIntensity: dark ? 0.16 : 0.06,
@@ -127,7 +123,7 @@ export function Hero3DScene() {
     network.add(inner)
 
     const ringMaterial = new THREE.MeshBasicMaterial({
-      color: palette.line,
+      color: palette.secondary,
       transparent: true,
       opacity: dark ? 0.26 : 0.18,
     })
@@ -165,16 +161,14 @@ export function Hero3DScene() {
 
       const node = new THREE.Mesh(
         nodeGeometry,
-        new THREE.MeshPhysicalMaterial({
+        new THREE.MeshStandardMaterial({
           color: index % 3 === 0 ? palette.secondary : palette.primary,
           emissive: index % 3 === 0 ? palette.secondary : palette.primary,
           emissiveIntensity: dark ? 0.24 : 0.08,
           transparent: true,
           opacity: dark ? 0.68 : 0.56,
-          transmission: 0.32,
-          roughness: 0.18,
-          metalness: 0.16,
-          clearcoat: 1,
+          roughness: 0.3,
+          metalness: 0.45,
         })
       )
       node.position.copy(point)
@@ -215,17 +209,6 @@ export function Hero3DScene() {
     )
     network.add(circuit)
 
-    const grid = new THREE.GridHelper(18, 28, palette.primary, palette.line)
-    grid.position.set(0, -2.75, -0.8)
-    const gridMaterials = Array.isArray(grid.material)
-      ? grid.material
-      : [grid.material]
-    gridMaterials.forEach((material) => {
-      material.transparent = true
-      material.opacity = dark ? 0.07 : 0.045
-    })
-    scene.add(grid)
-
     scene.add(new THREE.AmbientLight(0xffffff, dark ? 0.75 : 1.15))
     const keyLight = new THREE.PointLight(palette.primary, dark ? 18 : 10, 18)
     keyLight.position.set(3.6, 4.2, 5.5)
@@ -240,19 +223,23 @@ export function Hero3DScene() {
 
     const pointer = { x: 0, y: 0 }
     const handlePointerMove = (event: PointerEvent) => {
+      if (motionPreference.matches || host.dataset.motionState !== 'running') {
+        return
+      }
       pointer.x = event.clientX / window.innerWidth - 0.5
       pointer.y = event.clientY / window.innerHeight - 0.5
     }
 
-    let frameId = 0
     let lastWidth = 0
     let lastHeight = 0
 
     const renderFrame = (time: number) => {
       const elapsed = time * 0.001
-      network.rotation.y = elapsed * 0.06 + pointer.x * 0.22
-      network.rotation.x = Math.sin(elapsed * 0.35) * 0.025 - pointer.y * 0.12
-      core.rotation.z = 0.2 + elapsed * 0.09
+      const pointerX = motionPreference.matches ? 0 : pointer.x
+      const pointerY = motionPreference.matches ? 0 : pointer.y
+      network.rotation.y = elapsed * 0.025 + pointerX * 0.12
+      network.rotation.x = Math.sin(elapsed * 0.2) * 0.025 - pointerY * 0.08
+      core.rotation.z = 0.2 + elapsed * 0.035
       coreWire.rotation.copy(core.rotation)
       inner.rotation.x = elapsed * 0.13
       inner.rotation.y = -elapsed * 0.17
@@ -281,17 +268,15 @@ export function Hero3DScene() {
       camera.aspect = nextWidth / nextHeight
       camera.updateProjectionMatrix()
 
-      const mobile = nextWidth < 640
-      const compact = nextWidth < 960
-      let networkScale = 1
-      if (mobile) {
-        networkScale = 0.72
-      } else if (compact) {
-        networkScale = 0.86
-      }
-      network.position.set(compact ? 0 : 2.45, mobile ? 0.25 : 0, 0)
-      network.scale.setScalar(networkScale)
-      grid.position.x = compact ? 0 : 1.7
+      // Fit the scene to its visual column, not to the entire page viewport.
+      const visibleHeight = 2 * Math.tan(THREE.MathUtils.degToRad(20)) * 9.5
+      network.scale.setScalar(
+        Math.min(1, (camera.aspect * visibleHeight) / 7.4)
+      )
+      network.position.set(0, 0, 0)
+      renderer.setPixelRatio(
+        Math.min(window.devicePixelRatio, nextWidth < 400 ? 1 : 1.5)
+      )
       renderFrame(0)
     }
 
@@ -299,22 +284,11 @@ export function Hero3DScene() {
     resizeObserver.observe(host)
     resize()
 
-    const animate = (time: number) => {
-      renderFrame(time)
-      frameId = window.requestAnimationFrame(animate)
-    }
-
-    if (reducedMotion) {
-      renderFrame(0)
-    } else {
-      window.addEventListener('pointermove', handlePointerMove, {
-        passive: true,
-      })
-      frameId = window.requestAnimationFrame(animate)
-    }
+    const stopMotion = startSceneMotion(host, renderFrame)
+    window.addEventListener('pointermove', handlePointerMove, { passive: true })
 
     return () => {
-      window.cancelAnimationFrame(frameId)
+      stopMotion()
       window.removeEventListener('pointermove', handlePointerMove)
       resizeObserver.disconnect()
       scene.traverse((object) => {

@@ -129,12 +129,14 @@ export function Home() {
 
   return (
     <PublicLayout showMainContainer={false}>
-      <Hero isAuthenticated={isAuthenticated} />
-      <Stats />
-      <ProductPreview />
-      <Features />
-      <HowItWorks />
-      <CTA isAuthenticated={isAuthenticated} />
+      <div className='benefit-cinema-home'>
+        <Hero isAuthenticated={isAuthenticated} />
+        <Stats />
+        <ProductPreview />
+        <Features />
+        <HowItWorks />
+        <CTA isAuthenticated={isAuthenticated} />
+      </div>
       <Footer />
     </PublicLayout>
   )

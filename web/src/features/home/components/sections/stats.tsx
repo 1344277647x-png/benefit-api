@@ -45,7 +45,7 @@ export function Stats(_props: StatsProps) {
   ]
 
   return (
-    <section className='border-border/50 bg-muted/15 relative z-10 border-b'>
+    <section className='benefit-cinema-stats border-border/50 relative z-10 border-b'>
       <div className='mx-auto max-w-6xl px-5'>
         <div className='grid grid-cols-2 md:grid-cols-4'>
           {highlights.map((highlight) => (
