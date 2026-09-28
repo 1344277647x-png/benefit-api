@@ -36,7 +36,7 @@ func GetSubscriptionPlans(c *gin.Context) {
 	}
 
 	var plans []model.SubscriptionPlan
-	if err := model.DB.Where("enabled = ?", true).Order("sort_order desc, id desc").Find(&plans).Error; err != nil {
+	if err := model.DB.Where("enabled = ? AND (scope = ? OR scope = ?)", true, "personal", "").Order("sort_order desc, id desc").Find(&plans).Error; err != nil {
 		common.ApiError(c, err)
 		return
 	}
@@ -138,6 +138,32 @@ type AdminUpsertSubscriptionPlanRequest struct {
 	Plan model.SubscriptionPlan `json:"plan"`
 }
 
+func validateSubscriptionPlanScope(c *gin.Context, plan *model.SubscriptionPlan) bool {
+	plan.NormalizeDefaults()
+	switch plan.Scope {
+	case "personal":
+		plan.SeatLimit = 0
+	case "team":
+		if plan.SeatLimit < 2 || plan.SeatLimit > 100 || plan.TotalAmount <= 0 || plan.TotalAmount > common.MaxWalletQuota || plan.PriceAmount <= 0 {
+			common.ApiErrorMsg(c, "团队套餐须设置2至100席、正数额度和正数价格")
+			return false
+		}
+		if plan.UpgradeGroup != "" || plan.DowngradeGroup != "" {
+			common.ApiErrorMsg(c, "团队套餐不能改变成员分组")
+			return false
+		}
+		plan.AllowWalletOverflow = common.GetPointer(false)
+		if plan.StripePriceId != "" || plan.CreemProductId != "" || plan.WaffoPancakeProductId != "" {
+			common.ApiErrorMsg(c, "团队套餐仅支持余额和易支付")
+			return false
+		}
+	default:
+		common.ApiErrorMsg(c, "套餐类型不合法")
+		return false
+	}
+	return true
+}
+
 func AdminCreateSubscriptionPlan(c *gin.Context) {
 	if !requirePaymentCompliance(c) {
 		return
@@ -183,6 +209,9 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 	}
 	if req.Plan.TotalAmount < 0 {
 		common.ApiErrorMsg(c, "总额度不能为负数")
+		return
+	}
+	if !validateSubscriptionPlanScope(c, &req.Plan) {
 		return
 	}
 	req.Plan.UpgradeGroup = strings.TrimSpace(req.Plan.UpgradeGroup)
@@ -241,6 +270,17 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		return
 	}
 	req.Plan.Id = id
+	req.Plan.NormalizeDefaults()
+	var previous model.SubscriptionPlan
+	if err := model.DB.First(&previous, id).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	previous.NormalizeDefaults()
+	if previous.Scope != req.Plan.Scope {
+		common.ApiErrorMsg(c, "套餐创建后不能修改个人/团队类型")
+		return
+	}
 	if req.Plan.Currency == "" {
 		req.Plan.Currency = "USD"
 	}
@@ -257,6 +297,9 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 	}
 	if req.Plan.TotalAmount < 0 {
 		common.ApiErrorMsg(c, "总额度不能为负数")
+		return
+	}
+	if !validateSubscriptionPlanScope(c, &req.Plan) {
 		return
 	}
 	req.Plan.UpgradeGroup = strings.TrimSpace(req.Plan.UpgradeGroup)
@@ -282,6 +325,8 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		// update plan (allow zero values updates with map)
 		updateMap := map[string]interface{}{
+			"scope":                      req.Plan.Scope,
+			"seat_limit":                 req.Plan.SeatLimit,
 			"title":                      req.Plan.Title,
 			"subtitle":                   req.Plan.Subtitle,
 			"price_amount":               req.Plan.PriceAmount,

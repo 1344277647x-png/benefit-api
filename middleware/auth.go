@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
@@ -359,6 +360,13 @@ func TokenAuthReadOnly() func(c *gin.Context) {
 }
 
 func TokenAuth() func(c *gin.Context) {
+	return tokenAuth(operation_setting.TeamReleaseReady)
+}
+
+// The release gate is fixed by application code, not request data or the
+// operator-controlled setting. Both team purchases and credentials are
+// stopped by the emergency operator switch.
+func tokenAuth(teamRelayReady bool) func(c *gin.Context) {
 	return func(c *gin.Context) {
 		// 先检测是否为ws
 		if c.Request.Header.Get("Sec-WebSocket-Protocol") != "" {
@@ -415,7 +423,17 @@ func TokenAuth() func(c *gin.Context) {
 			parts = strings.Split(key, "-")
 			key = parts[0]
 		}
-		token, err := model.ValidateUserToken(key)
+		var token *model.Token
+		var err error
+		if strings.HasPrefix(key, "tmb_") {
+			if !operation_setting.IsTeamEnabled() || !model.TeamTaskLogDeliverySupported() {
+				abortWithOpenAiMessage(c, http.StatusUnauthorized, common.TranslateMessage(c, i18n.MsgTokenInvalid))
+				return
+			}
+			token, err = model.ValidateTeamToken(key)
+		} else {
+			token, err = model.ValidateUserToken(key)
+		}
 		if token != nil {
 			id := c.GetInt("id")
 			if id == 0 {
@@ -488,6 +506,12 @@ func TokenAuth() func(c *gin.Context) {
 		if err != nil {
 			return
 		}
+		if token.TeamId > 0 && !teamRelayReady {
+			// All relay modes, including realtime and asynchronous tasks, remain
+			// closed until each has a dedicated team settlement path.
+			abortWithOpenAiMessage(c, http.StatusServiceUnavailable, "team billing is not available")
+			return
+		}
 		c.Next()
 	}
 }
@@ -500,6 +524,7 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 	c.Set("token_id", token.Id)
 	c.Set("token_key", token.Key)
 	c.Set("token_name", token.Name)
+	c.Set("team_id", token.TeamId)
 	c.Set("token_unlimited_quota", token.UnlimitedQuota)
 	if !token.UnlimitedQuota {
 		c.Set("token_quota", token.RemainQuota)

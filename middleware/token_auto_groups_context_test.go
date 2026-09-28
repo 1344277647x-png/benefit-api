@@ -46,3 +46,12 @@ func TestSetupContextForTokenMalformedAutoGroupsFailsClosed(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, []string{}, value)
 }
+
+func TestSetupContextForTeamTokenCarriesDedicatedFundingIdentity(t *testing.T) {
+	ctx := newTokenAutoGroupsContext()
+	token := &model.Token{Id: 8, UserId: 12, TeamId: 34, UnlimitedQuota: true}
+
+	require.NoError(t, SetupContextForToken(ctx, token))
+	assert.Equal(t, 12, ctx.GetInt("id"))
+	assert.Equal(t, 34, ctx.GetInt("team_id"), "team funding must never silently fall back to member wallet")
+}

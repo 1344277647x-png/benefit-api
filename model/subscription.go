@@ -144,7 +144,9 @@ func InvalidateSubscriptionPlanCache(planId int) {
 
 // Subscription plan
 type SubscriptionPlan struct {
-	Id int `json:"id"`
+	Id        int    `json:"id"`
+	Scope     string `json:"scope" gorm:"type:varchar(16);not null;default:'personal'"`
+	SeatLimit int    `json:"seat_limit" gorm:"type:int;not null;default:0"`
 
 	Title    string `json:"title" gorm:"type:varchar(128);not null"`
 	Subtitle string `json:"subtitle" gorm:"type:varchar(255);default:''"`
@@ -202,6 +204,9 @@ func (p *SubscriptionPlan) BeforeUpdate(tx *gorm.DB) error {
 }
 
 func (p *SubscriptionPlan) NormalizeDefaults() {
+	if p.Scope == "" {
+		p.Scope = "personal"
+	}
 	if p.AllowBalancePay == nil {
 		p.AllowBalancePay = common.GetPointer(true)
 	}
@@ -391,7 +396,7 @@ func getSubscriptionPlanByIdTx(tx *gorm.DB, id int) (*SubscriptionPlan, error) {
 		return nil, errors.New("invalid plan id")
 	}
 	key := subscriptionPlanCacheKey(id)
-	if key != "" {
+	if key != "" && tx == nil {
 		if cached, found, err := getSubscriptionPlanCache().Get(key); err == nil && found {
 			cached.NormalizeDefaults()
 			return &cached, nil
@@ -406,7 +411,9 @@ func getSubscriptionPlanByIdTx(tx *gorm.DB, id int) (*SubscriptionPlan, error) {
 		return nil, err
 	}
 	plan.NormalizeDefaults()
-	_ = getSubscriptionPlanCache().SetWithTTL(key, plan, subscriptionPlanCacheTTL())
+	if tx == nil {
+		_ = getSubscriptionPlanCache().SetWithTTL(key, plan, subscriptionPlanCacheTTL())
+	}
 	return &plan, nil
 }
 
@@ -487,6 +494,9 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 	}
 	if plan == nil || plan.Id == 0 {
 		return nil, errors.New("invalid plan")
+	}
+	if plan.Scope != "" && plan.Scope != "personal" {
+		return nil, errors.New("team plan cannot create a personal subscription")
 	}
 	if userId <= 0 {
 		return nil, errors.New("invalid user id")
@@ -767,7 +777,7 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 		if err != nil {
 			return err
 		}
-		if !plan.Enabled {
+		if !plan.Enabled || (plan.Scope != "" && plan.Scope != "personal") {
 			return errors.New("套餐未启用")
 		}
 		if plan.PriceAmount < 0 {

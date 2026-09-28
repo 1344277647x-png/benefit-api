@@ -196,6 +196,7 @@ export interface LogOtherData {
   expr_b64?: string
   matched_tier?: string
   request_rules?: RequestRuleTrace[]
+  pricing_snapshot_incomplete?: boolean
   reasoning_effort?: string
   image?: boolean
   image_ratio?: number

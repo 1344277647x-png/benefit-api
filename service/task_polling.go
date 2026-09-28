@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -57,6 +58,27 @@ func sweepTimedOutTasks(ctx context.Context) {
 	timedOutCount := 0
 
 	for _, task := range tasks {
+		if task.PrivateData.BillingSource == BillingSourceTeam {
+			if task.PrivateData.PendingFinalStatus != "" {
+				if _, err := retryPendingTeamTask(ctx, task); err != nil {
+					logger.LogError(ctx, fmt.Sprintf("team task %s pending settlement retry failed: %v", task.TaskID, err))
+				}
+				continue
+			}
+			from := task.Status
+			task.Status = model.TaskStatusFailure
+			task.Progress = "100%"
+			task.FinishTime = now
+			task.FailReason = reason
+			won, err := model.FinalizeTeamTask(task, from, 0, reason, nil)
+			if err != nil {
+				logger.LogError(ctx, fmt.Sprintf("team task %s timeout settlement failed: %v", task.TaskID, err))
+			} else if won {
+				RecordTeamTaskFinalization(ctx, task)
+				timedOutCount++
+			}
+			continue
+		}
 		isLegacy := task.SubmitTime > 0 && task.SubmitTime < model.TaskRefundLegacyCutoff
 
 		oldStatus := task.Status
@@ -107,14 +129,25 @@ type TaskPollSummary struct {
 // adaptor factory has not been wired yet, to avoid a nil call during startup.
 func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) TaskPollSummary {
 	summary := TaskPollSummary{}
-	if GetTaskAdaptorFunc == nil {
-		return summary
-	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
 	common.SysLog("任务进度轮询开始")
+	if recovered, err := model.RecoverPendingTeamSettlements(100); err != nil {
+		logger.LogError(ctx, "team sync settlement recovery failed: "+err.Error())
+	} else if recovered > 0 {
+		logger.LogInfo(ctx, fmt.Sprintf("recovered %d pending team sync settlements", recovered))
+	}
+	if err := DeliverPendingTeamSyncBillingEvents(ctx, 100); err != nil {
+		logger.LogError(ctx, "team sync billing log retry failed: "+err.Error())
+	}
+	if err := DeliverPendingTeamTaskBillingEvents(ctx, 100); err != nil {
+		logger.LogError(ctx, "team task billing log retry failed: "+err.Error())
+	}
+	if GetTaskAdaptorFunc == nil {
+		return summary
+	}
 	sweepTimedOutTasks(ctx)
 	allTasks := model.GetAllUnFinishSyncTasks(constant.TaskQueryLimit)
 	summary.UnfinishedTasks = len(allTasks)
@@ -140,11 +173,22 @@ func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) 
 		taskChannelM := make(map[int][]string)
 		taskM := make(map[string]*model.Task)
 		nullTaskIds := make([]int64, 0)
+		var nullTeamTasks []*model.Task
 		for _, task := range tasks {
+			if task.PrivateData.BillingSource == BillingSourceTeam && task.PrivateData.PendingFinalStatus != "" {
+				if _, err := retryPendingTeamTask(ctx, task); err != nil {
+					logger.LogError(ctx, fmt.Sprintf("team task %s pending settlement retry failed: %v", task.TaskID, err))
+				}
+				continue
+			}
 			upstreamID := task.GetUpstreamTaskID()
 			if upstreamID == "" {
-				// 统计失败的未完成任务
-				nullTaskIds = append(nullTaskIds, task.ID)
+				if task.PrivateData.BillingSource == BillingSourceTeam {
+					nullTeamTasks = append(nullTeamTasks, task)
+				} else {
+					// Keep legacy behavior for pre-existing personal tasks.
+					nullTaskIds = append(nullTaskIds, task.ID)
+				}
 				continue
 			}
 			taskM[upstreamID] = task
@@ -162,6 +206,9 @@ func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) 
 				logger.LogInfo(ctx, fmt.Sprintf("Fix null task_id task success: %v", nullTaskIds))
 			}
 		}
+		for _, task := range nullTeamTasks {
+			failMissingUpstreamTeamTask(ctx, task)
+		}
 		if len(taskChannelM) == 0 {
 			continue
 		}
@@ -173,6 +220,70 @@ func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) 
 	}
 	common.SysLog("任务进度轮询完成")
 	return summary
+}
+
+// A team task must win the terminal transition before its reservation is
+// refunded. Repeated pollers may see the same unfinished snapshot.
+func failMissingUpstreamTeamTask(ctx context.Context, task *model.Task) {
+	oldStatus := task.Status
+	task.Status = model.TaskStatusFailure
+	task.Progress = "100%"
+	task.FailReason = "upstream task ID missing"
+	won, err := model.FinalizeTeamTask(task, oldStatus, 0, task.FailReason, nil)
+	if err != nil {
+		logger.LogError(ctx, fmt.Sprintf("team task %s status update failed: %v", task.TaskID, err))
+		return
+	}
+	if won {
+		RecordTeamTaskFinalization(ctx, task)
+	}
+}
+
+// Once an upstream has reported a terminal result, persist that result before
+// retrying a temporarily insufficient settlement. A timeout must never turn
+// an already successful (but unsettled) team task into a refunded failure.
+func storePendingTeamTask(task *model.Task, from model.TaskStatus, finalQuota int64, reason string, clamp *common.QuotaClamp) error {
+	terminal := task.Status
+	task.PrivateData.PendingFinalStatus = terminal
+	task.PrivateData.PendingFinalQuota = finalQuota
+	task.PrivateData.PendingFinalReason = reason
+	if clamp != nil {
+		copyClamp := *clamp
+		if math.IsNaN(copyClamp.Original) || math.IsInf(copyClamp.Original, 0) {
+			copyClamp.Original = 0
+		}
+		task.PrivateData.PendingFinalClamp = &copyClamp
+	}
+	task.Status = from
+	task.Progress = "99%"
+	won, err := task.UpdateWithStatus(from)
+	if err != nil {
+		return err
+	}
+	if !won {
+		return fmt.Errorf("team task pending settlement transition conflict")
+	}
+	return nil
+}
+
+func retryPendingTeamTask(ctx context.Context, task *model.Task) (bool, error) {
+	if task.PrivateData.BillingSource != BillingSourceTeam || task.PrivateData.PendingFinalStatus == "" {
+		return false, nil
+	}
+	from := task.Status
+	finalQuota, reason := task.PrivateData.PendingFinalQuota, task.PrivateData.PendingFinalReason
+	clamp := task.PrivateData.PendingFinalClamp
+	task.Status = task.PrivateData.PendingFinalStatus
+	task.Progress = "100%"
+	task.PrivateData.PendingFinalStatus = ""
+	task.PrivateData.PendingFinalQuota = 0
+	task.PrivateData.PendingFinalReason = ""
+	task.PrivateData.PendingFinalClamp = nil
+	won, err := model.FinalizeTeamTask(task, from, finalQuota, reason, clamp)
+	if won {
+		RecordTeamTaskFinalization(ctx, task)
+	}
+	return won, err
 }
 
 // DispatchPlatformUpdate 按平台分发轮询更新
@@ -221,6 +332,9 @@ func updateSunoTasks(ctx context.Context, channelId int, taskIds []string, taskM
 		var failedIDs []int64
 		for _, upstreamID := range taskIds {
 			if t, ok := taskM[upstreamID]; ok {
+				if t.PrivateData.BillingSource == BillingSourceTeam {
+					continue
+				}
 				failedIDs = append(failedIDs, t.ID)
 			}
 		}
@@ -296,6 +410,21 @@ func updateSunoTasks(ctx context.Context, channelId int, taskIds []string, taskM
 			task.Progress = "100%"
 		}
 		task.Data = responseItem.Data
+		if task.PrivateData.BillingSource == BillingSourceTeam &&
+			(task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure) && prevStatus != task.Status {
+			finalQuota := int64(task.Quota)
+			if task.Status == model.TaskStatusFailure {
+				finalQuota = 0
+			} else if bc := task.PrivateData.BillingContext; bc != nil && bc.SubmitQuota != nil {
+				finalQuota = int64(*bc.SubmitQuota)
+			}
+			if err := storePendingTeamTask(task, prevStatus, finalQuota, task.FailReason, nil); err != nil {
+				logger.LogError(ctx, fmt.Sprintf("team Suno task %s pending settlement persistence failed: %v", task.TaskID, err))
+			} else if _, err := retryPendingTeamTask(ctx, task); err != nil {
+				logger.LogError(ctx, fmt.Sprintf("team Suno task %s settlement failed: %v", task.TaskID, err))
+			}
+			continue
+		}
 
 		// 持久化走 CAS，防止重叠轮询/sweep/多实例/持久化失败重试导致重复退款或覆盖终态。
 		won, err := task.UpdateWithStatus(prevStatus)
@@ -393,6 +522,11 @@ func updateVideoTasks(ctx context.Context, platform constant.TaskPlatform, chann
 		var failedIDs []int64
 		for _, upstreamID := range taskIds {
 			if t, ok := taskM[upstreamID]; ok {
+				// A missing channel may be transient. Never transition a team task
+				// to terminal failure without its matched funding settlement.
+				if t.PrivateData.BillingSource == BillingSourceTeam {
+					continue
+				}
 				failedIDs = append(failedIDs, t.ID)
 			}
 		}
@@ -452,6 +586,10 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if task == nil {
 		logger.LogError(ctx, fmt.Sprintf("Task %s not found in taskM", taskId))
 		return fmt.Errorf("task %s not found", taskId)
+	}
+	if task.PrivateData.BillingSource == BillingSourceTeam && task.PrivateData.PendingFinalStatus != "" {
+		_, err := retryPendingTeamTask(ctx, task)
+		return err
 	}
 	key := ch.Key
 
@@ -571,6 +709,34 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	}
 
 	isDone := task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure
+	if task.PrivateData.BillingSource == BillingSourceTeam && isDone && snap.Status != task.Status {
+		previousQuota := task.Quota
+		finalQuota := int64(previousQuota)
+		reason := "team task completed"
+		var clamp *common.QuotaClamp
+		if task.Status == model.TaskStatusFailure {
+			finalQuota = 0
+			reason = task.FailReason
+		} else if bc := task.PrivateData.BillingContext; bc != nil && bc.SubmitQuota != nil {
+			finalQuota = int64(*bc.SubmitQuota)
+		}
+		if task.Status == model.TaskStatusSuccess &&
+			(task.PrivateData.BillingContext == nil || !task.PrivateData.BillingContext.PerCallBilling) {
+			if actual := adaptor.AdjustBillingOnComplete(task, taskResult); actual > 0 {
+				finalQuota, reason = int64(actual), "adaptor计费调整"
+			} else if actual, tokenReason, tokenClamp, ok := calculateTaskQuotaByTokens(task, taskResult.TotalTokens); ok && actual > 0 {
+				finalQuota, reason, clamp = int64(actual), tokenReason, tokenClamp
+			}
+		}
+		if err := storePendingTeamTask(task, snap.Status, finalQuota, reason, clamp); err != nil {
+			return fmt.Errorf("team task %s pending settlement persistence failed: %w", task.TaskID, err)
+		}
+		_, err := retryPendingTeamTask(ctx, task)
+		if err != nil {
+			return fmt.Errorf("team task %s settlement failed; retained for retry: %w", task.TaskID, err)
+		}
+		return nil
+	}
 	if isDone && snap.Status != task.Status {
 		won, err := task.UpdateWithStatus(snap.Status)
 		if err != nil {

@@ -89,6 +89,39 @@ func TestListModelsSupportsOpenAIAndGeminiAuthentication(t *testing.T) {
 	}
 }
 
+func TestTeamCredentialCannotReachAnyRelayFamilyWhileBillingGateIsClosed(t *testing.T) {
+	setupRelayRouterTestDB(t)
+	user := model.User{Username: "route-team-user", Status: common.UserStatusEnabled, Group: "default", Quota: 100}
+	require.NoError(t, model.DB.Create(&user).Error)
+	key := "tmb_local_route_guard"
+	require.NoError(t, model.DB.Create(&model.Token{UserId: user.Id, TeamId: 1, TeamEnabled: true, Key: key,
+		Status: common.TokenStatusDisabled, ExpiredTime: -1, UnlimitedQuota: true}).Error)
+	engine := gin.New()
+	SetRelayRouter(engine)
+	SetVideoRouter(engine)
+	SetDashboardRouter(engine)
+	for _, route := range []struct{ method, path string }{
+		{"GET", "/v1/models"}, {"GET", "/v1beta/models"}, {"GET", "/v1beta/openai/models"},
+		{"POST", "/v1/chat/completions"}, {"POST", "/v1/messages"}, {"POST", "/v1/responses"},
+		{"POST", "/v1/images/generations"}, {"POST", "/v1/audio/speech"}, {"POST", "/v1/embeddings"},
+		{"POST", "/v1/rerank"}, {"POST", "/v1beta/models/gemini-pro:generateContent"},
+		{"GET", "/v1/realtime"}, {"POST", "/suno/submit/song"}, {"POST", "/mj/submit/imagine"},
+		{"POST", "/v1/videos"}, {"POST", "/kling/v1/videos/text2video"}, {"POST", "/jimeng/?Action=CVSync2AsyncSubmitTask"},
+		{"GET", "/v1/dashboard/billing/usage"},
+	} {
+		t.Run(route.method+" "+route.path, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(route.method, route.path, strings.NewReader("{}"))
+			request.Header.Set("Authorization", "Bearer "+key)
+			engine.ServeHTTP(recorder, request)
+			assert.Equal(t, http.StatusUnauthorized, recorder.Code)
+		})
+	}
+	var stored model.User
+	require.NoError(t, model.DB.First(&stored, user.Id).Error)
+	assert.Equal(t, 100, stored.Quota)
+}
+
 func setupRelayRouterTestDB(t *testing.T) {
 	t.Helper()
 

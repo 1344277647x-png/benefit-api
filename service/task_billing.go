@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // LogTaskConsumption 记录任务消费日志和统计信息（仅记录，不涉及实际扣费）。
@@ -38,6 +40,10 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	}
 	other := make(map[string]interface{})
 	other["is_task"] = true
+	if info.BillingSource == BillingSourceTeam {
+		other["billing_source"] = BillingSourceTeam
+		other["team_id"] = info.TeamId
+	}
 	other["request_path"] = c.Request.URL.Path
 	other["model_price"] = info.PriceData.ModelPrice
 	if info.PriceData.ModelRatio > 0 {
@@ -88,6 +94,12 @@ func taskIsSubscription(task *model.Task) bool {
 
 // taskAdjustFunding 调整任务的资金来源（钱包或订阅），delta > 0 表示扣费，delta < 0 表示退还。
 func taskAdjustFunding(task *model.Task, delta int) error {
+	if task.PrivateData.BillingSource == BillingSourceTeam {
+		if task.PrivateData.TeamId <= 0 || task.PrivateData.TeamRequestId == "" {
+			return fmt.Errorf("team task billing context is missing")
+		}
+		return model.AdjustTeamUsage(task.PrivateData.TeamRequestId, int64(delta), false)
+	}
 	if taskIsSubscription(task) {
 		return model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, int64(delta))
 	}
@@ -100,6 +112,9 @@ func taskAdjustFunding(task *model.Task, delta int) error {
 // taskAdjustTokenQuota 调整任务的令牌额度，delta > 0 表示扣费，delta < 0 表示退还。
 // 需要通过 resolveTokenKey 运行时获取 key（不从 PrivateData 中读取）。
 func taskAdjustTokenQuota(ctx context.Context, task *model.Task, delta int) {
+	if task.PrivateData.BillingSource == BillingSourceTeam {
+		return
+	}
 	if task.PrivateData.TokenId <= 0 || delta == 0 {
 		return
 	}
@@ -121,6 +136,10 @@ func taskAdjustTokenQuota(ctx context.Context, task *model.Task, delta int) {
 // taskBillingOther 从 task 的 BillingContext 构建日志 Other 字段。
 func taskBillingOther(task *model.Task) map[string]interface{} {
 	other := make(map[string]interface{})
+	if task.PrivateData.BillingSource == BillingSourceTeam {
+		other["billing_source"] = BillingSourceTeam
+		other["team_id"] = task.PrivateData.TeamId
+	}
 	if bc := task.PrivateData.BillingContext; bc != nil {
 		other["model_price"] = bc.ModelPrice
 		if bc.ModelRatio > 0 {
@@ -170,9 +189,28 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 	}
 
 	// 1. 退还资金来源（钱包或订阅）
-	if err := taskAdjustFunding(task, -quota); err != nil {
+	var fundingErr error
+	teamRefundApplied := true
+	if task.PrivateData.BillingSource == BillingSourceTeam {
+		if task.PrivateData.TeamId <= 0 || task.PrivateData.TeamRequestId == "" {
+			return false
+		}
+		teamRefundApplied, fundingErr = model.RefundTeamUsageOnce(task.PrivateData.TeamRequestId)
+	} else {
+		fundingErr = taskAdjustFunding(task, -quota)
+	}
+	if err := fundingErr; err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("退还资金来源失败 task %s: %s", task.TaskID, err.Error()))
 		return false
+	}
+	if !teamRefundApplied {
+		// The funding record already committed a refund. A stale task snapshot
+		// must not create another statistics decrement or refund log.
+		task.Quota = 0
+		if err := task.UpdateQuota(); err != nil {
+			logger.LogError(ctx, fmt.Sprintf("failed to clear already-refunded team task %s: %s", task.TaskID, err.Error()))
+		}
+		return true
 	}
 
 	// 2. 退还令牌额度
@@ -284,8 +322,15 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 // 当任务成功且返回了 totalTokens 时，根据模型倍率和分组倍率重新计算实际扣费额度，
 // 与预扣费的差额进行补扣或退还。支持钱包和订阅计费来源。
 func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTokens int) {
+	actualQuota, reason, clamp, ok := calculateTaskQuotaByTokens(task, totalTokens)
+	if ok {
+		RecalculateTaskQuota(ctx, task, actualQuota, reason, clamp)
+	}
+}
+
+func calculateTaskQuotaByTokens(task *model.Task, totalTokens int) (int, string, *common.QuotaClamp, bool) {
 	if totalTokens <= 0 {
-		return
+		return 0, "", nil, false
 	}
 
 	modelName := taskModelName(task)
@@ -294,7 +339,7 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 	modelRatio, hasRatioSetting, _ := ratio_setting.GetModelRatio(modelName)
 	// 只有配置了倍率(非固定价格)时才按 token 重新计费
 	if !hasRatioSetting || modelRatio <= 0 {
-		return
+		return 0, "", nil, false
 	}
 
 	// 获取用户和组的倍率信息
@@ -306,7 +351,7 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 		}
 	}
 	if group == "" {
-		return
+		return 0, "", nil, false
 	}
 
 	groupRatio := ratio_setting.GetGroupRatio(group)
@@ -329,5 +374,76 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 	actualQuota, clamp := common.QuotaFromFloatChecked(float64(totalTokens) * modelRatio * finalGroupRatio * otherMultiplier)
 
 	reason := fmt.Sprintf("token重算：tokens=%d, modelRatio=%.2f, groupRatio=%.2f, otherMultiplier=%.4f", totalTokens, modelRatio, finalGroupRatio, otherMultiplier)
-	RecalculateTaskQuota(ctx, task, actualQuota, reason, clamp)
+	return actualQuota, reason, clamp, true
+}
+
+// The primary outbox row was committed with the terminal task and counters.
+// Immediate delivery is only an optimization; polling retries after crashes.
+func RecordTeamTaskFinalization(ctx context.Context, task *model.Task) {
+	event, err := model.GetTeamTaskBillingEvent(ctx, task.ID)
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.LogError(ctx, "team task billing event lookup failed: "+err.Error())
+		}
+		return
+	}
+	if err := deliverTeamTaskBillingEvent(ctx, *event); err != nil {
+		logger.LogError(ctx, "team task billing event delivery failed: "+err.Error())
+	}
+}
+
+func DeliverPendingTeamTaskBillingEvents(ctx context.Context, limit int) error {
+	events, err := model.PendingTeamTaskBillingEvents(ctx, limit)
+	if err != nil {
+		return err
+	}
+	for _, event := range events {
+		if err := deliverTeamTaskBillingEvent(ctx, event); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func deliverTeamTaskBillingEvent(ctx context.Context, event model.TeamTaskBillingEvent) error {
+	delta := event.FinalQuota - event.PreviousQuota
+	if delta == 0 {
+		return fmt.Errorf("empty team task billing event %d", event.TaskId)
+	}
+	logType, logQuota := model.LogTypeConsume, int(delta)
+	if delta < 0 {
+		logType, logQuota = model.LogTypeRefund, int(-delta)
+	}
+	var log *model.Log
+	if logType != model.LogTypeConsume || common.LogConsumeEnabled {
+		username, _ := model.GetUsernameById(event.UserId, false)
+		tokenName := ""
+		if event.TokenId > 0 {
+			if token, err := model.GetTokenById(event.TokenId); err == nil {
+				tokenName = token.Name
+			}
+		}
+		other, err := common.StrToMap(event.OtherJSON)
+		if err != nil {
+			return err
+		}
+		if other == nil {
+			return fmt.Errorf("team task billing event %d has no log metadata", event.TaskId)
+		}
+		if event.ClampJSON != "" {
+			var clamp common.QuotaClamp
+			if err := common.Unmarshal([]byte(event.ClampJSON), &clamp); err != nil {
+				return err
+			}
+			attachQuotaSaturationToOther(other, &clamp)
+		}
+		log = &model.Log{UserId: event.UserId, Username: username, CreatedAt: event.CreatedAt,
+			Type: logType, Content: event.Reason, TokenName: tokenName, ModelName: event.ModelName,
+			Quota: logQuota, ChannelId: event.ChannelId, TokenId: event.TokenId,
+			Group: event.Group, Other: common.MapToJsonStr(other)}
+	}
+	if err := model.DeliverTeamTaskBillingLog(ctx, event, log); err != nil {
+		return err
+	}
+	return model.MarkTeamTaskBillingEventDelivered(ctx, event.TaskId)
 }

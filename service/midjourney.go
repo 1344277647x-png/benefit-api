@@ -48,7 +48,7 @@ func PrepareMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.
 	if quota < 0 {
 		return false, errors.New("quota cannot be negative")
 	}
-	if relayInfo.BillingSource == BillingSourceSubscription {
+	if relayInfo.TeamId > 0 || relayInfo.BillingSource == BillingSourceSubscription || relayInfo.BillingSource == BillingSourceTeam {
 		return false, errors.New("legacy Midjourney billing does not support subscriptions")
 	}
 

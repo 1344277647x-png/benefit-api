@@ -78,6 +78,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError *types.NewAPIError
 		ws          *websocket.Conn
 	)
+	if c.GetInt("team_id") > 0 && relayFormat == types.RelayFormatOpenAIRealtime {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "team realtime billing is unavailable"})
+		return
+	}
 
 	if relayFormat == types.RelayFormatOpenAIRealtime {
 		var err error
@@ -125,6 +129,14 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
+	if relayInfo.TeamId > 0 && relayInfo.IsStream {
+		// Without a proven incremental settlement and spend limit, emitting
+		// SSE chunks before the final charge can expose an unpaid result.
+		// A staged stream loses the client's required live delivery semantics.
+		newAPIError = types.NewErrorWithStatusCode(errors.New("team live streaming is unavailable"),
+			types.ErrorCodeInvalidRequest, http.StatusServiceUnavailable, types.ErrOptionWithSkipRetry())
+		return
+	}
 
 	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
 	needCountToken := constant.CountToken
@@ -166,7 +178,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	// common.SetContextKey(c, constant.ContextKeyTokenCountMeta, meta)
 
-	if priceData.FreeModel {
+	if priceData.FreeModel && relayInfo.TeamId == 0 {
 		logger.LogInfo(c, fmt.Sprintf("模型 %s 免费，跳过预扣费", relayInfo.OriginModelName))
 	} else {
 		newAPIError = service.PreConsumeBilling(c, priceData.QuotaToPreConsume, relayInfo)
@@ -174,7 +186,6 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			return
 		}
 	}
-
 	defer func() {
 		// Only return quota if downstream failed and quota was actually pre-consumed
 		if newAPIError != nil {
@@ -199,6 +210,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}
 	relayInfo.RetryIndex = 0
 	relayInfo.LastError = nil
+	teamUpstreamMarked := false
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
@@ -225,6 +237,30 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			break
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
+		var teamResponse *teamSyncResponseWriter
+		teamSettled := false
+		if relayInfo.TeamId > 0 && relayFormat != types.RelayFormatOpenAIRealtime {
+			teamResponse, err = newTeamSyncResponseWriter(c.Request.Context(), c.Writer)
+			if err != nil {
+				newAPIError = types.NewErrorWithStatusCode(err, types.ErrorCodeBadResponseStatusCode,
+					http.StatusServiceUnavailable, types.ErrOptionWithSkipRetry())
+				break
+			}
+			c.Writer = teamResponse
+			if !teamUpstreamMarked {
+				attemptErr := model.MarkTeamSyncUpstreamAttempt(relayInfo.RequestId)
+				if attemptErr == nil {
+					teamUpstreamMarked = true
+				}
+				if attemptErr != nil {
+					c.Writer = teamResponse.ResponseWriter
+					_ = teamResponse.close()
+					newAPIError = types.NewErrorWithStatusCode(attemptErr, types.ErrorCodeBadResponseStatusCode,
+						http.StatusServiceUnavailable, types.ErrOptionWithSkipRetry())
+					break
+				}
+			}
+		}
 
 		switch relayFormat {
 		case types.RelayFormatOpenAIRealtime:
@@ -236,6 +272,50 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		default:
 			newAPIError = relayHandler(c, relayInfo)
 		}
+		if teamResponse != nil {
+			c.Writer = teamResponse.ResponseWriter
+			var usage model.TeamUsage
+			lookupErr := model.DB.Where("request_id = ? AND status = ?", relayInfo.RequestId, "settled").First(&usage).Error
+			teamSettled = lookupErr == nil
+			teamDeliveryStarted := false
+			if newAPIError == nil {
+				if lookupErr != nil || teamResponse.err != nil ||
+					teamResponse.status < http.StatusOK || teamResponse.status >= http.StatusMultipleChoices || !teamResponse.Written() {
+					newAPIError = types.NewErrorWithStatusCode(errors.New("team response cannot be delivered before settlement"),
+						types.ErrorCodeBadResponseStatusCode, http.StatusServiceUnavailable, types.ErrOptionWithSkipRetry())
+				} else if stateErr := model.MarkTeamSyncResponseState(relayInfo.RequestId, "writing"); stateErr != nil {
+					newAPIError = types.NewErrorWithStatusCode(stateErr,
+						types.ErrorCodeBadResponseStatusCode, http.StatusServiceUnavailable, types.ErrOptionWithSkipRetry())
+				} else {
+					teamDeliveryStarted = true
+					if commitErr := teamResponse.commit(); commitErr != nil {
+						logger.LogError(c, "team response delivery failed after settlement: "+commitErr.Error())
+						if stateErr := model.MarkTeamSyncResponseState(relayInfo.RequestId, "write_failed"); stateErr != nil {
+							logger.LogError(c, "team response audit update failed: "+stateErr.Error())
+						}
+						// Headers or a partial body may already be committed. Never
+						// attempt a second JSON response or retry the charged call.
+						if closeErr := teamResponse.close(); closeErr != nil {
+							logger.LogError(c, "team response temporary file cleanup failed: "+closeErr.Error())
+						}
+						return
+					} else if stateErr := model.MarkTeamSyncResponseState(relayInfo.RequestId, "server_write_completed"); stateErr != nil {
+						logger.LogError(c, "team response audit update failed: "+stateErr.Error())
+					}
+				}
+			}
+			if newAPIError != nil && teamSettled && !teamDeliveryStarted {
+				// The committed charge can outlive the staged response. Record
+				// that no delivery started, and never send this request upstream
+				// again under a different channel after settlement.
+				if stateErr := model.MarkTeamSyncResponseState(relayInfo.RequestId, "withheld"); stateErr != nil {
+					logger.LogError(c, "team response audit update failed: "+stateErr.Error())
+				}
+			}
+			if closeErr := teamResponse.close(); closeErr != nil {
+				logger.LogError(c, "team response temporary file cleanup failed: "+closeErr.Error())
+			}
+		}
 
 		if newAPIError == nil {
 			relayInfo.LastError = nil
@@ -244,6 +324,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError
+		if teamUpstreamMarked {
+			// The upstream outcome is ambiguous after an attempt. Retrying a
+			// team request could produce another billable result without a
+			// second reservation or a second auditable request ID.
+			break
+		}
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 
@@ -519,6 +605,7 @@ func RelayTask(c *gin.Context) {
 
 	var result *relay.TaskSubmitResult
 	var taskErr *taskdto.TaskError
+	var teamTaskResponse *teamTaskResponseWriter
 	defer func() {
 		if taskErr != nil && relayInfo.Billing != nil {
 			relayInfo.Billing.Refund(c)
@@ -566,7 +653,23 @@ func RelayTask(c *gin.Context) {
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
 
+		// A team token must never receive an upstream success ID unless the
+		// corresponding task was persisted. Discard buffered output on retries.
+		var pending *teamTaskResponseWriter
+		if relayInfo.TeamId > 0 {
+			pending = newTeamTaskResponseWriter(c.Writer)
+			c.Writer = pending
+		}
 		result, taskErr = relay.RelayTaskSubmit(c, relayInfo)
+		if pending != nil {
+			c.Writer = pending.ResponseWriter
+			if taskErr == nil && (pending.err != nil || pending.status < 200 || pending.status >= 300 || !pending.Written()) {
+				taskErr = service.TaskErrorWrapperLocal(fmt.Errorf("invalid team task response: %v", pending.err), "invalid_team_task_response", http.StatusBadGateway)
+			}
+			if taskErr == nil {
+				teamTaskResponse = pending
+			}
+		}
 		if taskErr == nil {
 			break
 		}
@@ -591,15 +694,28 @@ func RelayTask(c *gin.Context) {
 
 	// ── 成功：结算 + 日志 + 插入任务 ──
 	if taskErr == nil {
-		if settleErr := service.SettleBilling(c, relayInfo, result.Quota); settleErr != nil {
-			common.SysError("settle task billing error: " + settleErr.Error())
+		submitQuota := result.Quota
+		// A team task keeps its initial reservation until the terminal task and
+		// funding adjustment can be committed in one transaction by the poller.
+		// In particular, an upstream adjustment larger than the available team
+		// balance must not leave a settled usage without a persisted task.
+		if relayInfo.BillingSource != service.BillingSourceTeam {
+			if settleErr := service.SettleBilling(c, relayInfo, result.Quota); settleErr != nil {
+				common.SysError("settle task billing error: " + settleErr.Error())
+			}
+		} else {
+			result.Quota = relayInfo.Billing.GetPreConsumedQuota()
+			relayInfo.PriceData.Quota = result.Quota
 		}
-		service.LogTaskConsumption(c, relayInfo)
 
 		task := model.InitTask(result.Platform, relayInfo)
 		task.PrivateData.UpstreamTaskID = result.UpstreamTaskID
 		task.PrivateData.BillingSource = relayInfo.BillingSource
 		task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
+		if relayInfo.BillingSource == service.BillingSourceTeam {
+			task.PrivateData.TeamId = relayInfo.TeamId
+			task.PrivateData.TeamRequestId = relayInfo.RequestId
+		}
 		task.PrivateData.TokenId = relayInfo.TokenId
 		task.PrivateData.NodeName = common.NodeName
 		task.PrivateData.BillingContext = &model.TaskBillingContext{
@@ -610,11 +726,24 @@ func RelayTask(c *gin.Context) {
 			OriginModelName: relayInfo.OriginModelName,
 			PerCallBilling:  common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
 		}
+		if relayInfo.BillingSource == service.BillingSourceTeam {
+			task.PrivateData.BillingContext.SubmitQuota = &submitQuota
+		}
 		task.Quota = result.Quota
 		task.Data = result.TaskData
 		task.Action = relayInfo.Action
 		if insertErr := task.Insert(); insertErr != nil {
 			common.SysError("insert task error: " + insertErr.Error())
+			if relayInfo.BillingSource == service.BillingSourceTeam {
+				taskErr = service.TaskErrorWrapperLocal(insertErr, "persist_task_failed", http.StatusInternalServerError)
+			}
+		} else {
+			service.LogTaskConsumption(c, relayInfo)
+			if teamTaskResponse != nil {
+				if writeErr := teamTaskResponse.commit(); writeErr != nil {
+					common.SysError("write persisted team task response: " + writeErr.Error())
+				}
+			}
 		}
 	}
 

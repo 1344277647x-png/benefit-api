@@ -39,6 +39,7 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import type { SidebarData } from '@/components/layout/types'
+import { useStatus } from '@/hooks/use-status'
 import { ROLE } from '@/lib/roles'
 
 /**
@@ -49,6 +50,7 @@ import { ROLE } from '@/lib/roles'
  */
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
+  const { status } = useStatus()
 
   return {
     navGroups: [
@@ -115,6 +117,9 @@ export function useSidebarData(): SidebarData {
             url: '/wallet',
             icon: Wallet,
           },
+          ...(status?.team_subscriptions_enabled === true
+            ? [{ title: t('Team subscription'), url: '/team', icon: Users }]
+            : []),
           {
             title: t('Referral Center'),
             url: '/referrals',

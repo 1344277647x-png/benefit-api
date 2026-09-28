@@ -101,6 +101,7 @@ type TokenCountMeta struct {
 
 type RelayInfo struct {
 	TokenId           int
+	TeamId            int // dedicated team credential only; never inferred from membership
 	TokenKey          string
 	TokenGroup        string
 	UserId            int
@@ -157,6 +158,11 @@ type RelayInfo struct {
 	SubscriptionPlanTitle string
 	// RequestId is used for idempotent pre-consume/refund
 	RequestId string
+	// Normalized usage snapshot persisted with a team settlement before logs.
+	TeamPromptTokens     int
+	TeamCompletionTokens int
+	// Only reviewed billing fields are persisted with the team settlement.
+	TeamBillingDetails map[string]interface{}
 	// SubscriptionAmountTotal / SubscriptionAmountUsedAfterPreConsume are used to compute remaining in logs.
 	SubscriptionAmountTotal               int64
 	SubscriptionAmountUsedAfterPreConsume int64
@@ -535,6 +541,7 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 		OriginModelName: common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
 
 		TokenId:        common.GetContextKeyInt(c, constant.ContextKeyTokenId),
+		TeamId:         c.GetInt("team_id"),
 		TokenKey:       common.GetContextKeyString(c, constant.ContextKeyTokenKey),
 		TokenUnlimited: common.GetContextKeyBool(c, constant.ContextKeyTokenUnlimited),
 		TokenGroup:     tokenGroup,

@@ -1,0 +1,69 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+
+export interface TeamPlan {
+  id: number
+  title: string
+  price_amount: number
+  seat_limit: number
+  total_amount: number
+  duration_unit: string
+  duration_value: number
+  allow_balance_pay?: boolean
+}
+
+export interface TeamInvitation {
+  id: number
+  team_id: number
+  email: string
+  expires_at: number
+}
+
+export interface TeamToken {
+  id: number
+  name: string
+  enabled: boolean
+  created_time: number
+}
+
+export interface TeamData {
+  team: { id: number; name: string; status: string; owner_id: number } | null
+  membership?: { user_id: number; role: 'owner' | 'member' }
+  subscription?: {
+    id: number
+    plan_title: string
+    end_time: number
+    seat_limit: number
+  } | null
+  period?: {
+    amount_total: number
+    amount_used: number
+    end_time: number
+  } | null
+  queued?: {
+    id: number
+    plan_title: string
+    start_time: number
+    seat_limit: number
+  }[]
+  invitations: TeamInvitation[]
+  sent_invitations?: TeamInvitation[]
+  members?: { user_id: number; role: string }[]
+  usage?: { user_id: number; amount: number; requests: number }[]
+}

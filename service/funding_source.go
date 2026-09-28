@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 )
 
@@ -125,6 +126,58 @@ func (s *SubscriptionFunding) Refund() error {
 	return refundWithRetry(func() error {
 		return model.RefundSubscriptionPreConsume(s.requestId)
 	})
+}
+
+// TeamFunding is pinned to one request ID and one quota period. It never
+// invokes the member's personal wallet or subscription, including on failure.
+type TeamFunding struct {
+	requestId string
+	teamId    int
+	userId    int
+	tokenId   int
+	async     bool
+	reserved  int64
+	meta      model.TeamSyncBillingMeta
+}
+
+func (f *TeamFunding) Source() string { return BillingSourceTeam }
+
+func (f *TeamFunding) PreConsume(amount int) error {
+	usage, _, err := model.PreConsumeTeamForToken(f.requestId, f.teamId, f.userId, f.tokenId, int64(amount))
+	if err != nil {
+		return err
+	}
+	f.reserved = usage.Reserved
+	return nil
+}
+
+func (f *TeamFunding) Settle(delta int) error {
+	if !f.async {
+		if delta > common.MaxQuota || delta < -common.MaxQuota || f.reserved > common.MaxQuota {
+			return errors.New("invalid team settlement amount")
+		}
+		finalAmount := f.reserved + int64(delta)
+		if err := model.RecordTeamSyncSettlementIntent(f.requestId, finalAmount, f.meta); err != nil {
+			return err
+		}
+		if err := model.SettleTeamSyncUsage(f.requestId, finalAmount); err != nil {
+			return err
+		}
+		f.reserved = finalAmount
+		return nil
+	}
+	if err := model.AdjustTeamUsage(f.requestId, int64(delta), false); err != nil {
+		return err
+	}
+	f.reserved += int64(delta)
+	return nil
+}
+
+func (f *TeamFunding) Refund() error {
+	if f.reserved <= 0 {
+		return nil
+	}
+	return model.RefundTeamUsage(f.requestId)
 }
 
 // refundWithRetry 尝试多次执行退款操作以提高成功率，只能用于基于事务的退款函数！！！！！！

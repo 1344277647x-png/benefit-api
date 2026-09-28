@@ -25,6 +25,8 @@ import type { SubscriptionPlan, PlanPayload } from '../types'
 
 export function getPlanFormSchema(t: TFunction) {
   return z.object({
+    scope: z.enum(['personal', 'team']),
+    seat_limit: z.coerce.number().int().min(0).max(100),
     title: z.string().min(1, t('Please enter plan title')),
     subtitle: z.string().optional(),
     price_amount: z.coerce.number().min(0, t('Please enter amount')),
@@ -56,6 +58,8 @@ export function getPlanFormSchema(t: TFunction) {
 export type PlanFormValues = z.infer<ReturnType<typeof getPlanFormSchema>>
 
 export const PLAN_FORM_DEFAULTS: PlanFormValues = {
+  scope: 'personal',
+  seat_limit: 0,
   title: '',
   subtitle: '',
   price_amount: 0,
@@ -79,6 +83,8 @@ export const PLAN_FORM_DEFAULTS: PlanFormValues = {
 
 export function planToFormValues(plan: SubscriptionPlan): PlanFormValues {
   return {
+    scope: plan.scope || 'personal',
+    seat_limit: Number(plan.seat_limit || 0),
     title: plan.title || '',
     subtitle: plan.subtitle || '',
     price_amount: Number(plan.price_amount || 0),
@@ -105,6 +111,7 @@ export function formValuesToPlanPayload(values: PlanFormValues): PlanPayload {
   return {
     plan: {
       ...values,
+      seat_limit: values.scope === 'team' ? Number(values.seat_limit) : 0,
       price_amount: Number(values.price_amount || 0),
       currency: 'USD',
       duration_value: Number(values.duration_value || 0),
@@ -117,8 +124,15 @@ export function formValuesToPlanPayload(values: PlanFormValues): PlanPayload {
       sort_order: Number(values.sort_order || 0),
       max_purchase_per_user: Number(values.max_purchase_per_user || 0),
       total_amount: parseQuotaFromDollars(Number(values.total_amount || 0)),
-      upgrade_group: values.upgrade_group || '',
-      downgrade_group: values.downgrade_group || '',
+      upgrade_group: values.scope === 'team' ? '' : values.upgrade_group || '',
+      downgrade_group:
+        values.scope === 'team' ? '' : values.downgrade_group || '',
+      allow_wallet_overflow:
+        values.scope !== 'team' && values.allow_wallet_overflow,
+      stripe_price_id: values.scope === 'team' ? '' : values.stripe_price_id,
+      creem_product_id: values.scope === 'team' ? '' : values.creem_product_id,
+      waffo_pancake_product_id:
+        values.scope === 'team' ? '' : values.waffo_pancake_product_id,
     },
   }
 }

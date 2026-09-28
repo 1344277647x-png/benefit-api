@@ -1112,6 +1112,22 @@ export function DetailsDialog(props: DetailsDialogProps) {
           </DetailSection>
         )}
 
+        {isConsume &&
+          other?.billing_source === 'team' &&
+          other?.billing_mode === 'tiered_expr' &&
+          (other.pricing_snapshot_incomplete || !other.expr_b64) && (
+            <DetailSection label={t('Dynamic Pricing')}>
+              <p
+                role='status'
+                className='text-muted-foreground text-xs break-words'
+              >
+                {t(
+                  'Some historical pricing details are unavailable for this team request. The charged quota remains authoritative.'
+                )}
+              </p>
+            </DetailSection>
+          )}
+
         {/* Admin billing mode indicator for non-consume */}
         {props.isAdmin &&
           !isConsume &&

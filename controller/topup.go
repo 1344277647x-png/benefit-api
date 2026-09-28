@@ -27,8 +27,10 @@ func GetTopUpInfo(c *gin.Context) {
 
 	// Only expose Epay methods when the Epay gateway is fully configured.
 	payMethods := make([]map[string]string, 0, len(operation_setting.PayMethods)+4)
+	epayMethods := make([]map[string]string, 0)
 	if complianceConfirmed && isEpayTopUpEnabled() {
-		payMethods = append(payMethods, operation_setting.PayMethods...)
+		epayMethods = append(epayMethods, operation_setting.PayMethods...)
+		payMethods = append(payMethods, epayMethods...)
 	}
 
 	if isAlipayTopUpEnabled() {
@@ -123,6 +125,7 @@ func GetTopUpInfo(c *gin.Context) {
 		}(),
 		"creem_products":          setting.CreemProducts,
 		"pay_methods":             payMethods,
+		"epay_pay_methods":        epayMethods,
 		"min_topup":               operation_setting.MinTopUp,
 		"stripe_min_topup":        setting.StripeMinTopUp,
 		"waffo_min_topup":         setting.WaffoMinTopUp,
