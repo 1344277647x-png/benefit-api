@@ -61,9 +61,11 @@ func TestTeamMigrationConfiguredDatabases(t *testing.T) {
 			}
 			require.NoError(t, migrateDB())
 			require.NoError(t, migrateDB(), "restarting with the same schema must also succeed")
+			assert.True(t, db.Migrator().HasTable(&BusinessEventLogReceipt{}),
+				"the main database must contain the outbox receipt table when LOG_SQL_DSN is unset")
 			require.NoError(t, migrateLOGDB())
 			require.NoError(t, migrateLOGDB(), "log delivery receipt migration must be repeatable")
-			for _, table := range []interface{}{&Team{}, &TeamMember{}, &TeamInvitation{}, &TeamSubscription{}, &TeamQuotaPeriod{}, &TeamOrder{}, &TeamUsage{}, &TeamSyncBillingEvent{}, &TeamSyncLogReceipt{}, &TeamTaskBillingEvent{}, &TeamTaskLogReceipt{}} {
+			for _, table := range []interface{}{&Team{}, &TeamMember{}, &TeamInvitation{}, &TeamSubscription{}, &TeamQuotaPeriod{}, &TeamOrder{}, &TeamUsage{}, &TeamSyncBillingEvent{}, &TeamSyncLogReceipt{}, &TeamTaskBillingEvent{}, &TeamTaskLogReceipt{}, &BusinessEventLogReceipt{}} {
 				assert.True(t, db.Migrator().HasTable(table))
 			}
 			assert.True(t, db.Migrator().HasIndex(&TeamUsage{}, "idx_team_usages_request_id"))

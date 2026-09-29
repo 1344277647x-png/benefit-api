@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -78,6 +80,129 @@ func TestTeamPurchaseRoutesRejectWhenConsumeLoggingDisabled(t *testing.T) {
 	context.Request = httptest.NewRequest(http.MethodPost, "/api/team/balance/pay", nil)
 	RequireTeamsEnabled(context)
 	assert.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+}
+
+func TestTeamTokenCreatePersistsSelectedGroupAndModelLimits(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Team{}, &model.TeamMember{}, &model.TeamSubscription{}, &model.Token{}))
+
+	previousGroups := setting.UserUsableGroups2JSONString()
+	previousRatios := ratio_setting.GroupRatio2JSONString()
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"CodexPlus":"Plus","CodexPro":"Pro"}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"CodexPlus":1,"CodexPro":1}`))
+	t.Cleanup(func() {
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(previousGroups))
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(previousRatios))
+	})
+
+	owner := model.User{Username: "team-token-owner", Group: "CodexPlus", Status: common.UserStatusEnabled, AffCode: common.GetRandomString(12)}
+	require.NoError(t, db.Create(&owner).Error)
+	team := model.Team{OwnerId: owner.Id, Name: "Token team", Status: model.TeamStatusActive}
+	require.NoError(t, db.Create(&team).Error)
+	require.NoError(t, db.Create(&model.TeamMember{TeamId: team.Id, UserId: owner.Id, Role: "owner"}).Error)
+	now := common.GetTimestamp()
+	require.NoError(t, db.Create(&model.TeamSubscription{TeamId: team.Id, PlanTitle: "Active", SeatLimit: 2,
+		AmountTotal: 1000, StartTime: now - 60, EndTime: now + 3600, Status: model.TeamStatusActive}).Error)
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "CodexPlus", Model: "gpt-5-codex", ChannelId: 1, Enabled: true},
+		{Group: "CodexPro", Model: "gpt-5-pro", ChannelId: 2, Enabled: true},
+	}).Error)
+
+	body, err := common.Marshal(map[string]any{"name": "Plus key", "group": "CodexPlus", "model_limits": "gpt-5-codex"})
+	require.NoError(t, err)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Set("id", owner.Id)
+	context.Set("group", owner.Group)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/team/tokens", bytes.NewReader(body))
+	context.Request.Header.Set("Content-Type", "application/json")
+	TeamCreateToken(context)
+
+	var created struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Id          int      `json:"id"`
+			Group       string   `json:"group"`
+			ModelLimits []string `json:"model_limits"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &created))
+	require.True(t, created.Success)
+	assert.Equal(t, "CodexPlus", created.Data.Group)
+	assert.Equal(t, []string{"gpt-5-codex"}, created.Data.ModelLimits)
+
+	var token model.Token
+	require.NoError(t, db.First(&token, created.Data.Id).Error)
+	assert.Equal(t, "CodexPlus", token.Group)
+	assert.True(t, token.ModelLimitsEnabled)
+	assert.Equal(t, "gpt-5-codex", token.ModelLimits)
+
+	listRecorder := httptest.NewRecorder()
+	listContext, _ := gin.CreateTestContext(listRecorder)
+	listContext.Set("id", owner.Id)
+	listContext.Set("group", owner.Group)
+	listContext.Request = httptest.NewRequest(http.MethodGet, "/api/team/tokens", nil)
+	TeamListTokens(listContext)
+	var listed struct {
+		Success bool `json:"success"`
+		Data    []struct {
+			Group              string   `json:"group"`
+			ModelLimitsEnabled bool     `json:"model_limits_enabled"`
+			ModelLimits        []string `json:"model_limits"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(listRecorder.Body.Bytes(), &listed))
+	require.True(t, listed.Success)
+	require.Len(t, listed.Data, 1)
+	assert.Equal(t, "CodexPlus", listed.Data[0].Group)
+	assert.True(t, listed.Data[0].ModelLimitsEnabled)
+	assert.Equal(t, []string{"gpt-5-codex"}, listed.Data[0].ModelLimits)
+}
+
+func TestTeamTokenCreateRejectsModelOutsideSelectedGroup(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Team{}, &model.TeamMember{}, &model.TeamSubscription{}, &model.Token{}))
+
+	previousGroups := setting.UserUsableGroups2JSONString()
+	previousRatios := ratio_setting.GroupRatio2JSONString()
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"CodexPlus":"Plus","CodexPro":"Pro"}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"CodexPlus":1,"CodexPro":1}`))
+	t.Cleanup(func() {
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(previousGroups))
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(previousRatios))
+	})
+
+	owner := model.User{Username: "team-token-rejected", Group: "CodexPlus", Status: common.UserStatusEnabled, AffCode: common.GetRandomString(12)}
+	require.NoError(t, db.Create(&owner).Error)
+	team := model.Team{OwnerId: owner.Id, Name: "Rejected token team", Status: model.TeamStatusActive}
+	require.NoError(t, db.Create(&team).Error)
+	require.NoError(t, db.Create(&model.TeamMember{TeamId: team.Id, UserId: owner.Id, Role: "owner"}).Error)
+	now := common.GetTimestamp()
+	require.NoError(t, db.Create(&model.TeamSubscription{TeamId: team.Id, PlanTitle: "Active", SeatLimit: 2,
+		AmountTotal: 1000, StartTime: now - 60, EndTime: now + 3600, Status: model.TeamStatusActive}).Error)
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "CodexPlus", Model: "gpt-5-codex", ChannelId: 1, Enabled: true},
+		{Group: "CodexPro", Model: "gpt-5-pro", ChannelId: 2, Enabled: true},
+	}).Error)
+
+	body, err := common.Marshal(map[string]any{"name": "Invalid key", "group": "CodexPlus", "model_limits": "gpt-5-pro"})
+	require.NoError(t, err)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Set("id", owner.Id)
+	context.Set("group", owner.Group)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/team/tokens", bytes.NewReader(body))
+	context.Request.Header.Set("Content-Type", "application/json")
+	TeamCreateToken(context)
+
+	var response struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.False(t, response.Success)
+	var count int64
+	require.NoError(t, db.Model(&model.Token{}).Where("team_id = ?", team.Id).Count(&count).Error)
+	assert.Zero(t, count)
 }
 
 func TestTeamEpayNotificationRejectsUnsignedAndAmbiguousParameters(t *testing.T) {

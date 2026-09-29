@@ -19,7 +19,13 @@ For commercial licensing, please contact support@quantumnous.com
 
 import { api } from '@/lib/api'
 
-import type { TeamData, TeamPlan, TeamToken } from './types'
+import type {
+  CreateTeamTokenInput,
+  TeamData,
+  TeamGroup,
+  TeamPlan,
+  TeamToken,
+} from './types'
 
 interface Response<T> {
   success: boolean
@@ -44,10 +50,18 @@ export const teamApi = {
     data(api.post(`/api/team/invitations/${id}/respond`, { accept })),
   cancel: (id: number) => data(api.delete(`/api/team/invitations/${id}`)),
   remove: (id: number) => data(api.delete(`/api/team/members/${id}`)),
+  groups: () =>
+    data<Record<string, TeamGroup>>(api.get('/api/user/self/groups')),
+  models: (group: string) =>
+    data<string[]>(api.get('/api/user/models', { params: { group } })),
   tokens: () => data<TeamToken[]>(api.get('/api/team/tokens')),
-  createToken: (name: string) =>
+  createToken: (input: CreateTeamTokenInput) =>
     data<{ id: number; name: string; key: string }>(
-      api.post('/api/team/tokens', { name })
+      api.post('/api/team/tokens', {
+        name: input.name,
+        group: input.group,
+        model_limits: input.model_limits.join(','),
+      })
     ),
   disableToken: (id: number) => data(api.delete(`/api/team/tokens/${id}`)),
   balancePay: (planId: number) =>

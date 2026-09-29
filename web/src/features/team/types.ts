@@ -40,6 +40,21 @@ export interface TeamToken {
   name: string
   enabled: boolean
   created_time: number
+  group: string
+  group_inherited: boolean
+  model_limits_enabled: boolean
+  model_limits: string[]
+}
+
+export interface TeamGroup {
+  desc: string
+  ratio: number | string
+}
+
+export interface CreateTeamTokenInput {
+  name: string
+  group: string
+  model_limits: string[]
 }
 
 export interface PendingTeamPayment {

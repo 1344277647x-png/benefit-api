@@ -272,10 +272,47 @@ func TeamListTokens(c *gin.Context) {
 	}
 	summaries := make([]gin.H, 0, len(tokens))
 	for _, token := range tokens {
+		group := token.Group
+		groupInherited := group == ""
+		if groupInherited {
+			group = c.GetString("group")
+		}
 		summaries = append(summaries, gin.H{"id": token.Id, "name": token.Name,
-			"enabled": token.TeamEnabled, "created_time": token.CreatedTime})
+			"enabled": token.TeamEnabled, "created_time": token.CreatedTime,
+			"group": group, "group_inherited": groupInherited,
+			"model_limits_enabled": token.ModelLimitsEnabled, "model_limits": token.GetModelLimits()})
 	}
 	common.ApiSuccess(c, summaries)
+}
+
+func normalizeTeamTokenModelLimits(raw, group string) (string, error) {
+	if len(raw) > 4096 {
+		return "", errors.New("允许模型配置过长")
+	}
+	if strings.TrimSpace(raw) == "" {
+		return "", nil
+	}
+	allowed := make(map[string]struct{})
+	for _, modelName := range service.GetGroupsEnabledModels([]string{group}) {
+		allowed[ratio_setting.FormatMatchingModelName(modelName)] = struct{}{}
+	}
+	models := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, rawModel := range strings.Split(raw, ",") {
+		modelName := ratio_setting.FormatMatchingModelName(strings.TrimSpace(rawModel))
+		if modelName == "" {
+			continue
+		}
+		if _, ok := allowed[modelName]; !ok {
+			return "", fmt.Errorf("模型 %s 不属于所选分组", modelName)
+		}
+		if _, ok := seen[modelName]; ok {
+			continue
+		}
+		seen[modelName] = struct{}{}
+		models = append(models, modelName)
+	}
+	return strings.Join(models, ","), nil
 }
 
 func TeamCreateToken(c *gin.Context) {
@@ -289,18 +326,26 @@ func TeamCreateToken(c *gin.Context) {
 		return
 	}
 	request.Group = strings.TrimSpace(request.Group)
-	if request.Group != "" {
-		if _, ok := service.GetUserUsableGroups(c.GetString("group"))[request.Group]; !ok || !ratio_setting.ContainsGroupRatio(request.Group) {
-			common.ApiErrorMsg(c, "该账号无权使用此分组")
-			return
-		}
+	accountGroup := c.GetString("group")
+	if request.Group == "" {
+		request.Group = accountGroup
 	}
-	token, err := model.CreateTeamToken(c.GetInt("id"), request.Name, request.Group, request.ModelLimits)
+	if !service.IsUserSelectableGroup(accountGroup, request.Group) {
+		common.ApiErrorMsg(c, "该账号无权使用此分组")
+		return
+	}
+	modelLimits, err := normalizeTeamTokenModelLimits(request.ModelLimits, request.Group)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, gin.H{"id": token.Id, "name": token.Name, "key": "sk-" + token.Key})
+	token, err := model.CreateTeamToken(c.GetInt("id"), request.Name, request.Group, modelLimits)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"id": token.Id, "name": token.Name, "key": "sk-" + token.Key,
+		"group": token.Group, "model_limits_enabled": token.ModelLimitsEnabled, "model_limits": token.GetModelLimits()})
 }
 
 func TeamDisableToken(c *gin.Context) {

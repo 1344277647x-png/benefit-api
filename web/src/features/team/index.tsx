@@ -19,17 +19,19 @@ For commercial licensing, please contact support@quantumnous.com
 
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
 
 import { SectionPageLayout } from '@/components/layout'
+import { MultiSelect } from '@/components/multi-select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getTopupInfo } from '@/features/wallet/api'
 import { quotaUnitsToDollars } from '@/lib/format'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { teamApi } from './api'
 import { PendingTeamPayment } from './components/pending-team-payment'
@@ -50,7 +52,11 @@ type TeamAction =
 
 const nameSchema = z.object({ name: z.string().trim().min(1).max(80) })
 const inviteSchema = z.object({ email: z.email() })
-const tokenSchema = z.object({ name: z.string().trim().min(1).max(50) })
+const tokenSchema = z.object({
+  name: z.string().trim().min(1).max(50),
+  group: z.string().trim().min(1),
+  model_limits: z.array(z.string()),
+})
 
 function Panel(props: { title: string; children: React.ReactNode }) {
   return (
@@ -127,6 +133,7 @@ function PlanCard(props: {
 export function TeamPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const userGroup = useAuthStore((state) => state.auth.user?.group || '')
   const [shownKey, setShownKey] = useState<string | null>(null)
   const [epayBusy, setEpayBusy] = useState(false)
   const self = useQuery({
@@ -144,6 +151,12 @@ export function TeamPage() {
   const tokens = useQuery({
     queryKey: ['team', 'tokens'],
     queryFn: teamApi.tokens,
+    enabled: Boolean(self.data?.team),
+    retry: false,
+  })
+  const groups = useQuery({
+    queryKey: ['team', 'token-groups'],
+    queryFn: teamApi.groups,
     enabled: Boolean(self.data?.team),
     retry: false,
   })
@@ -169,8 +182,35 @@ export function TeamPage() {
   })
   const tokenForm = useForm<z.infer<typeof tokenSchema>>({
     resolver: zodResolver(tokenSchema),
-    defaultValues: { name: '' },
+    defaultValues: { name: '', group: userGroup, model_limits: [] },
   })
+  const selectedTokenGroup = tokenForm.watch('group')
+  const tokenGroupOptions = useMemo(
+    () =>
+      Object.entries(groups.data || {})
+        .filter(([group]) => group !== 'auto')
+        .map(([value, info]) => ({ value, label: value, desc: info.desc })),
+    [groups.data]
+  )
+  const tokenModels = useQuery({
+    queryKey: ['team', 'token-models', selectedTokenGroup],
+    queryFn: () => teamApi.models(selectedTokenGroup),
+    enabled: Boolean(self.data?.team && selectedTokenGroup),
+    retry: false,
+  })
+
+  useEffect(() => {
+    if (tokenGroupOptions.length === 0) return
+    const currentGroup = tokenForm.getValues('group')
+    if (tokenGroupOptions.some((option) => option.value === currentGroup)) {
+      return
+    }
+    const fallback =
+      tokenGroupOptions.find((option) => option.value === userGroup)?.value ||
+      tokenGroupOptions[0].value
+    tokenForm.setValue('group', fallback)
+    tokenForm.setValue('model_limits', [])
+  }, [tokenForm, tokenGroupOptions, userGroup])
 
   const actions = useMutation({
     mutationFn: (action: TeamAction) => {
@@ -207,7 +247,8 @@ export function TeamPage() {
     },
   })
   const createToken = useMutation({
-    mutationFn: teamApi.createToken,
+    mutationFn: (values: z.infer<typeof tokenSchema>) =>
+      teamApi.createToken(values),
     onSuccess: (result) => {
       setShownKey(result.key)
       tokenForm.reset()
@@ -446,9 +487,9 @@ export function TeamPage() {
                       </div>
                     )}
                     <form
-                      className='flex flex-col gap-2 sm:flex-row'
+                      className='grid gap-3 sm:grid-cols-2'
                       onSubmit={tokenForm.handleSubmit((values) =>
-                        createToken.mutate(values.name)
+                        createToken.mutate(values)
                       )}
                     >
                       <label className='sr-only' htmlFor='team-token-name'>
@@ -461,16 +502,84 @@ export function TeamPage() {
                         {...tokenForm.register('name')}
                         aria-invalid={Boolean(tokenForm.formState.errors.name)}
                       />
+                      <label className='sr-only' htmlFor='team-token-group'>
+                        {t('Group')}
+                      </label>
+                      <select
+                        id='team-token-group'
+                        className='border-border bg-background min-h-11 min-w-0 rounded-lg border px-3'
+                        value={selectedTokenGroup}
+                        onChange={(event) => {
+                          tokenForm.setValue('group', event.target.value, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          })
+                          tokenForm.setValue('model_limits', [], {
+                            shouldDirty: true,
+                          })
+                        }}
+                        aria-invalid={Boolean(tokenForm.formState.errors.group)}
+                      >
+                        <option value='' disabled>
+                          {t('Select a group')}
+                        </option>
+                        {tokenGroupOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label} · {option.desc}
+                          </option>
+                        ))}
+                      </select>
+                      <div className='sm:col-span-2'>
+                        <label
+                          className='mb-1 block text-sm font-medium'
+                          htmlFor='team-token-models'
+                        >
+                          {t('Model Limits')}
+                        </label>
+                        <MultiSelect
+                          id='team-token-models'
+                          options={(tokenModels.data || []).map((model) => ({
+                            label: model,
+                            value: model,
+                          }))}
+                          selected={tokenForm.watch('model_limits')}
+                          onChange={(models) =>
+                            tokenForm.setValue('model_limits', models, {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            })
+                          }
+                          disabled={
+                            !selectedTokenGroup || tokenModels.isPending
+                          }
+                          placeholder={t('Select models (empty for allow all)')}
+                        />
+                        <p className='text-muted-foreground mt-1 text-xs'>
+                          {t('Limit which models can be used with this key')}
+                        </p>
+                      </div>
                       <Button
                         type='submit'
-                        className='min-h-11'
-                        disabled={createToken.isPending || !data.subscription}
+                        className='min-h-11 sm:col-span-2 sm:w-fit'
+                        disabled={
+                          createToken.isPending ||
+                          !data.subscription ||
+                          groups.isPending ||
+                          groups.isError ||
+                          tokenModels.isPending ||
+                          tokenModels.isError
+                        }
                       >
                         {t('Create team key')}
                       </Button>
                     </form>
-                    {tokenForm.formState.errors.name && (
-                      <p role='alert'>{t('Enter a key name.')}</p>
+                    {(tokenForm.formState.errors.name ||
+                      tokenForm.formState.errors.group) && (
+                      <p role='alert'>
+                        {tokenForm.formState.errors.name
+                          ? t('Enter a key name.')
+                          : t('Select a group')}
+                      </p>
                     )}
                     <div className='mt-4 space-y-2'>
                       {(tokens.data || []).map((token) => (
@@ -478,10 +587,20 @@ export function TeamPage() {
                           key={token.id}
                           className='flex flex-wrap items-center justify-between gap-2'
                         >
-                          <span className='break-all'>
-                            {token.name} ·{' '}
-                            {token.enabled ? t('Enabled') : t('Disabled')}
-                          </span>
+                          <div className='min-w-0'>
+                            <p className='break-all'>
+                              {token.name} ·{' '}
+                              {token.enabled ? t('Enabled') : t('Disabled')}
+                            </p>
+                            <p className='text-muted-foreground text-xs break-all'>
+                              {t('Group')}: {token.group}
+                              {' · '}
+                              {t('Model Limits')}:{' '}
+                              {token.model_limits_enabled
+                                ? token.model_limits.join(', ')
+                                : t('All Models')}
+                            </p>
+                          </div>
                           {token.enabled && (
                             <Button
                               variant='outline'
