@@ -185,20 +185,27 @@ export function CommonLogsFilterBar<TData>(
     [searchState]
   )
 
+  const applyFilters = useCallback(
+    (nextLogType: LogTypeValue) => {
+      const filterParams = buildSearchParams(filters, 'common')
+      navigate({
+        to: '/usage-logs/$section',
+        params: { section: 'common' },
+        search: {
+          ...filterParams,
+          type: [nextLogType],
+          page: 1,
+        },
+      })
+      queryClient.invalidateQueries({ queryKey: ['logs'] })
+      queryClient.invalidateQueries({ queryKey: ['usage-logs-stats'] })
+    },
+    [filters, navigate, queryClient]
+  )
+
   const handleApply = useCallback(() => {
-    const filterParams = buildSearchParams(filters, 'common')
-    navigate({
-      to: '/usage-logs/$section',
-      params: { section: 'common' },
-      search: {
-        ...filterParams,
-        type: [logType],
-        page: 1,
-      },
-    })
-    queryClient.invalidateQueries({ queryKey: ['logs'] })
-    queryClient.invalidateQueries({ queryKey: ['usage-logs-stats'] })
-  }, [filters, logType, navigate, queryClient])
+    applyFilters(logType)
+  }, [applyFilters, logType])
 
   const handleReset = useCallback(() => {
     const { start, end } = getDefaultTimeRange()
@@ -343,6 +350,7 @@ export function CommonLogsFilterBar<TData>(
               logType: nextLogType,
             }
           })
+          applyFilters(nextLogType)
         }}
       >
         <SelectTrigger>
