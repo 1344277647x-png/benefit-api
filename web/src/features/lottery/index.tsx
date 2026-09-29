@@ -54,14 +54,6 @@ function formatPrize(cents: number) {
   return `¥${Number.isInteger(amount) ? amount.toFixed(0) : amount.toFixed(1)}`
 }
 
-function probabilityLabel(weight: number) {
-  const percent = weight / 1000
-  return `${percent
-    .toFixed(3)
-    .replace(/\.0+$/, '')
-    .replace(/(\.\d*?)0+$/, '$1')}%`
-}
-
 function createRequestKey() {
   if (
     typeof globalThis.crypto !== 'undefined' &&
@@ -165,9 +157,6 @@ export function Lottery() {
   })
 
   const status = statusQuery.data
-  const activePool = status?.next_draw_is_jackpot
-    ? status.jackpot_pool
-    : status?.regular_pool
   const canDraw =
     status?.active === true &&
     (status.available_draws ?? 0) > 0 &&
@@ -236,7 +225,7 @@ export function Lottery() {
               <LotteryWheel rotation={rotation} />
               <p className='text-muted-foreground text-center text-xs'>
                 {t(
-                  'Wheel segments are visual only. Actual results follow the published probability table.'
+                  'Wheel segments are visual only. Actual results are determined by the activity rules.'
                 )}
               </p>
               {resultText && (
@@ -317,23 +306,6 @@ export function Lottery() {
                   {t('Every 50th personal draw uses the jackpot pool.')}
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className='grid grid-cols-2 gap-2'>
-                  {(activePool ?? []).map((prize) => (
-                    <div
-                      key={`${prize.reward_cents}-${prize.weight}`}
-                      className='border-border/60 bg-muted/25 rounded-lg border p-3'
-                    >
-                      <p className='font-semibold'>
-                        {formatPrize(prize.reward_cents)}
-                      </p>
-                      <p className='text-muted-foreground text-xs tabular-nums'>
-                        {probabilityLabel(prize.weight)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
             </Card>
 
             <Card>

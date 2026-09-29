@@ -161,21 +161,11 @@ export function LotterySettingsSection(props: LotterySettingsSectionProps) {
 
           <div className='border-border/60 bg-muted/20 text-muted-foreground rounded-xl border p-4 text-sm leading-6'>
             <p>{t('Every ¥50 of eligible top-ups earns one draw.')}</p>
-            <p>
-              {t(
-                'The 50th draw uses the jackpot pool. The ¥100 prize has a 0.001% chance in both pools.'
-              )}
-            </p>
+            <p>{t('The 50th draw uses the jackpot pool.')}</p>
             <p>
               {t(
                 'Administrator credits, gifts, referrals, balance purchases and subscriptions do not count.'
               )}
-            </p>
-            <p>
-              {t('Regular pool: ¥0.5 74.999%, ¥1 20%, ¥2 5%, ¥100 0.001%.')}
-            </p>
-            <p>
-              {t('Jackpot pool: ¥5 79.999%, ¥10 15%, ¥50 5%, ¥100 0.001%.')}
             </p>
           </div>
         </SettingsForm>
