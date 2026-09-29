@@ -518,6 +518,7 @@ func TransferAffQuota(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserTransferFailed, map[string]any{"Error": err.Error()})
 		return
 	}
+	_ = service.DeliverPendingBusinessEvents(c.Request.Context(), 100)
 	common.ApiSuccessI18n(c, i18n.MsgUserTransferSuccess, nil)
 }
 

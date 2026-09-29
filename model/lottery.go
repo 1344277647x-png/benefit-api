@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/big"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -17,10 +18,10 @@ import (
 )
 
 const (
-	lotteryRuleVersion     = "2026-09-v1"
-	lotteryJackpotInterval = int64(50)
-	lotteryPoolWeightTotal = int64(100000)
-	lotteryMaxRequestKey   = 128
+	lotteryDefaultRuleVersion = "2026-09-v1"
+	lotteryJackpotInterval    = int64(50)
+	lotteryPoolWeightTotal    = int64(100000)
+	lotteryMaxRequestKey      = 128
 )
 
 var (
@@ -47,7 +48,7 @@ type LotteryGrant struct {
 	UserId        int    `json:"user_id" gorm:"index"`
 	RechargeCents int64  `json:"recharge_cents"`
 	DrawsGranted  int    `json:"draws_granted"`
-	RuleVersion   string `json:"rule_version" gorm:"type:varchar(32)"`
+	RuleVersion   string `json:"rule_version" gorm:"type:varchar(64)"`
 	CreatedAt     int64  `json:"created_at"`
 }
 
@@ -59,8 +60,17 @@ type LotteryDraw struct {
 	Tier        string `json:"tier" gorm:"type:varchar(16)"`
 	RewardCents int64  `json:"reward_cents"`
 	RewardQuota int    `json:"reward_quota"`
-	RuleVersion string `json:"rule_version" gorm:"type:varchar(32)"`
+	RuleVersion string `json:"rule_version" gorm:"type:varchar(64)"`
 	CreatedAt   int64  `json:"created_at"`
+}
+
+type LotteryRule struct {
+	Id             int64  `json:"id"`
+	Version        string `json:"version" gorm:"type:varchar(64);uniqueIndex"`
+	RegularWeights string `json:"-" gorm:"type:text"`
+	JackpotWeights string `json:"-" gorm:"type:text"`
+	CreatedBy      int    `json:"created_by" gorm:"index"`
+	CreatedAt      int64  `json:"created_at" gorm:"type:bigint;index"`
 }
 
 type LotteryPrize struct {
@@ -69,22 +79,21 @@ type LotteryPrize struct {
 }
 
 type LotteryStatus struct {
-	Enabled                    bool           `json:"enabled"`
-	Active                     bool           `json:"active"`
-	StartAt                    int64          `json:"start_at"`
-	EndAt                      int64          `json:"end_at"`
-	AvailableDraws             int            `json:"available_draws"`
-	TotalDraws                 int64          `json:"total_draws"`
-	NextDrawIsJackpot          bool           `json:"next_draw_is_jackpot"`
-	RechargeRemainderCents     int64          `json:"recharge_remainder_cents"`
-	AmountToNextDrawCents      int64          `json:"amount_to_next_draw_cents"`
-	TotalEligibleRechargeCents int64          `json:"total_eligible_recharge_cents"`
-	TotalRewardQuota           int64          `json:"total_reward_quota"`
-	DrawThresholdCents         int64          `json:"draw_threshold_cents"`
-	JackpotInterval            int64          `json:"jackpot_interval"`
-	RuleVersion                string         `json:"rule_version"`
-	RegularPool                []LotteryPrize `json:"regular_pool"`
-	JackpotPool                []LotteryPrize `json:"jackpot_pool"`
+	Enabled                    bool    `json:"enabled"`
+	Active                     bool    `json:"active"`
+	StartAt                    int64   `json:"start_at"`
+	EndAt                      int64   `json:"end_at"`
+	AvailableDraws             int     `json:"available_draws"`
+	TotalDraws                 int64   `json:"total_draws"`
+	NextDrawIsJackpot          bool    `json:"next_draw_is_jackpot"`
+	RechargeRemainderCents     int64   `json:"recharge_remainder_cents"`
+	AmountToNextDrawCents      int64   `json:"amount_to_next_draw_cents"`
+	TotalEligibleRechargeCents int64   `json:"total_eligible_recharge_cents"`
+	TotalRewardQuota           int64   `json:"total_reward_quota"`
+	DrawThresholdCents         int64   `json:"draw_threshold_cents"`
+	JackpotInterval            int64   `json:"jackpot_interval"`
+	RuleVersion                string  `json:"-"`
+	PrizeAmountsCents          []int64 `json:"prize_amounts_cents"`
 }
 
 type LotteryHistory struct {
@@ -94,7 +103,7 @@ type LotteryHistory struct {
 	Total    int64         `json:"total"`
 }
 
-func lotteryRewardPool(tier string) []LotteryPrize {
+func defaultLotteryRewardPool(tier string) []LotteryPrize {
 	if tier == "jackpot" {
 		return []LotteryPrize{
 			{RewardCents: 500, Weight: 79999},
@@ -111,11 +120,96 @@ func lotteryRewardPool(tier string) []LotteryPrize {
 	}
 }
 
-func lotteryRewardForRoll(tier string, roll int64) (int64, error) {
+func validateLotteryWeights(weights []int64) error {
+	if len(weights) != 4 {
+		return errors.New("lottery pool must contain all four fixed prizes")
+	}
+	var total int64
+	for _, weight := range weights {
+		if weight < 0 || weight > lotteryPoolWeightTotal {
+			return errors.New("lottery weight is out of range")
+		}
+		total += weight
+	}
+	if total != lotteryPoolWeightTotal {
+		return errors.New("lottery pool weights must total 100.000%")
+	}
+	return nil
+}
+
+func CreateLotteryRule(operatorID int, regularWeights, jackpotWeights []int64) (*LotteryRule, error) {
+	if operatorID <= 0 {
+		return nil, errors.New("invalid lottery rule operator")
+	}
+	if err := validateLotteryWeights(regularWeights); err != nil {
+		return nil, err
+	}
+	if err := validateLotteryWeights(jackpotWeights); err != nil {
+		return nil, err
+	}
+	regularJSON, err := common.Marshal(regularWeights)
+	if err != nil {
+		return nil, err
+	}
+	jackpotJSON, err := common.Marshal(jackpotWeights)
+	if err != nil {
+		return nil, err
+	}
+	rule := &LotteryRule{
+		Version:        fmt.Sprintf("lottery-%d-%s", time.Now().UnixNano(), common.GetRandomString(6)),
+		RegularWeights: string(regularJSON), JackpotWeights: string(jackpotJSON),
+		CreatedBy: operatorID, CreatedAt: common.GetTimestamp(),
+	}
+	return rule, DB.Create(rule).Error
+}
+
+func currentLotteryRuleVersion() string {
+	version := strings.TrimSpace(operation_setting.GetLotterySettingSnapshot().RuleVersion)
+	if version == "" {
+		return lotteryDefaultRuleVersion
+	}
+	return version
+}
+
+func lotteryRewardPool(tier, version string) ([]LotteryPrize, error) {
+	pool := defaultLotteryRewardPool(tier)
+	if version == "" || version == lotteryDefaultRuleVersion {
+		return pool, nil
+	}
+	var rule LotteryRule
+	if err := DB.Where("version = ?", version).First(&rule).Error; err != nil {
+		return nil, err
+	}
+	encoded := rule.RegularWeights
+	if tier == "jackpot" {
+		encoded = rule.JackpotWeights
+	}
+	var weights []int64
+	if err := common.UnmarshalJsonStr(encoded, &weights); err != nil {
+		return nil, err
+	}
+	if err := validateLotteryWeights(weights); err != nil {
+		return nil, err
+	}
+	for i := range pool {
+		pool[i].Weight = weights[i]
+	}
+	return pool, nil
+}
+
+func lotteryRewardForRoll(tier string, roll int64, versions ...string) (int64, error) {
 	if roll < 0 || roll >= lotteryPoolWeightTotal {
 		return 0, errors.New("lottery roll is out of range")
 	}
-	for _, prize := range lotteryRewardPool(tier) {
+	version := lotteryDefaultRuleVersion
+	if len(versions) > 0 && versions[0] != "" {
+		version = versions[0]
+	}
+	pool, err := lotteryRewardPool(tier, version)
+	if err != nil {
+		return 0, err
+	}
+	for _, prize := range pool {
 		if roll < prize.Weight {
 			return prize.RewardCents, nil
 		}
@@ -124,12 +218,12 @@ func lotteryRewardForRoll(tier string, roll int64) (int64, error) {
 	return 0, errors.New("lottery reward selection failed")
 }
 
-func lotteryReward(tier string) (int64, error) {
+func lotteryReward(tier, version string) (int64, error) {
 	roll, err := cryptorand.Int(cryptorand.Reader, big.NewInt(lotteryPoolWeightTotal))
 	if err != nil {
 		return 0, fmt.Errorf("generate lottery random value: %w", err)
 	}
-	return lotteryRewardForRoll(tier, roll.Int64())
+	return lotteryRewardForRoll(tier, roll.Int64(), version)
 }
 
 func lotteryRewardQuota(rewardCents int64) (int, error) {
@@ -175,7 +269,7 @@ func grantLotteryDrawsForTopUpTx(tx *gorm.DB, topUp *TopUp) error {
 		TopUpId:       topUp.Id,
 		UserId:        topUp.UserId,
 		RechargeCents: rechargeCents,
-		RuleVersion:   lotteryRuleVersion,
+		RuleVersion:   currentLotteryRuleVersion(),
 		CreatedAt:     common.GetTimestamp(),
 	}
 	grantResult := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&grant)
@@ -238,9 +332,8 @@ func lotteryStatusFromAccount(account LotteryAccount) *LotteryStatus {
 		TotalRewardQuota:           account.TotalRewardQuota,
 		DrawThresholdCents:         operation_setting.LotteryDrawThresholdCents,
 		JackpotInterval:            lotteryJackpotInterval,
-		RuleVersion:                lotteryRuleVersion,
-		RegularPool:                lotteryRewardPool("regular"),
-		JackpotPool:                lotteryRewardPool("jackpot"),
+		RuleVersion:                currentLotteryRuleVersion(),
+		PrizeAmountsCents:          []int64{50, 100, 200, 500, 1000, 5000, 10000},
 	}
 }
 
@@ -269,7 +362,7 @@ func DrawLottery(userId int, requestKey string) (*LotteryDraw, *LotteryStatus, e
 		reservation := LotteryDraw{
 			UserId:      userId,
 			RequestKey:  requestKey,
-			RuleVersion: lotteryRuleVersion,
+			RuleVersion: currentLotteryRuleVersion(),
 			CreatedAt:   now,
 		}
 		reserveResult := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&reservation)
@@ -302,7 +395,7 @@ func DrawLottery(userId int, requestKey string) (*LotteryDraw, *LotteryStatus, e
 		if drawNumber%lotteryJackpotInterval == 0 {
 			tier = "jackpot"
 		}
-		rewardCents, err := lotteryReward(tier)
+		rewardCents, err := lotteryReward(tier, reservation.RuleVersion)
 		if err != nil {
 			return err
 		}
@@ -340,6 +433,14 @@ func DrawLottery(userId int, requestKey string) (*LotteryDraw, *LotteryStatus, e
 			"reward_cents": rewardCents,
 			"reward_quota": rewardQuota,
 		}).Error; err != nil {
+			return err
+		}
+		if err := enqueueBusinessEventTx(tx, &BusinessEvent{
+			EventKey: fmt.Sprintf("lottery:draw:%d", draw.Id), Category: BusinessEventLottery,
+			Action: "lottery.draw", UserId: userId, RequestId: requestKey,
+			Content: "Lottery draw completed", CreatedAt: now,
+		}, map[string]any{"reward_cents": rewardCents, "reward_quota": rewardQuota, "tier": tier,
+			"draw_number": drawNumber, "rule_version": draw.RuleVersion}); err != nil {
 			return err
 		}
 		account.AvailableDraws--

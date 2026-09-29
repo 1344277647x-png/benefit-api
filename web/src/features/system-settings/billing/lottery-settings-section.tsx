@@ -26,6 +26,8 @@ const schema = z
     enabled: z.boolean(),
     startAt: z.string(),
     endAt: z.string(),
+    regularWeights: z.array(z.coerce.number().min(0).max(100)).length(4),
+    jackpotWeights: z.array(z.coerce.number().min(0).max(100)).length(4),
   })
   .refine(
     (values) => {
@@ -35,6 +37,26 @@ const schema = z
       )
     },
     { path: ['endAt'], message: 'End time must be later than start time' }
+  )
+  .refine(
+    (values) =>
+      Math.abs(
+        values.regularWeights.reduce((sum, value) => sum + value, 0) - 100
+      ) < 0.0001,
+    {
+      path: ['regularWeights'],
+      message: 'Probabilities must total 100.000%',
+    }
+  )
+  .refine(
+    (values) =>
+      Math.abs(
+        values.jackpotWeights.reduce((sum, value) => sum + value, 0) - 100
+      ) < 0.0001,
+    {
+      path: ['jackpotWeights'],
+      message: 'Probabilities must total 100.000%',
+    }
   )
 
 type Values = z.infer<typeof schema>
@@ -52,7 +74,13 @@ function localInputToUnix(value: string) {
 }
 
 type LotterySettingsSectionProps = {
-  defaultValues: { enabled: boolean; startAt: number; endAt: number }
+  defaultValues: {
+    enabled: boolean
+    startAt: number
+    endAt: number
+    regularWeights: number[]
+    jackpotWeights: number[]
+  }
   complianceConfirmed: boolean
 }
 
@@ -65,6 +93,12 @@ export function LotterySettingsSection(props: LotterySettingsSectionProps) {
       enabled: props.defaultValues.enabled,
       startAt: unixToLocalInput(props.defaultValues.startAt),
       endAt: unixToLocalInput(props.defaultValues.endAt),
+      regularWeights: props.defaultValues.regularWeights.map(
+        (weight) => weight / 1000
+      ),
+      jackpotWeights: props.defaultValues.jackpotWeights.map(
+        (weight) => weight / 1000
+      ),
     },
   })
   const { isDirty, isSubmitting } = form.formState
@@ -78,6 +112,12 @@ export function LotterySettingsSection(props: LotterySettingsSectionProps) {
       enabled: values.enabled,
       start_at: localInputToUnix(values.startAt),
       end_at: localInputToUnix(values.endAt),
+      regular_weights: values.regularWeights.map((weight) =>
+        Math.round(weight * 1000)
+      ),
+      jackpot_weights: values.jackpotWeights.map((weight) =>
+        Math.round(weight * 1000)
+      ),
     })
     form.reset(values)
   }
@@ -158,6 +198,53 @@ export function LotterySettingsSection(props: LotterySettingsSectionProps) {
               )}
             />
           </div>
+
+          {[
+            {
+              name: 'regularWeights' as const,
+              title: 'Regular draw probabilities',
+              prizes: ['¥0.5', '¥1', '¥2', '¥100'],
+            },
+            {
+              name: 'jackpotWeights' as const,
+              title: 'Every 50th draw probabilities',
+              prizes: ['¥5', '¥10', '¥50', '¥100'],
+            },
+          ].map((pool) => (
+            <div
+              key={pool.name}
+              className='border-border/60 rounded-xl border p-4'
+            >
+              <FormLabel>{t(pool.title)}</FormLabel>
+              <div className='mt-3 grid gap-3 sm:grid-cols-4'>
+                {pool.prizes.map((prize, index) => (
+                  <FormField
+                    key={prize}
+                    control={form.control}
+                    name={`${pool.name}.${index}`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{prize}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type='number'
+                            min='0'
+                            max='100'
+                            step='0.001'
+                            {...field}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                ))}
+              </div>
+              <FormMessage>
+                {form.formState.errors[pool.name]?.root?.message ??
+                  form.formState.errors[pool.name]?.message}
+              </FormMessage>
+            </div>
+          ))}
 
           <div className='border-border/60 bg-muted/20 text-muted-foreground rounded-xl border p-4 text-sm leading-6'>
             <p>{t('Every ¥50 of eligible top-ups earns one draw.')}</p>

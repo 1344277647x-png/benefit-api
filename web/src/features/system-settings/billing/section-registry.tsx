@@ -241,6 +241,8 @@ const BILLING_SECTIONS = [
           enabled: settings['lottery_setting.enabled'],
           startAt: settings['lottery_setting.start_at'],
           endAt: settings['lottery_setting.end_at'],
+          regularWeights: settings['lottery_setting.regular_weights'],
+          jackpotWeights: settings['lottery_setting.jackpot_weights'],
         }}
         complianceConfirmed={
           (settings['payment_setting.compliance_confirmed'] ?? false) &&

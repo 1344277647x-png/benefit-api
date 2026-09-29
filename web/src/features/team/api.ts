@@ -79,4 +79,8 @@ export const teamApi = {
     }
     return response
   },
+  cancelPendingPayment: () => data(api.delete('/api/team/orders/pending')),
+  planDissolution: () =>
+    data<{ dissolve_at: number }>(api.post('/api/team/dissolution')),
+  revokeDissolution: () => data(api.delete('/api/team/dissolution')),
 }

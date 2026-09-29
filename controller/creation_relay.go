@@ -268,6 +268,14 @@ func CreationImage(c *gin.Context) {
 		return
 	}
 	relaypkg.CompleteCreationImageBilling(c, executionResult, len(assets))
+	assetIDs := make([]string, 0, len(assets))
+	for _, asset := range assets {
+		assetIDs = append(assetIDs, asset.PublicID)
+	}
+	refs, _ := common.Marshal(assetIDs)
+	service.RecordContentAudit(service.ContentAuditWrite{UserID: job.UserID, ModelName: job.Model,
+		RequestID: job.PublicID, Source: "creation_image", Status: string(status), Input: job.Prompt,
+		Output: string(parameters), ResultReferences: string(refs)})
 	respondWithCreationJob(c, job.PublicID)
 }
 

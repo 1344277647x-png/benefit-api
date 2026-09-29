@@ -84,6 +84,9 @@ func validateLotteryOption(key string, value string) error {
 		}
 		return nil
 	}
+	if key == "lottery_setting.rule_version" || key == "lottery_setting.regular_weights" || key == "lottery_setting.jackpot_weights" {
+		return nil
+	}
 	parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
 	if err != nil || parsed < 0 {
 		return fmt.Errorf("抽奖活动时间必须是非负 Unix 时间戳")
@@ -180,9 +183,11 @@ type ReferralOptionsUpdateRequest struct {
 }
 
 type LotteryOptionsUpdateRequest struct {
-	Enabled bool  `json:"enabled"`
-	StartAt int64 `json:"start_at"`
-	EndAt   int64 `json:"end_at"`
+	Enabled        bool    `json:"enabled"`
+	StartAt        int64   `json:"start_at"`
+	EndAt          int64   `json:"end_at"`
+	RegularWeights []int64 `json:"regular_weights"`
+	JackpotWeights []int64 `json:"jackpot_weights"`
 }
 
 func UpdateReferralOptions(c *gin.Context) {
@@ -222,6 +227,7 @@ func UpdateReferralOptions(c *gin.Context) {
 }
 
 func UpdateLotteryOptions(c *gin.Context) {
+	previous := operation_setting.GetLotterySettingSnapshot()
 	var request LotteryOptionsUpdateRequest
 	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
 		common.ApiErrorMsg(c, "无效的抽奖活动配置")
@@ -235,11 +241,21 @@ func UpdateLotteryOptions(c *gin.Context) {
 		common.ApiErrorMsg(c, "抽奖活动结束时间必须晚于开始时间")
 		return
 	}
+	rule, err := model.CreateLotteryRule(c.GetInt("id"), request.RegularWeights, request.JackpotWeights)
+	if err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	regularJSON, _ := common.Marshal(request.RegularWeights)
+	jackpotJSON, _ := common.Marshal(request.JackpotWeights)
 
 	values := map[string]string{
-		"lottery_setting.enabled":  strconv.FormatBool(request.Enabled),
-		"lottery_setting.start_at": strconv.FormatInt(request.StartAt, 10),
-		"lottery_setting.end_at":   strconv.FormatInt(request.EndAt, 10),
+		"lottery_setting.enabled":         strconv.FormatBool(request.Enabled),
+		"lottery_setting.start_at":        strconv.FormatInt(request.StartAt, 10),
+		"lottery_setting.end_at":          strconv.FormatInt(request.EndAt, 10),
+		"lottery_setting.rule_version":    rule.Version,
+		"lottery_setting.regular_weights": string(regularJSON),
+		"lottery_setting.jackpot_weights": string(jackpotJSON),
 	}
 	for key, value := range values {
 		if err := validateLotteryOption(key, value); err != nil {
@@ -251,7 +267,11 @@ func UpdateLotteryOptions(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	recordManageAudit(c, "option.lottery.update", map[string]interface{}{"keys": len(values)})
+	recordManageAudit(c, "option.lottery.update", map[string]interface{}{
+		"keys": len(values), "previous_rule_version": previous.RuleVersion, "rule_version": rule.Version,
+		"previous_regular_weights": previous.RegularWeights, "regular_weights": request.RegularWeights,
+		"previous_jackpot_weights": previous.JackpotWeights, "jackpot_weights": request.JackpotWeights,
+	})
 	common.ApiSuccess(c, nil)
 }
 

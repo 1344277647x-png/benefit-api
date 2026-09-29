@@ -129,6 +129,29 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
+	var auditWriter *contentAuditResponseWriter
+	var auditInput string
+	auditSetting := operation_setting.GetContentAuditSettingSnapshot()
+	if relayFormat != types.RelayFormatOpenAIRealtime && auditSetting.Enabled && auditSetting.PrivacyReady {
+		if storage, storageErr := common.GetBodyStorage(c); storageErr == nil {
+			if body, bodyErr := storage.Bytes(); bodyErr == nil {
+				auditInput = string(body)
+			}
+		}
+		originalWriter := c.Writer
+		auditWriter = newContentAuditResponseWriter(originalWriter)
+		c.Writer = auditWriter
+		defer func() {
+			c.Writer = originalWriter
+			status := "succeeded"
+			if newAPIError != nil || auditWriter.status >= http.StatusBadRequest {
+				status = "failed"
+			}
+			service.RecordContentAudit(service.ContentAuditWrite{UserID: c.GetInt("id"), TeamID: relayInfo.TeamId,
+				ModelName: relayInfo.OriginModelName, RequestID: relayInfo.RequestId, Source: "api", Status: status,
+				Input: auditInput, Output: auditWriter.body.String()})
+		}()
+	}
 	if relayInfo.TeamId > 0 && relayInfo.IsStream {
 		// Without a proven incremental settlement and spend limit, emitting
 		// SSE chunks before the final charge can expose an unpaid result.

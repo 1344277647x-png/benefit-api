@@ -43,6 +43,8 @@ func DeliverTeamSyncBillingLog(ctx context.Context, event TeamSyncBillingEvent) 
 	}
 	other["billing_source"] = "team"
 	other["team_id"] = event.TeamId
+	other["member_user_id"] = event.UserId
+	other["business_label"] = "team_consumption"
 	other["sync_billing_event"] = true
 	return LOG_DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&TeamSyncLogReceipt{

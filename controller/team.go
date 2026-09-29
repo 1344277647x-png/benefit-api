@@ -231,6 +231,34 @@ func TeamRemoveMember(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
+func TeamCancelPendingPayment(c *gin.Context) {
+	if err := model.CancelPendingTeamPayment(c.GetInt("id")); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	_ = service.DeliverPendingBusinessEvents(c.Request.Context(), 100)
+	common.ApiSuccess(c, nil)
+}
+
+func TeamPlanDissolution(c *gin.Context) {
+	dissolveAt, err := model.PlanTeamDissolution(c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	_ = service.DeliverPendingBusinessEvents(c.Request.Context(), 100)
+	common.ApiSuccess(c, gin.H{"dissolve_at": dissolveAt})
+}
+
+func TeamRevokeDissolution(c *gin.Context) {
+	if err := model.RevokeTeamDissolution(c.GetInt("id")); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	_ = service.DeliverPendingBusinessEvents(c.Request.Context(), 100)
+	common.ApiSuccess(c, nil)
+}
+
 func TeamListTokens(c *gin.Context) {
 	team, _, err := model.GetMyTeam(c.GetInt("id"))
 	if err != nil {
@@ -308,6 +336,7 @@ func TeamBalancePay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	_ = service.DeliverPendingBusinessEvents(c.Request.Context(), 100)
 	common.ApiSuccess(c, nil)
 }
 
@@ -425,5 +454,32 @@ func AdminTeamSuspend(c *gin.Context) {
 		common.ApiErrorMsg(c, "团队不存在或已停用")
 		return
 	}
+	common.ApiSuccess(c, nil)
+}
+
+func AdminPaidAfterCancelTeamOrders(c *gin.Context) {
+	orders, err := model.ListPaidAfterCancelTeamOrders(100)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, orders)
+}
+
+func AdminResolvePaidAfterCancelTeamOrder(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	var request struct {
+		Resolution  string `json:"resolution"`
+		EvidenceRef string `json:"evidence_ref"`
+	}
+	if err != nil || id <= 0 || c.ShouldBindJSON(&request) != nil {
+		common.ApiErrorMsg(c, "迟到付款处理参数无效")
+		return
+	}
+	if err := model.ResolvePaidAfterCancelTeamOrder(id, c.GetInt("id"), request.Resolution, request.EvidenceRef); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	_ = service.DeliverPendingBusinessEvents(c.Request.Context(), 100)
 	common.ApiSuccess(c, nil)
 }

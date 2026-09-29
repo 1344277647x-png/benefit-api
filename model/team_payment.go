@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -39,6 +40,9 @@ func createTeamOrderTx(tx *gorm.DB, ownerId, planId int, provider, method string
 	var team Team
 	if err := lockForUpdate(tx).Where("owner_id = ? AND status = ?", ownerId, TeamStatusActive).First(&team).Error; err != nil {
 		return nil, err
+	}
+	if team.DissolveAt > 0 {
+		return nil, errors.New("team is scheduled for dissolution")
 	}
 	plan, err := getSubscriptionPlanByIdTx(tx, planId)
 	if err != nil {
@@ -79,6 +83,12 @@ func createTeamOrderTx(tx *gorm.DB, ownerId, planId int, provider, method string
 		PaymentMethod: method, PaymentProvider: provider, Status: common.TopUpStatusPending, CreateTime: now,
 	}
 	if err := tx.Create(order).Error; err != nil {
+		return nil, err
+	}
+	if err := enqueueBusinessEventTx(tx, &BusinessEvent{EventKey: fmt.Sprintf("team:order:created:%d", order.Id),
+		Category: BusinessEventTeam, Action: "team.order_created", UserId: ownerId,
+		Content: "Team order created", CreatedAt: now}, map[string]any{"team_id": team.Id, "order_id": order.Id,
+		"trade_no": order.TradeNo, "money": order.Money, "plan_id": order.PlanId}); err != nil {
 		return nil, err
 	}
 	return order, nil
@@ -138,7 +148,13 @@ func completeTeamOrderTx(tx *gorm.DB, order *TeamOrder) error {
 	}
 	order.Status = common.TopUpStatusSuccess
 	order.CompleteTime = common.GetTimestamp()
-	return tx.Save(order).Error
+	if err := tx.Save(order).Error; err != nil {
+		return err
+	}
+	return enqueueBusinessEventTx(tx, &BusinessEvent{EventKey: fmt.Sprintf("team:order:completed:%d", order.Id),
+		Category: BusinessEventTeam, Action: "team.order_completed", UserId: order.PayerUserId,
+		Content: "Team order completed", CreatedAt: order.CompleteTime}, map[string]any{"team_id": order.TeamId,
+		"order_id": order.Id, "trade_no": order.TradeNo, "money": order.Money, "plan_id": order.PlanId})
 }
 
 func PurchaseTeamWithBalance(ownerId, planId int) error {
@@ -191,7 +207,89 @@ func CompleteTeamPayment(tradeNo, provider, providerTradeNo, money, method strin
 		if order.ProviderTradeNo == nil {
 			order.ProviderTradeNo = &providerTradeNo
 		}
+		if order.Status == TeamOrderStatusPaidAfterCancel && order.ProviderTradeNo != nil && *order.ProviderTradeNo == providerTradeNo {
+			return nil
+		}
+		if order.Status == TeamOrderStatusCancelled {
+			order.Status = TeamOrderStatusPaidAfterCancel
+			order.CompleteTime = common.GetTimestamp()
+			if err := tx.Save(&order).Error; err != nil {
+				return err
+			}
+			return enqueueBusinessEventTx(tx, &BusinessEvent{EventKey: fmt.Sprintf("team:order:paid_after_cancel:%d", order.Id),
+				Category: BusinessEventTeam, Action: "team.order_paid_after_cancel", UserId: order.PayerUserId,
+				Content: "Cancelled team order received a late payment", CreatedAt: order.CompleteTime}, map[string]any{
+				"team_id": order.TeamId, "order_id": order.Id, "trade_no": order.TradeNo, "money": order.Money})
+		}
 		return completeTeamOrderTx(tx, &order)
+	})
+}
+
+func CancelPendingTeamPayment(ownerID int) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var team Team
+		if err := lockForUpdate(tx).Where("owner_id = ? AND status = ?", ownerID, TeamStatusActive).First(&team).Error; err != nil {
+			return err
+		}
+		var order TeamOrder
+		if err := lockForUpdate(tx).Where("team_id = ? AND payer_user_id = ? AND status = ?", team.Id, ownerID, common.TopUpStatusPending).
+			Order("id desc").First(&order).Error; err != nil {
+			return err
+		}
+		now := common.GetTimestamp()
+		result := tx.Model(&order).Where("status = ?", common.TopUpStatusPending).Updates(map[string]any{"status": TeamOrderStatusCancelled, "cancelled_at": now})
+		if result.Error != nil || result.RowsAffected != 1 {
+			if result.Error != nil {
+				return result.Error
+			}
+			return ErrNoPendingTeamPayment
+		}
+		return enqueueBusinessEventTx(tx, &BusinessEvent{EventKey: fmt.Sprintf("team:order:cancelled:%d", order.Id),
+			Category: BusinessEventTeam, Action: "team.order_cancelled", UserId: ownerID,
+			Content: "Unpaid team order cancelled", CreatedAt: now}, map[string]any{"team_id": team.Id, "order_id": order.Id, "trade_no": order.TradeNo})
+	})
+}
+
+func ListPaidAfterCancelTeamOrders(limit int) ([]TeamOrder, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	var orders []TeamOrder
+	err := DB.Where("status = ?", TeamOrderStatusPaidAfterCancel).Order("id asc").Limit(limit).Find(&orders).Error
+	return orders, err
+}
+
+func ResolvePaidAfterCancelTeamOrder(orderID, reviewerID int, resolution, evidenceRef string) error {
+	evidenceRef = strings.TrimSpace(evidenceRef)
+	if orderID <= 0 || reviewerID <= 0 || evidenceRef == "" || len(evidenceRef) > 128 || (resolution != "fulfil" && resolution != "refunded") {
+		return errors.New("invalid late payment resolution")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var order TeamOrder
+		if err := lockForUpdate(tx).First(&order, orderID).Error; err != nil {
+			return err
+		}
+		if order.Status != TeamOrderStatusPaidAfterCancel {
+			return errors.New("team order is not awaiting resolution")
+		}
+		if resolution == "fulfil" {
+			order.Status = common.TopUpStatusPending
+			if err := completeTeamOrderTx(tx, &order); err != nil {
+				return err
+			}
+			order.Resolution = "fulfilled"
+		} else {
+			order.Status = TeamOrderStatusRefunded
+			order.Resolution = "refunded"
+		}
+		order.ResolvedAt, order.ResolvedBy, order.EvidenceRef = common.GetTimestamp(), reviewerID, evidenceRef
+		if err := tx.Save(&order).Error; err != nil {
+			return err
+		}
+		return enqueueBusinessEventTx(tx, &BusinessEvent{EventKey: fmt.Sprintf("team:order:resolved:%d", order.Id),
+			Category: BusinessEventTeam, Action: "team.order_late_payment_resolved", UserId: order.PayerUserId,
+			Content: "Late team payment resolved", CreatedAt: order.ResolvedAt}, map[string]any{"team_id": order.TeamId,
+			"order_id": order.Id, "resolution": order.Resolution, "reviewer_id": reviewerID, "evidence_ref": evidenceRef})
 	})
 }
 

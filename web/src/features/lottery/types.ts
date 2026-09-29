@@ -1,8 +1,3 @@
-export type LotteryPrize = {
-  reward_cents: number
-  weight: number
-}
-
 export type LotteryStatus = {
   enabled: boolean
   active: boolean
@@ -17,9 +12,7 @@ export type LotteryStatus = {
   total_reward_quota: number
   draw_threshold_cents: number
   jackpot_interval: number
-  rule_version: string
-  regular_pool: LotteryPrize[]
-  jackpot_pool: LotteryPrize[]
+  prize_amounts_cents: number[]
 }
 
 export type LotteryDraw = {

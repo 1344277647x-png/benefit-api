@@ -145,6 +145,9 @@ func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) 
 	if err := DeliverPendingTeamTaskBillingEvents(ctx, 100); err != nil {
 		logger.LogError(ctx, "team task billing log retry failed: "+err.Error())
 	}
+	if err := DeliverPendingBusinessEvents(ctx, 100); err != nil {
+		logger.LogError(ctx, "business event log retry failed: "+err.Error())
+	}
 	if GetTaskAdaptorFunc == nil {
 		return summary
 	}

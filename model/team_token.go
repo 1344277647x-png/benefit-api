@@ -32,6 +32,9 @@ func CreateTeamToken(userId int, name, group, modelLimits string) (*Token, error
 		if err := lockForUpdate(tx).Where("id = ? AND status = ?", member.TeamId, TeamStatusActive).First(&team).Error; err != nil {
 			return err
 		}
+		if team.DissolveAt > 0 {
+			return errors.New("team is scheduled for dissolution")
+		}
 		now := common.GetTimestamp()
 		var sub TeamSubscription
 		if err := tx.Where("team_id = ? AND status = ? AND start_time <= ? AND end_time > ?", team.Id, TeamStatusActive, now, now).First(&sub).Error; err != nil {

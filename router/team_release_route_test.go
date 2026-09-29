@@ -54,7 +54,7 @@ func TestTeamOfficialPurchaseAndTokenRoutesWithLocalReleaseOverlay(t *testing.T)
 	})
 	require.NoError(t, model.DB.AutoMigrate(&model.UserSession{}, &model.SubscriptionPlan{},
 		&model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.TeamSubscription{},
-		&model.TeamQuotaPeriod{}, &model.TeamOrder{}, &model.TeamUsage{}, &model.TeamSyncBillingEvent{}))
+		&model.TeamQuotaPeriod{}, &model.TeamOrder{}, &model.TeamUsage{}, &model.TeamSyncBillingEvent{}, &model.BusinessEvent{}))
 	owner := &model.User{Username: "official-purchase-owner", Status: common.UserStatusEnabled,
 		Group: "default", Quota: 2_000_000, AffCode: "official-purchase-owner-local"}
 	require.NoError(t, model.DB.Create(owner).Error)
@@ -129,7 +129,7 @@ func TestTeamOfficialRelayRouteWithLocalReleaseOverlay(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(previousPrices)) })
 	require.NoError(t, model.DB.AutoMigrate(&model.Channel{}, &model.ChannelHealthSnapshot{}, &model.ChannelHealthBucket{},
 		&model.Team{}, &model.TeamMember{}, &model.TeamSubscription{}, &model.TeamQuotaPeriod{},
-		&model.TeamUsage{}, &model.TeamSyncBillingEvent{}, &model.TeamSyncLogReceipt{}, &model.Log{}))
+		&model.TeamUsage{}, &model.TeamSyncBillingEvent{}, &model.TeamSyncLogReceipt{}, &model.Log{}, &model.BusinessEvent{}))
 	owner := &model.User{Username: "official-team-owner", Status: common.UserStatusEnabled,
 		Group: "default", Quota: 1000, AffCode: "official-team-owner-local"}
 	member := &model.User{Username: "official-team-member", Status: common.UserStatusEnabled,

@@ -27,6 +27,7 @@ export function PendingTeamPayment(props: {
   payment: PendingPayment
   busy: boolean
   onResume: () => void
+  onCancel: () => void
 }) {
   const { t } = useTranslation()
 
@@ -49,14 +50,24 @@ export function PendingTeamPayment(props: {
           'If you already paid, do not pay again. Contact support with your payment receipt if the subscription is not active.'
         )}
       </p>
-      <Button
-        variant='outline'
-        className='mt-4 min-h-11'
-        disabled={props.busy}
-        onClick={props.onResume}
-      >
-        {t('Resume original payment')}
-      </Button>
+      <div className='mt-4 flex flex-wrap gap-2'>
+        <Button
+          variant='outline'
+          className='min-h-11'
+          disabled={props.busy}
+          onClick={props.onResume}
+        >
+          {t('Resume original payment')}
+        </Button>
+        <Button
+          variant='destructive'
+          className='min-h-11'
+          disabled={props.busy}
+          onClick={props.onCancel}
+        >
+          {t('Cancel unpaid order')}
+        </Button>
+      </div>
     </section>
   )
 }

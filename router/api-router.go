@@ -240,6 +240,9 @@ func SetApiRouter(router *gin.Engine) {
 			teamRoute.POST("/balance/pay", middleware.CriticalRateLimit(), controller.TeamBalancePay)
 			teamRoute.POST("/epay/pay", middleware.CriticalRateLimit(), controller.TeamEpayPay)
 			teamRoute.POST("/epay/resume", middleware.CriticalRateLimit(), controller.TeamEpayResume)
+			teamRoute.DELETE("/orders/pending", middleware.CriticalRateLimit(), controller.TeamCancelPendingPayment)
+			teamRoute.POST("/dissolution", middleware.CriticalRateLimit(), controller.TeamPlanDissolution)
+			teamRoute.DELETE("/dissolution", middleware.CriticalRateLimit(), controller.TeamRevokeDissolution)
 		}
 		teamAdmin := apiRouter.Group("/team/admin", middleware.AdminAuth())
 		teamAdmin.GET("/", controller.AdminTeamList)
@@ -249,6 +252,8 @@ func SetApiRouter(router *gin.Engine) {
 		teamAdmin.POST("/pending-requests/:request_id/compensate", middleware.CriticalRateLimit(), controller.AdminCompensateTeamUndeliveredCharge)
 		teamAdmin.POST("/requests/:request_id/credit-delivery-dispute", middleware.CriticalRateLimit(), controller.AdminCreditTeamDeliveryDispute)
 		teamAdmin.POST("/:id/suspend", controller.AdminTeamSuspend)
+		teamAdmin.GET("/late-payments", controller.AdminPaidAfterCancelTeamOrders)
+		teamAdmin.POST("/late-payments/:id/resolve", middleware.CriticalRateLimit(), controller.AdminResolvePaidAfterCancelTeamOrder)
 		lotteryRoute := apiRouter.Group("/lottery", middleware.UserAuth())
 		lotteryRoute.GET("/status", controller.GetLotteryStatus)
 		lotteryRoute.POST("/draw", middleware.CriticalRateLimit(), controller.DrawLottery)
@@ -264,6 +269,7 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.PUT("/", controller.UpdateOption)
 			optionRoute.POST("/referral", controller.UpdateReferralOptions)
 			optionRoute.POST("/lottery", controller.UpdateLotteryOptions)
+			optionRoute.POST("/content_audit", controller.UpdateContentAuditSetting)
 			optionRoute.POST("/payment_compliance", controller.ConfirmPaymentCompliance)
 			optionRoute.GET("/channel_affinity_cache", controller.GetChannelAffinityCacheStats)
 			optionRoute.DELETE("/channel_affinity_cache", controller.ClearChannelAffinityCache)
@@ -273,6 +279,11 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.POST("/waffo-pancake/save", controller.SaveWaffoPancake)
 			optionRoute.POST("/waffo-pancake/subscription-product", controller.CreateWaffoPancakeSubscriptionProduct)
 			optionRoute.GET("/waffo-pancake/subscription-product-options", controller.ListWaffoPancakeSubscriptionProductOptions)
+		}
+		contentAuditRoute := apiRouter.Group("/content-audit", middleware.RootAuth())
+		{
+			contentAuditRoute.GET("/", controller.ListContentAudits)
+			contentAuditRoute.GET("/:id", controller.GetContentAudit)
 		}
 
 		// Custom OAuth provider management (root only)

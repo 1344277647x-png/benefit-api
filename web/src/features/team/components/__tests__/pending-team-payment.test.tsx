@@ -25,6 +25,7 @@ import { PendingTeamPayment } from '../pending-team-payment'
 describe('pending team payment recovery', () => {
   test('owner sees the original order and can reopen it when unpaid', () => {
     const onResume = vi.fn()
+    const onCancel = vi.fn()
     render(
       <PendingTeamPayment
         payment={{
@@ -35,6 +36,7 @@ describe('pending team payment recovery', () => {
         }}
         busy={false}
         onResume={onResume}
+        onCancel={onCancel}
       />
     )
 
@@ -46,6 +48,8 @@ describe('pending team payment recovery', () => {
       screen.getByRole('button', { name: 'Resume original payment' })
     )
     expect(onResume).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel unpaid order' }))
+    expect(onCancel).toHaveBeenCalledOnce()
   })
 
   test('reopening is disabled while another payment request is in progress', () => {
@@ -59,6 +63,7 @@ describe('pending team payment recovery', () => {
         }}
         busy
         onResume={vi.fn()}
+        onCancel={vi.fn()}
       />
     )
 

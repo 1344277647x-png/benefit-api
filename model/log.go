@@ -82,14 +82,17 @@ type Log struct {
 
 // don't use iota, avoid change log type value
 const (
-	LogTypeUnknown = 0
-	LogTypeTopup   = 1
-	LogTypeConsume = 2
-	LogTypeManage  = 3
-	LogTypeSystem  = 4
-	LogTypeError   = 5
-	LogTypeRefund  = 6
-	LogTypeLogin   = 7
+	LogTypeUnknown  = 0
+	LogTypeTopup    = 1
+	LogTypeConsume  = 2
+	LogTypeManage   = 3
+	LogTypeSystem   = 4
+	LogTypeError    = 5
+	LogTypeRefund   = 6
+	LogTypeLogin    = 7
+	LogTypeReferral = 8
+	LogTypeLottery  = 9
+	LogTypeTeam     = 10
 )
 
 func ensureLogRequestId(log *Log) {
@@ -123,6 +126,9 @@ func formatUserLogs(logs []*Log, startIdx int) {
 			delete(otherMap, "admin_info")
 			// Remove operation-audit details (operator/route info), admin-only.
 			delete(otherMap, "audit_info")
+			delete(otherMap, "team_id")
+			delete(otherMap, "member_user_id")
+			delete(otherMap, "business_label")
 			// delete(otherMap, "reject_reason")
 			// delete(otherMap, "stream_status")
 		}

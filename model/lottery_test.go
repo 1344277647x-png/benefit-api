@@ -1,6 +1,7 @@
 package model
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -65,6 +66,24 @@ func TestLotteryRewardPoolBoundaries(t *testing.T) {
 	}
 }
 
+func TestLotteryRuleValidationAndUserStatusDoNotExposeWeights(t *testing.T) {
+	truncateTables(t)
+	configureLotteryTest(t, true)
+	insertLotteryUser(t, 1210)
+	_, err := CreateLotteryRule(1, []int64{74999, 20000, 5000}, []int64{79999, 15000, 5000, 1})
+	require.Error(t, err)
+	rule, err := CreateLotteryRule(1, []int64{74999, 20000, 5000, 1}, []int64{79999, 15000, 5000, 1})
+	require.NoError(t, err)
+	setting := operation_setting.GetLotterySetting()
+	setting.RuleVersion = rule.Version
+	status, err := GetLotteryStatus(1210)
+	require.NoError(t, err)
+	encoded, err := common.Marshal(status)
+	require.NoError(t, err)
+	assert.False(t, strings.Contains(string(encoded), "weight"))
+	assert.Equal(t, []int64{50, 100, 200, 500, 1000, 5000, 10000}, status.PrizeAmountsCents)
+}
+
 func TestLotteryRewardQuotaUsesCnyPriceWithoutTopupMultiplier(t *testing.T) {
 	configureLotteryTest(t, true)
 	quota, err := lotteryRewardQuota(100)
@@ -125,6 +144,14 @@ func TestLotteryDrawIsIdempotentAndCreditsQuotaOnce(t *testing.T) {
 	var count int64
 	require.NoError(t, DB.Model(&LotteryDraw{}).Where("user_id = ?", 1202).Count(&count).Error)
 	assert.Equal(t, int64(1), count)
+	events, err := PendingBusinessEvents(t.Context(), 10)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	require.NoError(t, DeliverBusinessEvent(t.Context(), events[0]))
+	require.NoError(t, DeliverBusinessEvent(t.Context(), events[0]))
+	var logs int64
+	require.NoError(t, LOG_DB.Model(&Log{}).Where("type = ? AND request_id = ?", LogTypeLottery, "draw-request-1").Count(&logs).Error)
+	assert.Equal(t, int64(1), logs)
 }
 
 func TestLotteryFiftiethDrawUsesJackpotPool(t *testing.T) {

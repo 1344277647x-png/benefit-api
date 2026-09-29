@@ -253,7 +253,7 @@ func TestSettledTeamDeliveryCreditRequiresAdminAndPreservesGrossLog(t *testing.T
 func TestTeamSignedEpayCallbackThroughPublicRouterCreditsExactlyOnce(t *testing.T) {
 	setupRelayRouterTestDB(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.TeamSubscription{},
-		&model.TeamOrder{}, &model.UserSubscription{}, &model.TopUp{}))
+		&model.TeamOrder{}, &model.UserSubscription{}, &model.TopUp{}, &model.BusinessEvent{}))
 	previousAddress, previousId, previousKey := operation_setting.PayAddress, operation_setting.EpayId, operation_setting.EpayKey
 	operation_setting.PayAddress = "https://local-payment.example.test"
 	operation_setting.EpayId = "local-team-merchant"
@@ -329,7 +329,7 @@ func TestTeamAuthenticatedPurchaseInviteAndRevocationAPI(t *testing.T) {
 	setupRelayRouterTestDB(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.UserSession{}, &model.SubscriptionPlan{},
 		&model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.TeamSubscription{},
-		&model.TeamQuotaPeriod{}, &model.TeamOrder{}, &model.TeamUsage{}, &model.TeamSyncBillingEvent{}))
+		&model.TeamQuotaPeriod{}, &model.TeamOrder{}, &model.TeamUsage{}, &model.TeamSyncBillingEvent{}, &model.BusinessEvent{}))
 	settings := operation_setting.GetPaymentSetting()
 	previousPayment := *settings
 	settings.ComplianceConfirmed = true
@@ -668,7 +668,7 @@ func TestTeamTokenDistributorSelectsMemberGroupAndRevokesRemovedMember(t *testin
 	common.MemoryCacheEnabled = false
 	t.Cleanup(func() { common.MemoryCacheEnabled = previousMemoryCache })
 	require.NoError(t, model.DB.AutoMigrate(&model.Channel{}, &model.Team{}, &model.TeamMember{},
-		&model.TeamInvitation{}, &model.TeamSubscription{}, &model.TeamOrder{}))
+		&model.TeamInvitation{}, &model.TeamSubscription{}, &model.TeamOrder{}, &model.BusinessEvent{}))
 	owner := &model.User{Username: "team-distributor-owner", Email: "distributor-owner@example.test",
 		Status: common.UserStatusEnabled, Group: "default", Quota: 1000, AffCode: "distributor-owner"}
 	member := &model.User{Username: "team-distributor-member", Email: "distributor-member@example.test",

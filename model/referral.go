@@ -196,6 +196,21 @@ func createFirstTopupReferralReward(tx *gorm.DB, topUp *TopUp, creditedQuota int
 			return err
 		}
 	}
+	if err := enqueueBusinessEventTx(tx, &BusinessEvent{EventKey: fmt.Sprintf("referral:created:%d", reward.Id),
+		Category: BusinessEventReferral, Action: "referral.reward_created", UserId: invitee.InviterId,
+		Content: "Referral reward created", CreatedAt: now}, map[string]any{"invitee_id": invitee.Id,
+		"reward_quota": rewardQuota, "invitee_bonus_quota": inviteeBonusQuota, "status": status,
+		"available_at": reward.AvailableAt}); err != nil {
+		return err
+	}
+	if status == ReferralRewardStatusSettled && rewardQuota > 0 {
+		if err := enqueueBusinessEventTx(tx, &BusinessEvent{EventKey: fmt.Sprintf("referral:settled:%d", reward.Id),
+			Category: BusinessEventReferral, Action: "referral.reward_settled", UserId: invitee.InviterId,
+			Content: "Referral reward settled", CreatedAt: now}, map[string]any{"reward_id": reward.Id,
+			"reward_quota": rewardQuota}); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -238,8 +253,19 @@ func settleMaturedReferralRewards(tx *gorm.DB, inviterId int) error {
 	}).Error; err != nil {
 		return err
 	}
-	return tx.Model(&ReferralReward{}).Where("id IN ? AND status = ?", ids, ReferralRewardStatusPending).
-		Updates(map[string]any{"status": ReferralRewardStatusSettled, "updated_at": now}).Error
+	if err := tx.Model(&ReferralReward{}).Where("id IN ? AND status = ?", ids, ReferralRewardStatusPending).
+		Updates(map[string]any{"status": ReferralRewardStatusSettled, "updated_at": now}).Error; err != nil {
+		return err
+	}
+	for _, reward := range rewards {
+		if err := enqueueBusinessEventTx(tx, &BusinessEvent{EventKey: fmt.Sprintf("referral:settled:%d", reward.Id),
+			Category: BusinessEventReferral, Action: "referral.reward_settled", UserId: inviterId,
+			Content: "Referral reward settled", CreatedAt: now}, map[string]any{"reward_id": reward.Id,
+			"reward_quota": reward.RewardQuota}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func GetReferralOverview(userId int) (*ReferralOverview, error) {
@@ -372,10 +398,18 @@ func TransferReferralQuota(userId int, quota int) error {
 		if int64(user.Quota)+int64(quota) > int64(common.MaxWalletQuota) {
 			return errors.New("用户额度超过系统上限")
 		}
-		return tx.Model(&User{}).Where("id = ?", userId).Updates(map[string]any{
+		if err := tx.Model(&User{}).Where("id = ?", userId).Updates(map[string]any{
 			"aff_quota": gorm.Expr("aff_quota - ?", quota),
 			"quota":     gorm.Expr("quota + ?", quota),
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		now := common.GetTimestamp()
+		return enqueueBusinessEventTx(tx, &BusinessEvent{EventKey: fmt.Sprintf("referral:transfer:%d:%d", userId, time.Now().UnixNano()),
+			Category: BusinessEventReferral, Action: "referral.transfer_to_balance", UserId: userId,
+			Content: "Referral reward transferred to site balance", CreatedAt: now}, map[string]any{
+			"quota": quota, "referral_balance_before": user.AffQuota, "referral_balance_after": user.AffQuota - quota,
+			"site_balance_before": user.Quota, "site_balance_after": user.Quota + quota})
 	})
 }
 

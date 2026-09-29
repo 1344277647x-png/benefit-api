@@ -325,6 +325,9 @@ func migrateDB() error {
 		&LotteryAccount{},
 		&LotteryGrant{},
 		&LotteryDraw{},
+		&LotteryRule{},
+		&BusinessEvent{},
+		&ContentAuditRecord{},
 		&QuotaData{},
 		&Task{},
 		&GenerationJob{},
@@ -407,6 +410,9 @@ func migrateDBFast() error {
 		{&LotteryAccount{}, "LotteryAccount"},
 		{&LotteryGrant{}, "LotteryGrant"},
 		{&LotteryDraw{}, "LotteryDraw"},
+		{&LotteryRule{}, "LotteryRule"},
+		{&BusinessEvent{}, "BusinessEvent"},
+		{&ContentAuditRecord{}, "ContentAuditRecord"},
 		{&QuotaData{}, "QuotaData"},
 		{&Task{}, "Task"},
 		{&GenerationJob{}, "GenerationJob"},
@@ -487,7 +493,7 @@ func migrateLOGDB() error {
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		return migrateClickHouseLogDB()
 	}
-	return LOG_DB.AutoMigrate(&Log{}, &TeamTaskLogReceipt{}, &TeamSyncLogReceipt{})
+	return LOG_DB.AutoMigrate(&Log{}, &TeamTaskLogReceipt{}, &TeamSyncLogReceipt{}, &BusinessEventLogReceipt{})
 }
 
 func migrateClickHouseLogDB() error {

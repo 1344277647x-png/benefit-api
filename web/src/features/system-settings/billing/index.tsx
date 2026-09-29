@@ -121,6 +121,9 @@ const defaultBillingSettings: BillingSettings = {
   'lottery_setting.enabled': false,
   'lottery_setting.start_at': 0,
   'lottery_setting.end_at': 0,
+  'lottery_setting.rule_version': '2026-09-v1',
+  'lottery_setting.regular_weights': [74999, 20000, 5000, 1],
+  'lottery_setting.jackpot_weights': [79999, 15000, 5000, 1],
 }
 
 export function BillingSettings() {

@@ -29,6 +29,8 @@ import {
   ChannelHealthSettingsSection,
   CreationSettingsSection,
 } from './ai-operations-settings-section'
+import { ContentAuditSection } from './content-audit-section'
+import { TeamOperationsSection } from './team-operations-section'
 
 const OPERATIONS_SECTIONS = [
   {
@@ -153,6 +155,21 @@ const OPERATIONS_SECTIONS = [
     build: (settings: OperationsSettings) => (
       <LogSettingsSection
         defaultEnabled={Boolean(settings.LogConsumeEnabled)}
+      />
+    ),
+  },
+  {
+    id: 'team-operations',
+    titleKey: 'Team operations',
+    build: () => <TeamOperationsSection />,
+  },
+  {
+    id: 'content-audit',
+    titleKey: 'Content audit',
+    build: (settings: OperationsSettings) => (
+      <ContentAuditSection
+        enabled={settings['content_audit.enabled']}
+        privacyReady={settings['content_audit.privacy_ready']}
       />
     ),
   },

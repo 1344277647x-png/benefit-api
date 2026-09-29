@@ -350,6 +350,9 @@ export type BillingSettings = {
   'lottery_setting.enabled': boolean
   'lottery_setting.start_at': number
   'lottery_setting.end_at': number
+  'lottery_setting.rule_version': string
+  'lottery_setting.regular_weights': number[]
+  'lottery_setting.jackpot_weights': number[]
 }
 
 export type ReferralOptionsUpdateRequest = {
@@ -366,6 +369,8 @@ export type LotteryOptionsUpdateRequest = {
   enabled: boolean
   start_at: number
   end_at: number
+  regular_weights: number[]
+  jackpot_weights: number[]
 }
 
 export type OperationsSettings = {
@@ -386,6 +391,8 @@ export type OperationsSettings = {
   WorkerValidKey: string
   WorkerAllowHttpImageRequestEnabled: boolean
   LogConsumeEnabled: boolean
+  'content_audit.enabled': boolean
+  'content_audit.privacy_ready': boolean
   'performance_setting.disk_cache_enabled': boolean
   'performance_setting.disk_cache_threshold_mb': number
   'performance_setting.disk_cache_max_size_mb': number

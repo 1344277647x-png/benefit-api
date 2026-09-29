@@ -44,6 +44,9 @@ type TeamAction =
   | { kind: 'remove'; id: number }
   | { kind: 'disable'; id: number }
   | { kind: 'balance'; id: number }
+  | { kind: 'cancel-payment' }
+  | { kind: 'plan-dissolution' }
+  | { kind: 'revoke-dissolution' }
 
 const nameSchema = z.object({ name: z.string().trim().min(1).max(80) })
 const inviteSchema = z.object({ email: z.email() })
@@ -186,6 +189,12 @@ export function TeamPage() {
           return teamApi.disableToken(action.id)
         case 'balance':
           return teamApi.balancePay(action.id)
+        case 'cancel-payment':
+          return teamApi.cancelPendingPayment()
+        case 'plan-dissolution':
+          return teamApi.planDissolution()
+        case 'revoke-dissolution':
+          return teamApi.revokeDissolution()
       }
     },
     onSuccess: () => {
@@ -405,6 +414,11 @@ export function TeamPage() {
                       payment={data.pending_payment}
                       busy={epayBusy}
                       onResume={() => void resumeEpay()}
+                      onCancel={() => {
+                        if (window.confirm(t('Cancel this unpaid order?'))) {
+                          actions.mutate({ kind: 'cancel-payment' })
+                        }
+                      }}
                     />
                   )}
                   <Panel title={t('My team keys')}>
@@ -615,7 +629,8 @@ export function TeamPage() {
                               paying={
                                 actions.isPending ||
                                 epayBusy ||
-                                Boolean(data.pending_payment)
+                                Boolean(data.pending_payment) ||
+                                (data.team?.dissolve_at ?? 0) > 0
                               }
                               methods={availableTeamEpayMethods(
                                 payment.data?.data
@@ -629,6 +644,47 @@ export function TeamPage() {
                             />
                           ))}
                         </div>
+                      </Panel>
+                      <Panel title={t('Team lifecycle')}>
+                        {data.team.dissolve_at > 0 ? (
+                          <>
+                            <p>
+                              {t(
+                                'This team will be dissolved when the final paid term ends.'
+                              )}{' '}
+                              {new Date(
+                                data.team.dissolve_at * 1000
+                              ).toLocaleString()}
+                            </p>
+                            <Button
+                              variant='outline'
+                              className='mt-3 min-h-11'
+                              disabled={actions.isPending}
+                              onClick={() =>
+                                actions.mutate({ kind: 'revoke-dissolution' })
+                              }
+                            >
+                              {t('Revoke dissolution')}
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            variant='destructive'
+                            className='min-h-11'
+                            disabled={
+                              actions.isPending || Boolean(data.pending_payment)
+                            }
+                            onClick={() =>
+                              window.confirm(
+                                t(
+                                  'Schedule dissolution at the end of the final paid term?'
+                                )
+                              ) && actions.mutate({ kind: 'plan-dissolution' })
+                            }
+                          >
+                            {t('Schedule team dissolution')}
+                          </Button>
+                        )}
                       </Panel>
                     </>
                   )}

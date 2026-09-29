@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -11,20 +12,25 @@ import (
 )
 
 const (
-	TeamStatusActive        = "active"
-	TeamStatusSuspended     = "suspended"
-	TeamInvitationPending   = "pending"
-	TeamInvitationAccepted  = "accepted"
-	TeamInvitationDeclined  = "declined"
-	TeamInvitationCancelled = "cancelled"
+	TeamStatusActive               = "active"
+	TeamStatusSuspended            = "suspended"
+	TeamStatusDissolved            = "dissolved"
+	TeamOrderStatusCancelled       = "cancelled"
+	TeamOrderStatusPaidAfterCancel = "paid_after_cancel"
+	TeamOrderStatusRefunded        = "refunded"
+	TeamInvitationPending          = "pending"
+	TeamInvitationAccepted         = "accepted"
+	TeamInvitationDeclined         = "declined"
+	TeamInvitationCancelled        = "cancelled"
 )
 
 type Team struct {
-	Id        int    `json:"id"`
-	OwnerId   int    `json:"owner_id" gorm:"uniqueIndex"`
-	Name      string `json:"name" gorm:"type:varchar(80);not null"`
-	Status    string `json:"status" gorm:"type:varchar(16);not null"`
-	CreatedAt int64  `json:"created_at" gorm:"type:bigint"`
+	Id         int    `json:"id"`
+	OwnerId    int    `json:"owner_id" gorm:"uniqueIndex"`
+	Name       string `json:"name" gorm:"type:varchar(80);not null"`
+	Status     string `json:"status" gorm:"type:varchar(16);not null"`
+	CreatedAt  int64  `json:"created_at" gorm:"type:bigint"`
+	DissolveAt int64  `json:"dissolve_at" gorm:"type:bigint;index"`
 }
 
 type TeamMember struct {
@@ -90,9 +96,14 @@ type TeamOrder struct {
 	PaymentMethod      string          `json:"payment_method"`
 	PaymentProvider    string          `json:"payment_provider"`
 	ProviderTradeNo    *string         `json:"-" gorm:"type:varchar(128);uniqueIndex"`
-	Status             string          `json:"status" gorm:"type:varchar(16);index"`
+	Status             string          `json:"status" gorm:"type:varchar(24);index"`
 	CreateTime         int64           `json:"create_time"`
 	CompleteTime       int64           `json:"complete_time"`
+	CancelledAt        int64           `json:"cancelled_at" gorm:"type:bigint"`
+	ResolvedAt         int64           `json:"resolved_at" gorm:"type:bigint"`
+	ResolvedBy         int             `json:"resolved_by"`
+	Resolution         string          `json:"resolution" gorm:"type:varchar(32)"`
+	EvidenceRef        string          `json:"evidence_ref" gorm:"type:varchar(128)"`
 }
 
 // SQLite's migration parser cannot rebuild a table containing DECIMAL(10,6)
@@ -509,6 +520,9 @@ func InviteTeamMember(ownerId int, email string) (*TeamInvitation, error) {
 		if err := lockForUpdate(tx).Where("owner_id = ? AND status = ?", ownerId, TeamStatusActive).First(&team).Error; err != nil {
 			return err
 		}
+		if team.DissolveAt > 0 {
+			return errors.New("team is scheduled for dissolution")
+		}
 		cap, err := teamSeatCapTx(tx, team.Id, now)
 		if err != nil {
 			return err
@@ -563,6 +577,9 @@ func AcceptTeamInvitation(userId, invitationId int) error {
 		if err := lockForUpdate(tx).Where("id = ? AND status = ?", invite.TeamId, TeamStatusActive).First(&team).Error; err != nil {
 			return err
 		}
+		if team.DissolveAt > 0 {
+			return errors.New("team is scheduled for dissolution")
+		}
 		cap, err := teamSeatCapTx(tx, team.Id, now)
 		if err != nil {
 			return err
@@ -594,6 +611,14 @@ func RemoveTeamMember(actorId, targetId int) error {
 		if targetId == team.OwnerId || (actorId != targetId && actorId != team.OwnerId) {
 			return errors.New("not allowed to remove this member")
 		}
+		var target TeamMember
+		if err := lockForUpdate(tx).Where("team_id = ? AND user_id = ?", team.Id, targetId).First(&target).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&Token{}).Where("team_id = ? AND user_id = ? AND team_enabled = ?", team.Id, targetId, true).
+			Update("team_enabled", false).Error; err != nil {
+			return err
+		}
 		result := tx.Where("team_id = ? AND user_id = ?", team.Id, targetId).Delete(&TeamMember{})
 		if result.Error != nil {
 			return result.Error
@@ -601,7 +626,13 @@ func RemoveTeamMember(actorId, targetId int) error {
 		if result.RowsAffected == 0 {
 			return gorm.ErrRecordNotFound
 		}
-		return nil
+		action := "team.member_removed"
+		if actorId == targetId {
+			action = "team.member_left"
+		}
+		return enqueueBusinessEventTx(tx, &BusinessEvent{EventKey: fmt.Sprintf("team:member:%s:%d", action, target.Id),
+			Category: BusinessEventTeam, Action: action, UserId: actorId, Content: "Team membership changed",
+			CreatedAt: common.GetTimestamp()}, map[string]any{"team_id": team.Id, "member_user_id": targetId, "actor_user_id": actorId})
 	})
 }
 
@@ -1391,6 +1422,7 @@ func FinalizeTeamTask(task *Task, from TaskStatus, finalAmount int64, reason str
 				modelName = stored.PrivateData.BillingContext.OriginModelName
 			}
 			other := map[string]interface{}{"billing_source": "team", "team_id": usage.TeamId,
+				"member_user_id": stored.UserId, "business_label": "team_consumption",
 				"task_id": stored.TaskID, "pre_consumed_quota": stored.Quota, "actual_quota": finalAmount}
 			if bc := stored.PrivateData.BillingContext; bc != nil {
 				other["model_price"] = bc.ModelPrice

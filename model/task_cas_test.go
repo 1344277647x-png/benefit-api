@@ -53,6 +53,10 @@ func TestMain(m *testing.M) {
 		&LotteryAccount{},
 		&LotteryGrant{},
 		&LotteryDraw{},
+		&LotteryRule{},
+		&BusinessEvent{},
+		&BusinessEventLogReceipt{},
+		&ContentAuditRecord{},
 		&Option{},
 		&SubscriptionPlan{},
 		&SubscriptionOrder{},
@@ -94,6 +98,10 @@ func truncateTables(t *testing.T) {
 		DB.Exec("DELETE FROM lottery_draws")
 		DB.Exec("DELETE FROM lottery_grants")
 		DB.Exec("DELETE FROM lottery_accounts")
+		DB.Exec("DELETE FROM lottery_rules")
+		DB.Exec("DELETE FROM business_events")
+		DB.Exec("DELETE FROM business_event_log_receipts")
+		DB.Exec("DELETE FROM content_audit_records")
 		DB.Exec("DELETE FROM options")
 		DB.Exec("DELETE FROM subscription_orders")
 		DB.Exec("DELETE FROM subscription_plans")

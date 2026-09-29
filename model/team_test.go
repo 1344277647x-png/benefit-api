@@ -87,6 +87,25 @@ func TestPendingTeamPaymentKeepsSeatLimitAfterThirtyMinutes(t *testing.T) {
 	assert.Error(t, err, "a late signed callback must not activate a term with excess seats")
 }
 
+func TestCancelledTeamPaymentBecomesManualLatePayment(t *testing.T) {
+	team, owner, _ := teamTestFixture(t)
+	order := &TeamOrder{TeamId: team.Id, PayerUserId: owner.Id, PlanId: 1, PlanTitle: "Shared",
+		SeatLimit: 2, AmountTotal: 100, DurationUnit: "month", DurationValue: 1,
+		ResetPeriod: SubscriptionResetNever, Money: 10, TradeNo: "late-" + t.Name(),
+		PaymentMethod: "alipay", PaymentProvider: PaymentProviderEpay, Status: common.TopUpStatusPending}
+	require.NoError(t, DB.Create(order).Error)
+	require.NoError(t, CancelPendingTeamPayment(owner.Id))
+	require.NoError(t, CompleteTeamPayment(order.TradeNo, PaymentProviderEpay, "provider-late", "10.00", "alipay"))
+	require.NoError(t, DB.First(order, order.Id).Error)
+	assert.Equal(t, TeamOrderStatusPaidAfterCancel, order.Status)
+	var subscriptions int64
+	require.NoError(t, DB.Model(&TeamSubscription{}).Where("team_id = ?", team.Id).Count(&subscriptions).Error)
+	assert.Zero(t, subscriptions)
+	require.NoError(t, ResolvePaidAfterCancelTeamOrder(order.Id, 99, "refunded", "refund-proof-1"))
+	require.NoError(t, DB.First(order, order.Id).Error)
+	assert.Equal(t, TeamOrderStatusRefunded, order.Status)
+}
+
 func TestTeamQuotaReservationSettlementAndRefundStayInOriginalPeriod(t *testing.T) {
 	team, owner, _ := teamTestFixture(t)
 	now := common.GetTimestamp()
@@ -139,6 +158,9 @@ func TestTeamReservationRechecksTokenMembershipAndSubscription(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = DB.Delete(memberToken).Error })
 	require.NoError(t, RemoveTeamMember(owner.Id, target.Id))
+	var disabledMemberToken Token
+	require.NoError(t, DB.First(&disabledMemberToken, memberToken.Id).Error)
+	assert.False(t, disabledMemberToken.TeamEnabled)
 	_, _, err = PreConsumeTeamForToken("removed-member-"+t.Name(), team.Id, target.Id, memberToken.Id, 20)
 	require.Error(t, err)
 

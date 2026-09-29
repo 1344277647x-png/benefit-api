@@ -50,7 +50,13 @@ export interface PendingTeamPayment {
 }
 
 export interface TeamData {
-  team: { id: number; name: string; status: string; owner_id: number } | null
+  team: {
+    id: number
+    name: string
+    status: string
+    owner_id: number
+    dissolve_at: number
+  } | null
   membership?: { user_id: number; role: 'owner' | 'member' }
   subscription?: {
     id: number

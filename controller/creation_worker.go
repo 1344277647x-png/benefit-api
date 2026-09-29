@@ -36,6 +36,12 @@ func StartGenerationMaintenance() {
 					}
 				}
 			case <-cleanupTicker.C:
+				if _, err := model.DeleteExpiredContentAudits(time.Now().Unix()); err != nil {
+					common.SysError("cleanup content audits: " + err.Error())
+				}
+				if _, err := model.FinalizeDueTeamDissolutions(100); err != nil {
+					common.SysError("finalize team dissolutions: " + err.Error())
+				}
 				if _, err := service.CleanupExpiredGenerationAssets(time.Now().Unix(), 100); err != nil {
 					common.SysError("cleanup generation assets: " + err.Error())
 				}
@@ -92,7 +98,13 @@ func processGenerationVideoArchive(ctx context.Context, job *model.GenerationJob
 		}
 		for _, asset := range assetsByJob[job.ID] {
 			if asset.Role == "output" && asset.Status == "ready" {
-				return model.FinishGenerationJob(job.ID, model.GenerationJobSucceeded, "", "")
+				if err := model.FinishGenerationJob(job.ID, model.GenerationJobSucceeded, "", ""); err != nil {
+					return err
+				}
+				service.RecordContentAudit(service.ContentAuditWrite{UserID: job.UserID, ModelName: job.Model,
+					RequestID: job.PublicID, Source: "creation_video", Status: "succeeded", Input: job.Prompt,
+					Output: job.Parameters, ResultReferences: asset.PublicID})
+				return nil
 			}
 		}
 		claimed, err := model.ClaimGenerationJobArchival(job.ID, now.Unix())
@@ -106,7 +118,13 @@ func processGenerationVideoArchive(ctx context.Context, job *model.GenerationJob
 		if asset == nil {
 			return updateGenerationArchiveFailure(job, now, errors.New("video archive returned no asset"))
 		}
-		return model.FinishGenerationJob(job.ID, model.GenerationJobSucceeded, "", "")
+		if err := model.FinishGenerationJob(job.ID, model.GenerationJobSucceeded, "", ""); err != nil {
+			return err
+		}
+		service.RecordContentAudit(service.ContentAuditWrite{UserID: job.UserID, ModelName: job.Model,
+			RequestID: job.PublicID, Source: "creation_video", Status: "succeeded", Input: job.Prompt,
+			Output: job.Parameters, ResultReferences: asset.PublicID})
+		return nil
 	default:
 		return model.UpdateGenerationJob(job.ID, map[string]any{
 			"status":          model.GenerationJobProcessing,

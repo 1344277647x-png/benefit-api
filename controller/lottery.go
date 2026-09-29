@@ -8,6 +8,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -39,6 +40,7 @@ func DrawLottery(c *gin.Context) {
 		}
 		return
 	}
+	_ = service.DeliverPendingBusinessEvents(c.Request.Context(), 100)
 	common.ApiSuccess(c, gin.H{"draw": draw, "status": status})
 }
 

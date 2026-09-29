@@ -217,6 +217,10 @@ export interface LogOtherData {
   is_system_prompt_overwritten?: boolean
   po?: string[]
   billing_source?: string
+  team_id?: number
+  member_user_id?: number
+  business_label?: string
+  business_event?: { category?: string; action?: string; event_key?: string }
   group?: string
   is_channel_test?: boolean
   channel_test_method?: 'manual' | 'manual_batch' | 'scheduled' | string

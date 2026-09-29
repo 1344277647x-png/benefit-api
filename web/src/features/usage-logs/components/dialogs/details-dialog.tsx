@@ -1099,6 +1099,17 @@ export function DetailsDialog(props: DetailsDialogProps) {
           />
         )}
 
+        {props.isAdmin && other?.billing_source === 'team' && (
+          <DetailSection label={t('Team consumption')}>
+            <DetailRow label={t('Team ID')} value={other.team_id ?? '-'} mono />
+            <DetailRow
+              label={t('Member ID')}
+              value={other.member_user_id ?? props.log.user_id}
+              mono
+            />
+          </DetailSection>
+        )}
+
         {/* Tiered pricing breakdown (when billing_mode is tiered_expr) */}
         {isTieredBilling && other?.expr_b64 && (
           <DetailSection label={t('Dynamic Pricing')}>

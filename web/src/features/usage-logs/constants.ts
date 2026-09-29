@@ -60,6 +60,9 @@ export const LOG_TYPE_ENUM = {
   ERROR: 5,
   REFUND: 6,
   LOGIN: 7,
+  REFERRAL: 8,
+  LOTTERY: 9,
+  TEAM: 10,
 } as const
 
 /**
@@ -98,6 +101,9 @@ export const LOG_TYPES = [
   { value: 5, label: 'Error', color: 'red' },
   { value: 6, label: 'Refund', color: 'blue' },
   { value: 7, label: 'Login', color: 'teal' },
+  { value: 8, label: 'Referral', color: 'amber' },
+  { value: 9, label: 'Lottery', color: 'purple' },
+  { value: 10, label: 'Team', color: 'blue' },
 ] as const
 
 /**

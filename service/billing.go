@@ -121,6 +121,22 @@ func DeliverPendingTeamSyncBillingEvents(ctx context.Context, limit int) error {
 	return nil
 }
 
+func DeliverPendingBusinessEvents(ctx context.Context, limit int) error {
+	events, err := model.PendingBusinessEvents(ctx, limit)
+	if err != nil {
+		return err
+	}
+	for _, event := range events {
+		if err := model.DeliverBusinessEvent(ctx, event); err != nil {
+			return err
+		}
+		if err := model.MarkBusinessEventDelivered(ctx, event.EventKey); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Keep only known, non-content pricing and usage fields in the durable event.
 // Provider error text, request bodies and channel credentials must not be
 // copied into the main billing database. Bounded administrator-authored pricing

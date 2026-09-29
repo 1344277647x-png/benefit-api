@@ -63,6 +63,17 @@ export async function updateLotteryOptions(
   return res.data
 }
 
+export async function updateContentAuditSetting(request: {
+  enabled: boolean
+  privacy_ready: boolean
+}) {
+  const res = await api.post<UpdateOptionResponse>(
+    '/api/option/content_audit',
+    request
+  )
+  return res.data
+}
+
 export async function confirmPaymentCompliance() {
   const res = await api.post<ConfirmPaymentComplianceResponse>(
     '/api/option/payment_compliance',
