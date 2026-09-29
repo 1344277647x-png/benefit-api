@@ -22,6 +22,7 @@ import type {
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
+  LotteryOptionsUpdateRequest,
   ReferralOptionsUpdateRequest,
   SystemOptionsResponse,
   SystemTaskListResponse,
@@ -47,6 +48,16 @@ export async function updateReferralOptions(
 ) {
   const res = await api.post<UpdateOptionResponse>(
     '/api/option/referral',
+    request
+  )
+  return res.data
+}
+
+export async function updateLotteryOptions(
+  request: LotteryOptionsUpdateRequest
+) {
+  const res = await api.post<UpdateOptionResponse>(
+    '/api/option/lottery',
     request
   )
   return res.data

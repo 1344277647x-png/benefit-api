@@ -45,3 +45,12 @@ func TestValidateReferralOptionRejectsUnsafeValues(t *testing.T) {
 	require.NoError(t, validateReferralOption("referral_setting.monthly_cap_quota", strconv.Itoa(common.MaxQuota+1)))
 	require.Error(t, validateReferralOption("referral_setting.monthly_cap_quota", strconv.FormatInt(int64(common.MaxWalletQuota)+1, 10)))
 }
+
+func TestValidateLotteryOptionRejectsUnsafeValues(t *testing.T) {
+	require.NoError(t, validateLotteryOption("lottery_setting.enabled", "true"))
+	require.NoError(t, validateLotteryOption("lottery_setting.start_at", "0"))
+	require.NoError(t, validateLotteryOption("lottery_setting.end_at", "1893456000"))
+	require.Error(t, validateLotteryOption("lottery_setting.enabled", "yes"))
+	require.Error(t, validateLotteryOption("lottery_setting.start_at", "-1"))
+	require.Error(t, validateLotteryOption("lottery_setting.end_at", "later"))
+}

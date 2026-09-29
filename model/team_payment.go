@@ -10,6 +10,31 @@ import (
 	"gorm.io/gorm"
 )
 
+var ErrNoPendingTeamPayment = errors.New("no pending team payment")
+
+// Only the current owner can reopen an existing online order. Reusing its
+// trade number and price snapshot prevents an abandoned browser window from
+// silently creating another payable order.
+func GetPendingTeamPayment(ownerId int) (*TeamOrder, error) {
+	var team Team
+	if err := DB.Where("owner_id = ? AND status = ?", ownerId, TeamStatusActive).First(&team).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var order TeamOrder
+	err := DB.Where("team_id = ? AND payer_user_id = ? AND payment_provider = ? AND status = ?", team.Id, ownerId, PaymentProviderEpay, common.TopUpStatusPending).
+		Order("id desc").First(&order).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &order, nil
+}
+
 func createTeamOrderTx(tx *gorm.DB, ownerId, planId int, provider, method string) (*TeamOrder, error) {
 	var team Team
 	if err := lockForUpdate(tx).Where("owner_id = ? AND status = ?", ownerId, TeamStatusActive).First(&team).Error; err != nil {

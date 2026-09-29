@@ -959,6 +959,32 @@ func TestTeamPaymentRejectsExpiredOrderAndWrongProviderWithoutNewTerm(t *testing
 	assert.Zero(t, count)
 }
 
+func TestPendingTeamPaymentCanBeResumedOnlyByItsOwnerWithoutNewOrder(t *testing.T) {
+	team, owner, target := teamTestFixture(t)
+	order := &TeamOrder{TeamId: team.Id, PayerUserId: owner.Id, PlanId: 12, PlanTitle: "Original shared plan",
+		SeatLimit: 2, AmountTotal: 500, DurationUnit: SubscriptionDurationMonth, DurationValue: 1,
+		ResetPeriod: SubscriptionResetNever, Money: 10.50, TradeNo: "team-resume-" + t.Name(),
+		PaymentMethod: "alipay", PaymentProvider: PaymentProviderEpay, Status: common.TopUpStatusPending}
+	require.NoError(t, DB.Create(order).Error)
+	got, err := GetPendingTeamPayment(owner.Id)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, order.TradeNo, got.TradeNo)
+	assert.Equal(t, order.Money, got.Money)
+	assert.Equal(t, order.PlanTitle, got.PlanTitle)
+	require.NoError(t, DB.Create(&TeamMember{TeamId: team.Id, UserId: target.Id, Role: "member"}).Error)
+	other, err := GetPendingTeamPayment(target.Id)
+	require.NoError(t, err)
+	assert.Nil(t, other, "team members must not see or reopen the owner's payment")
+	var count int64
+	require.NoError(t, DB.Model(&TeamOrder{}).Where("team_id = ?", team.Id).Count(&count).Error)
+	assert.EqualValues(t, 1, count)
+	require.NoError(t, DB.Model(order).Update("status", common.TopUpStatusSuccess).Error)
+	got, err = GetPendingTeamPayment(owner.Id)
+	require.NoError(t, err)
+	assert.Nil(t, got, "a completed payment must not be reopened")
+}
+
 func TestTeamCustomResetPeriodUsesOriginalTermBoundary(t *testing.T) {
 	start := int64(1790500000)
 	sub := &TeamSubscription{StartTime: start, EndTime: start + 600, ResetPeriod: SubscriptionResetCustom, ResetCustomSeconds: 60}

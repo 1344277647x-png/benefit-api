@@ -243,6 +243,9 @@ func CompleteAlipayTopUp(tradeNo string, totalAmount string, callerIp string) er
 		if err := tx.Save(topUp).Error; err != nil {
 			return err
 		}
+		if err := grantLotteryDrawsForTopUpTx(tx, topUp); err != nil {
+			return err
+		}
 		if err := creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil); err != nil {
 			return err
 		}
@@ -304,6 +307,9 @@ func RechargeEpay(tradeNo string, actualPaymentMethod string, callerIp string) (
 		topUp.CompleteTime = common.GetTimestamp()
 		topUp.Status = common.TopUpStatusSuccess
 		if err := tx.Save(topUp).Error; err != nil {
+			return err
+		}
+		if err := grantLotteryDrawsForTopUpTx(tx, topUp); err != nil {
 			return err
 		}
 		if err := creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil); err != nil {

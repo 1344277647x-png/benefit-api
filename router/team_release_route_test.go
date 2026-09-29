@@ -54,7 +54,7 @@ func TestTeamOfficialPurchaseAndTokenRoutesWithLocalReleaseOverlay(t *testing.T)
 	})
 	require.NoError(t, model.DB.AutoMigrate(&model.UserSession{}, &model.SubscriptionPlan{},
 		&model.Team{}, &model.TeamMember{}, &model.TeamInvitation{}, &model.TeamSubscription{},
-		&model.TeamQuotaPeriod{}, &model.TeamOrder{}, &model.TeamUsage{}))
+		&model.TeamQuotaPeriod{}, &model.TeamOrder{}, &model.TeamUsage{}, &model.TeamSyncBillingEvent{}))
 	owner := &model.User{Username: "official-purchase-owner", Status: common.UserStatusEnabled,
 		Group: "default", Quota: 2_000_000, AffCode: "official-purchase-owner-local"}
 	require.NoError(t, model.DB.Create(owner).Error)
@@ -87,6 +87,16 @@ func TestTeamOfficialPurchaseAndTokenRoutesWithLocalReleaseOverlay(t *testing.T)
 	require.NoError(t, model.DB.Where("payer_user_id = ? AND payment_provider = ?", owner.Id,
 		model.PaymentProviderEpay).First(&pending).Error)
 	assert.Equal(t, common.TopUpStatusPending, pending.Status, "opening a payment page cannot activate the next term")
+	self := send(http.MethodGet, "/api/team/self", "")
+	require.Equal(t, http.StatusOK, self.Code)
+	assert.Contains(t, self.Body.String(), `"pending_payment"`)
+	assert.NotContains(t, self.Body.String(), pending.TradeNo, "browser response must not reveal the payment trade number")
+	resumed := send(http.MethodPost, "/api/team/epay/resume", "")
+	require.Equal(t, http.StatusOK, resumed.Code, resumed.Body.String())
+	assert.Contains(t, resumed.Body.String(), pending.TradeNo, "reopening must use the same payable order")
+	var pendingCount int64
+	require.NoError(t, model.DB.Model(&model.TeamOrder{}).Where("team_id = ? AND status = ?", pending.TeamId, common.TopUpStatusPending).Count(&pendingCount).Error)
+	assert.EqualValues(t, 1, pendingCount, "resume cannot create another payable order")
 	key := send(http.MethodPost, "/api/team/tokens", `{"name":"Official route team key"}`)
 	require.Equal(t, http.StatusOK, key.Code, key.Body.String())
 	assert.Contains(t, key.Body.String(), `"success":true`)

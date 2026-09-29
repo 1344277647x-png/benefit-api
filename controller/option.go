@@ -74,6 +74,23 @@ func validateReferralOption(key string, value string) error {
 	return nil
 }
 
+func validateLotteryOption(key string, value string) error {
+	if !strings.HasPrefix(key, "lottery_setting.") {
+		return nil
+	}
+	if key == "lottery_setting.enabled" {
+		if value != "true" && value != "false" {
+			return fmt.Errorf("抽奖活动开关值无效")
+		}
+		return nil
+	}
+	parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil || parsed < 0 {
+		return fmt.Errorf("抽奖活动时间必须是非负 Unix 时间戳")
+	}
+	return nil
+}
+
 func collectModelNamesFromOptionValue(raw string, modelNames map[string]struct{}) {
 	if strings.TrimSpace(raw) == "" {
 		return
@@ -162,6 +179,12 @@ type ReferralOptionsUpdateRequest struct {
 	SettlementDelayHours  int  `json:"settlement_delay_hours"`
 }
 
+type LotteryOptionsUpdateRequest struct {
+	Enabled bool  `json:"enabled"`
+	StartAt int64 `json:"start_at"`
+	EndAt   int64 `json:"end_at"`
+}
+
 func UpdateReferralOptions(c *gin.Context) {
 	var request ReferralOptionsUpdateRequest
 	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
@@ -198,6 +221,40 @@ func UpdateReferralOptions(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
+func UpdateLotteryOptions(c *gin.Context) {
+	var request LotteryOptionsUpdateRequest
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		common.ApiErrorMsg(c, "无效的抽奖活动配置")
+		return
+	}
+	if request.Enabled && !operation_setting.IsPaymentComplianceConfirmed() {
+		common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
+		return
+	}
+	if request.StartAt < 0 || request.EndAt < 0 || (request.StartAt > 0 && request.EndAt > 0 && request.EndAt <= request.StartAt) {
+		common.ApiErrorMsg(c, "抽奖活动结束时间必须晚于开始时间")
+		return
+	}
+
+	values := map[string]string{
+		"lottery_setting.enabled":  strconv.FormatBool(request.Enabled),
+		"lottery_setting.start_at": strconv.FormatInt(request.StartAt, 10),
+		"lottery_setting.end_at":   strconv.FormatInt(request.EndAt, 10),
+	}
+	for key, value := range values {
+		if err := validateLotteryOption(key, value); err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+	}
+	if err := model.UpdateOptionsBulkWithActivationKey(values, "lottery_setting.enabled"); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAudit(c, "option.lottery.update", map[string]interface{}{"keys": len(values)})
+	common.ApiSuccess(c, nil)
+}
+
 func UpdateOption(c *gin.Context) {
 	var option OptionUpdateRequest
 	err := common.DecodeJson(c.Request.Body, &option)
@@ -229,6 +286,11 @@ func UpdateOption(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
 			return
 		}
+	case "lottery_setting.enabled":
+		if option.Value == "true" && !operation_setting.IsPaymentComplianceConfirmed() {
+			common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
+			return
+		}
 	default:
 		if isPaymentComplianceOptionKey(option.Key) {
 			common.ApiErrorMsg(c, "合规确认字段不允许通过通用设置接口修改")
@@ -236,6 +298,10 @@ func UpdateOption(c *gin.Context) {
 		}
 	}
 	if err := validateReferralOption(option.Key, option.Value.(string)); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	if err := validateLotteryOption(option.Key, option.Value.(string)); err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}

@@ -20,6 +20,7 @@ import {
   Activity,
   Box,
   CreditCard,
+  Dices,
   FileText,
   FlaskConical,
   Key,
@@ -116,6 +117,11 @@ export function useSidebarData(): SidebarData {
             title: t('Wallet'),
             url: '/wallet',
             icon: Wallet,
+          },
+          {
+            title: t('Lucky Draw'),
+            url: '/lottery',
+            icon: Dices,
           },
           ...(status?.team_subscriptions_enabled === true
             ? [{ title: t('Team subscription'), url: '/team', icon: Users }]

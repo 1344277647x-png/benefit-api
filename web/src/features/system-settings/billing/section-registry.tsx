@@ -25,6 +25,7 @@ import { PaymentSettingsSection } from '../integrations/payment-settings-section
 import { RatioSettingsCard } from '../models/ratio-settings-card'
 import type { BillingSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { LotterySettingsSection } from './lottery-settings-section'
 import { ReferralSettingsSection } from './referral-settings-section'
 
 const getModelDefaults = (settings: BillingSettings) => ({
@@ -223,6 +224,23 @@ const BILLING_SECTIONS = [
           monthlyCapQuota: settings['referral_setting.monthly_cap_quota'],
           settlementDelayHours:
             settings['referral_setting.settlement_delay_hours'],
+        }}
+        complianceConfirmed={
+          (settings['payment_setting.compliance_confirmed'] ?? false) &&
+          settings['payment_setting.compliance_terms_version'] === 'v1'
+        }
+      />
+    ),
+  },
+  {
+    id: 'lottery',
+    titleKey: 'Lottery Settings',
+    build: (settings: BillingSettings) => (
+      <LotterySettingsSection
+        defaultValues={{
+          enabled: settings['lottery_setting.enabled'],
+          startAt: settings['lottery_setting.start_at'],
+          endAt: settings['lottery_setting.end_at'],
         }}
         complianceConfirmed={
           (settings['payment_setting.compliance_confirmed'] ?? false) &&

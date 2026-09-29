@@ -94,6 +94,7 @@ func GetStatus(c *gin.Context) {
 		"password_register_enabled":     common.PasswordRegisterEnabled,
 		"default_use_auto_group":        setting.DefaultUseAutoGroup,
 		"team_subscriptions_enabled":    operation_setting.TeamReleaseReady && operation_setting.IsTeamEnabled() && model.TeamTaskLogDeliverySupported(),
+		"lottery_enabled":               operation_setting.GetLotterySettingSnapshot().Enabled,
 
 		"usd_exchange_rate": operation_setting.USDExchangeRate,
 		"price":             operation_setting.Price,

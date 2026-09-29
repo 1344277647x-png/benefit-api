@@ -59,6 +59,17 @@ func TeamSelf(c *gin.Context) {
 	}
 	result := gin.H{"team": team, "membership": member, "subscription": sub, "period": period, "queued": queued, "invitations": invitations}
 	if member.Role == "owner" {
+		payment, err := model.GetPendingTeamPayment(userId)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if payment != nil {
+			result["pending_payment"] = gin.H{
+				"plan_title": payment.PlanTitle, "money": payment.Money,
+				"payment_method": payment.PaymentMethod, "create_time": payment.CreateTime,
+			}
+		}
 		var members []model.TeamMember
 		var sent []model.TeamInvitation
 		if err := model.DB.Where("team_id = ?", team.Id).Find(&members).Error; err != nil {

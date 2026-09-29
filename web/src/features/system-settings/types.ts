@@ -347,6 +347,9 @@ export type BillingSettings = {
   'referral_setting.per_invitee_cap_quota': number
   'referral_setting.monthly_cap_quota': number
   'referral_setting.settlement_delay_hours': number
+  'lottery_setting.enabled': boolean
+  'lottery_setting.start_at': number
+  'lottery_setting.end_at': number
 }
 
 export type ReferralOptionsUpdateRequest = {
@@ -357,6 +360,12 @@ export type ReferralOptionsUpdateRequest = {
   per_invitee_cap_quota: number
   monthly_cap_quota: number
   settlement_delay_hours: number
+}
+
+export type LotteryOptionsUpdateRequest = {
+  enabled: boolean
+  start_at: number
+  end_at: number
 }
 
 export type OperationsSettings = {

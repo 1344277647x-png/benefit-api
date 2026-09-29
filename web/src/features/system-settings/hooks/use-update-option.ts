@@ -20,8 +20,13 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { toast } from 'sonner'
 
-import { updateReferralOptions, updateSystemOption } from '../api'
+import {
+  updateLotteryOptions,
+  updateReferralOptions,
+  updateSystemOption,
+} from '../api'
 import type {
+  LotteryOptionsUpdateRequest,
   ReferralOptionsUpdateRequest,
   UpdateOptionRequest,
 } from '../types'
@@ -86,6 +91,34 @@ export function useUpdateReferralOptions() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['system-options'] })
+      toast.success(i18next.t('Setting updated successfully'))
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || i18next.t('Failed to update setting'))
+    },
+  })
+}
+
+export function useUpdateLotteryOptions() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (request: LotteryOptionsUpdateRequest) => {
+      const data = await updateLotteryOptions(request)
+      if (!data.success) {
+        throw new Error(data.message || i18next.t('Failed to update setting'))
+      }
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system-options'] })
+      queryClient.invalidateQueries({ queryKey: ['status'] })
+      queryClient.invalidateQueries({ queryKey: ['lottery'] })
+      try {
+        window.localStorage.removeItem('status')
+      } catch {
+        /* empty */
+      }
       toast.success(i18next.t('Setting updated successfully'))
     },
     onError: (error: Error) => {

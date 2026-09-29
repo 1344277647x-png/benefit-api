@@ -68,4 +68,15 @@ export const teamApi = {
     }
     return response
   },
+  resumeEpay: async () => {
+    const response = (await api.post('/api/team/epay/resume')).data as {
+      message: string
+      url?: string
+      data?: Record<string, string>
+    }
+    if (response.message !== 'success' || !response.url || !response.data) {
+      throw new Error('Payment request failed')
+    }
+    return response
+  },
 }

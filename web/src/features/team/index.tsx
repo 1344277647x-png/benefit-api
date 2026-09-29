@@ -32,6 +32,7 @@ import { getTopupInfo } from '@/features/wallet/api'
 import { quotaUnitsToDollars } from '@/lib/format'
 
 import { teamApi } from './api'
+import { PendingTeamPayment } from './components/pending-team-payment'
 import { availableTeamEpayMethods } from './lib/payment'
 import type { TeamPlan } from './types'
 
@@ -191,7 +192,10 @@ export function TeamPage() {
       void queryClient.invalidateQueries({ queryKey: ['team'] })
       toast.success(t('Updated successfully'))
     },
-    onError: () => toast.error(t('Request failed')),
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: ['team', 'self'] })
+      toast.error(t('Request failed'))
+    },
   })
   const createToken = useMutation({
     mutationFn: teamApi.createToken,
@@ -203,13 +207,12 @@ export function TeamPage() {
     onError: () => toast.error(t('Request failed')),
   })
 
-  const payEpay = async (planId: number, method: string) => {
-    if (!window.confirm(t('Confirm team subscription purchase?'))) {
-      return
-    }
+  const openEpayForm = async (
+    request: () => ReturnType<typeof teamApi.epay>
+  ) => {
     setEpayBusy(true)
     try {
-      const result = await teamApi.epay(planId, method)
+      const result = await request()
       if (!result.url) {
         throw new Error('Missing gateway URL')
       }
@@ -236,7 +239,26 @@ export function TeamPage() {
       toast.error(t('Payment request failed'))
     } finally {
       setEpayBusy(false)
+      void queryClient.invalidateQueries({ queryKey: ['team', 'self'] })
     }
+  }
+
+  const payEpay = async (planId: number, method: string) => {
+    if (!window.confirm(t('Confirm team subscription purchase?'))) {
+      return
+    }
+    await openEpayForm(() => teamApi.epay(planId, method))
+  }
+
+  const resumeEpay = async () => {
+    if (
+      !window.confirm(
+        t('If you already paid, do not pay again. Resume the original payment?')
+      )
+    ) {
+      return
+    }
+    await openEpayForm(teamApi.resumeEpay)
   }
 
   const data = self.data
@@ -378,6 +400,13 @@ export function TeamPage() {
                       </p>
                     ))}
                   </Panel>
+                  {membership?.role === 'owner' && data.pending_payment && (
+                    <PendingTeamPayment
+                      payment={data.pending_payment}
+                      busy={epayBusy}
+                      onResume={() => void resumeEpay()}
+                    />
+                  )}
                   <Panel title={t('My team keys')}>
                     <p className='text-muted-foreground mb-3 text-sm'>
                       {t(
@@ -583,7 +612,11 @@ export function TeamPage() {
                             <PlanCard
                               key={plan.id}
                               plan={plan}
-                              paying={actions.isPending || epayBusy}
+                              paying={
+                                actions.isPending ||
+                                epayBusy ||
+                                Boolean(data.pending_payment)
+                              }
                               methods={availableTeamEpayMethods(
                                 payment.data?.data
                               )}

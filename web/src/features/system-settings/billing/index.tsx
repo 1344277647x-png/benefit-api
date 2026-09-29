@@ -118,6 +118,9 @@ const defaultBillingSettings: BillingSettings = {
   'referral_setting.per_invitee_cap_quota': 2500000,
   'referral_setting.monthly_cap_quota': 25000000,
   'referral_setting.settlement_delay_hours': 72,
+  'lottery_setting.enabled': false,
+  'lottery_setting.start_at': 0,
+  'lottery_setting.end_at': 0,
 }
 
 export function BillingSettings() {

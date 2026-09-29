@@ -28,13 +28,7 @@ func TeamEpayPay(c *gin.Context) {
 		common.ApiErrorMsg(c, "当前管理员未配置易支付")
 		return
 	}
-	callback := service.GetCallbackAddress()
-	returnURL, err := url.Parse(callback + "/api/team/epay/return")
-	if err != nil {
-		common.ApiErrorMsg(c, "回调地址无效")
-		return
-	}
-	notifyURL, err := url.Parse(callback + "/api/team/epay/notify")
+	returnURL, notifyURL, err := teamEpayCallbackURLs()
 	if err != nil {
 		common.ApiErrorMsg(c, "回调地址无效")
 		return
@@ -44,15 +38,71 @@ func TeamEpayPay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	teamEpayPaymentForm(c, client, order, returnURL, notifyURL, true)
+}
+
+func TeamEpayResume(c *gin.Context) {
+	if !requirePaymentCompliance(c) {
+		return
+	}
+	client := GetEpayClient()
+	if client == nil {
+		common.ApiErrorMsg(c, "当前管理员未配置易支付")
+		return
+	}
+	order, err := model.GetPendingTeamPayment(c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if order == nil {
+		common.ApiError(c, model.ErrNoPendingTeamPayment)
+		return
+	}
+	if !operation_setting.ContainsPayMethod(order.PaymentMethod) {
+		common.ApiErrorMsg(c, "原订单的易支付方式已停用，请联系管理员核对支付状态")
+		return
+	}
+	returnURL, notifyURL, err := teamEpayCallbackURLs()
+	if err != nil {
+		common.ApiErrorMsg(c, "回调地址无效")
+		return
+	}
+	teamEpayPaymentForm(c, client, order, returnURL, notifyURL, false)
+}
+
+func teamEpayCallbackURLs() (*url.URL, *url.URL, error) {
+	callback := service.GetCallbackAddress()
+	returnURL, err := url.Parse(callback + "/api/team/epay/return")
+	if err != nil {
+		return nil, nil, err
+	}
+	notifyURL, err := url.Parse(callback + "/api/team/epay/notify")
+	if err != nil {
+		return nil, nil, err
+	}
+	return returnURL, notifyURL, nil
+}
+
+func teamEpayPaymentForm(c *gin.Context, client *epay.Client, order *model.TeamOrder, returnURL, notifyURL *url.URL, expireOnFailure bool) {
 	uri, params, err := client.Purchase(&epay.PurchaseArgs{
-		Type: request.PaymentMethod, ServiceTradeNo: order.TradeNo,
+		Type: order.PaymentMethod, ServiceTradeNo: order.TradeNo,
 		Name: fmt.Sprintf("TEAM:%s", order.PlanTitle), Money: strconv.FormatFloat(float64(order.Money), 'f', 2, 64),
 		Device: epay.PC, NotifyUrl: notifyURL, ReturnUrl: returnURL,
 	})
 	if err != nil {
-		_ = model.ExpireTeamPayment(order.TradeNo)
+		if expireOnFailure {
+			_ = model.ExpireTeamPayment(order.TradeNo)
+		}
 		common.ApiErrorMsg(c, "拉起支付失败")
 		return
+	}
+	if !expireOnFailure {
+		current, err := model.GetPendingTeamPayment(c.GetInt("id"))
+		if err != nil || current == nil || current.TradeNo != order.TradeNo {
+			common.ApiErrorMsg(c, "订单状态已变化，请刷新团队页面")
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "success", "data": params, "url": uri})
 }

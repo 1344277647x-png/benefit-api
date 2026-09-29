@@ -42,6 +42,13 @@ export interface TeamToken {
   created_time: number
 }
 
+export interface PendingTeamPayment {
+  plan_title: string
+  money: number
+  payment_method: string
+  create_time: number
+}
+
 export interface TeamData {
   team: { id: number; name: string; status: string; owner_id: number } | null
   membership?: { user_id: number; role: 'owner' | 'member' }
@@ -64,6 +71,7 @@ export interface TeamData {
   }[]
   invitations: TeamInvitation[]
   sent_invitations?: TeamInvitation[]
+  pending_payment?: PendingTeamPayment
   members?: { user_id: number; role: string }[]
   usage?: { user_id: number; amount: number; requests: number }[]
 }
