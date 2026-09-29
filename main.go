@@ -333,16 +333,16 @@ func InitResources() error {
 	if err != nil {
 		return err
 	}
-	if common.IsMasterNode {
-		if err := service.DeliverPendingBusinessEvents(context.Background(), 200); err != nil {
-			common.SysError("failed to recover pending business event logs: " + err.Error())
-		}
-	}
 
 	// Initialize Redis
 	err = common.InitRedisClient()
 	if err != nil {
 		return err
+	}
+	if common.IsMasterNode {
+		if err := service.DeliverPendingBusinessEvents(context.Background(), 200); err != nil {
+			common.SysError("failed to recover pending business event logs: " + err.Error())
+		}
 	}
 
 	perfmetrics.Init()
