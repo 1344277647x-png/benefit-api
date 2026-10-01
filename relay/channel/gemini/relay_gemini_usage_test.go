@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -13,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -122,6 +124,122 @@ func TestGeminiStreamHandlerCompletionTokensExcludeToolUsePromptTokens(t *testin
 	require.Equal(t, 2209, usage.CompletionTokens)
 	require.Equal(t, 20689, usage.TotalTokens)
 	require.Equal(t, 1120, usage.CompletionTokenDetails.ReasoningTokens)
+}
+
+func TestGeminiStreamHandlerMapsResourceExhaustedError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldStreamingTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() { constant.StreamingTimeout = oldStreamingTimeout })
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	info := &relaycommon.RelayInfo{
+		DisablePing: true,
+		ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "gemini-test"},
+	}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(
+			`data: {"error":{"code":429,"message":"Resource exhausted","status":"RESOURCE_EXHAUSTED"}}` + "\n\n",
+		)),
+		Header: http.Header{"Content-Type": []string{"text/event-stream"}},
+	}
+
+	usage, apiErr := geminiStreamHandler(c, info, resp, func(_ string, _ *dto.GeminiChatResponse) bool { return true })
+	require.Nil(t, usage)
+	require.NotNil(t, apiErr)
+	assert.Equal(t, types.ErrorClassUpstreamQuotaExhausted, apiErr.GetErrorClass())
+	assert.Equal(t, types.UpstreamQuotaPublicMessage, apiErr.ToOpenAIError().Message)
+	assert.NotContains(t, recorder.Body.String(), "Resource exhausted")
+}
+
+func TestGeminiNonStreamHandlersRecognizeTopLevelQuotaError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := `{"error":{"message":"account balance insufficient","code":402,"status":"FAILED_PRECONDITION"}}`
+	for _, tc := range []struct {
+		name string
+		hand func(*gin.Context, *relaycommon.RelayInfo, *http.Response) (*dto.Usage, *types.NewAPIError)
+	}{
+		{name: "native", hand: GeminiTextGenerationHandler},
+		{name: "responses", hand: GeminiResponsesHandler},
+		{name: "image", hand: GeminiImageHandler},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/test", nil)
+			info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "gemini-test"}}
+			resp := &http.Response{StatusCode: http.StatusBadRequest, Body: io.NopCloser(strings.NewReader(body))}
+			usage, apiErr := tc.hand(c, info, resp)
+			require.Nil(t, usage)
+			require.NotNil(t, apiErr)
+			assert.Equal(t, types.ErrorClassUpstreamQuotaExhausted, apiErr.GetErrorClass())
+			assert.Equal(t, types.UpstreamQuotaPublicMessage, apiErr.ToOpenAIError().Message)
+		})
+	}
+}
+
+func TestGeminiChatHandlerDoesNotBillBlockedEmptyResponse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	blockReason := "SAFETY"
+	body, err := common.Marshal(dto.GeminiChatResponse{
+		PromptFeedback: &dto.GeminiChatPromptFeedback{BlockReason: &blockReason},
+		UsageMetadata:  dto.GeminiUsageMetadata{PromptTokenCount: 12, TotalTokenCount: 12},
+	})
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	info := &relaycommon.RelayInfo{RelayFormat: types.RelayFormatOpenAI}
+	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))}
+
+	usage, apiErr := GeminiChatHandler(c, info, resp)
+	require.Nil(t, usage)
+	require.NotNil(t, apiErr)
+	assert.Equal(t, types.ErrorCodePromptBlocked, apiErr.GetErrorCode())
+	assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+	assert.Empty(t, recorder.Body.String(), "the controller owns the only client error response")
+}
+
+func TestGeminiTextGenerationHandlerDoesNotBillBlockedEmptyResponse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	blockReason := "SAFETY"
+	body, err := common.Marshal(dto.GeminiChatResponse{
+		PromptFeedback: &dto.GeminiChatPromptFeedback{BlockReason: &blockReason},
+		UsageMetadata:  dto.GeminiUsageMetadata{PromptTokenCount: 12, TotalTokenCount: 12},
+	})
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-test:generateContent", nil)
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "gemini-test"}}
+	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))}
+
+	usage, apiErr := GeminiTextGenerationHandler(c, info, resp)
+	require.Nil(t, usage)
+	require.NotNil(t, apiErr)
+	assert.Equal(t, types.ErrorCodePromptBlocked, apiErr.GetErrorCode())
+	assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+	assert.Empty(t, recorder.Body.String())
+}
+
+func TestGeminiStreamHandlerRejectsEOFWithoutDone(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldStreamingTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() { constant.StreamingTimeout = oldStreamingTimeout })
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	info := &relaycommon.RelayInfo{DisablePing: true, ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "gemini-test"}}
+	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`data: {"candidates":[{"content":{"parts":[{"text":"partial"}]}}]}` + "\n\n")), Header: http.Header{"Content-Type": []string{"text/event-stream"}}}
+	usage, apiErr := geminiStreamHandler(c, info, resp, func(_ string, _ *dto.GeminiChatResponse) bool { return true })
+	require.Nil(t, usage)
+	require.NotNil(t, apiErr)
+	assert.Equal(t, types.ErrorCodeBadResponse, apiErr.GetErrorCode())
 }
 
 func TestGeminiTextGenerationHandlerPromptTokensIncludeToolUsePromptTokens(t *testing.T) {

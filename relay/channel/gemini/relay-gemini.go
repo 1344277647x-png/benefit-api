@@ -37,6 +37,36 @@ func attachEstimatedGeminiBillingUsage(usage *dto.Usage) *dto.Usage {
 	return usage
 }
 
+// parseGeminiUpstreamError handles Gemini's top-level error envelope. Some
+// providers omit the OpenAI-style type and only send message/code/status, but
+// that still represents a fatal upstream response and must never be billed as
+// a successful empty response.
+func parseGeminiUpstreamError(responseBody []byte, statusCode int) *types.NewAPIError {
+	var envelope struct {
+		Error *struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+			Status  string `json:"status"`
+			Code    any    `json:"code"`
+		} `json:"error"`
+	}
+	if err := common.Unmarshal(responseBody, &envelope); err != nil || envelope.Error == nil {
+		return nil
+	}
+	errorType := envelope.Error.Type
+	if errorType == "" {
+		errorType = envelope.Error.Status
+	}
+	if envelope.Error.Message == "" && errorType == "" && envelope.Error.Code == nil {
+		return nil
+	}
+	return types.WithOpenAIError(types.OpenAIError{
+		Message: envelope.Error.Message,
+		Type:    errorType,
+		Code:    envelope.Error.Code,
+	}, statusCode)
+}
+
 // patchGeminiZeroCompletionUsage estimates completion tokens locally when upstream
 // usageMetadata was billable but reported zero completion tokens even though output
 // content was actually received. Typical case: the client aborts a stream before the
@@ -146,19 +176,50 @@ func handleFinalStream(c *gin.Context, info *relaycommon.RelayInfo, resp *dto.Ch
 
 func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response, callback func(data string, geminiResponse *dto.GeminiChatResponse) bool) (*dto.Usage, *types.NewAPIError) {
 	var usage = &dto.Usage{}
+	var streamErr *types.NewAPIError
 	var imageCount int
 	var hasBillableUsageMetadata bool
 	responseText := strings.Builder{}
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+		if streamErr != nil {
+			sr.Stop(streamErr)
+			return
+		}
+		var errorEnvelope struct {
+			Error *struct {
+				Message string `json:"message"`
+				Type    string `json:"type"`
+				Status  string `json:"status"`
+				Code    any    `json:"code"`
+			} `json:"error"`
+		}
+		if err := common.UnmarshalJsonStr(data, &errorEnvelope); err == nil && errorEnvelope.Error != nil {
+			errorType := errorEnvelope.Error.Type
+			if errorType == "" {
+				errorType = errorEnvelope.Error.Status
+			}
+			oaiErr := types.OpenAIError{
+				Message: errorEnvelope.Error.Message,
+				Type:    errorType,
+				Code:    errorEnvelope.Error.Code,
+			}
+			streamErr = types.WithOpenAIError(oaiErr, http.StatusBadGateway)
+			sr.Stop(streamErr)
+			return
+		}
 		var geminiResponse dto.GeminiChatResponse
 		if err := common.UnmarshalJsonStr(data, &geminiResponse); err != nil {
-			sr.Stop(fmt.Errorf("unmarshal: %w", err))
+			streamErr = types.NewOpenAIError(fmt.Errorf("gemini stream response decode failed"), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+			sr.Stop(streamErr)
 			return
 		}
 
 		if len(geminiResponse.Candidates) == 0 && geminiResponse.PromptFeedback != nil && geminiResponse.PromptFeedback.BlockReason != nil {
 			common.SetContextKey(c, constant.ContextKeyAdminRejectReason, fmt.Sprintf("gemini_block_reason=%s", *geminiResponse.PromptFeedback.BlockReason))
+			streamErr = types.NewOpenAIError(errors.New("request blocked by Gemini API"), types.ErrorCodePromptBlocked, http.StatusBadRequest)
+			sr.Stop(streamErr)
+			return
 		}
 
 		markGeminiGoogleSearchCall(c, &geminiResponse)
@@ -183,9 +244,16 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		}
 
 		if !callback(data, &geminiResponse) {
-			sr.Stop(fmt.Errorf("gemini callback stopped"))
+			streamErr = types.NewOpenAIError(errors.New("gemini stream callback stopped"), types.ErrorCodeBadResponse, http.StatusBadGateway)
+			sr.Stop(streamErr)
 		}
 	})
+	if streamErr != nil {
+		return nil, streamErr
+	}
+	if info.StreamStatus == nil || info.StreamStatus.EndReason != relaycommon.StreamEndReasonDone {
+		return nil, types.NewOpenAIError(errors.New("upstream Gemini stream ended without [DONE]"), types.ErrorCodeBadResponse, http.StatusBadGateway)
+	}
 
 	if !hasBillableUsageMetadata {
 		if info.ReceivedResponseCount > 0 {
@@ -317,6 +385,9 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 	}
 	service.CloseResponseBodyGracefully(resp)
 	logger.LogDebug(c, "Gemini response body: %s", responseBody)
+	if upstreamErr := parseGeminiUpstreamError(responseBody, resp.StatusCode); upstreamErr != nil {
+		return nil, upstreamErr
+	}
 	var geminiResponse dto.GeminiChatResponse
 	err = common.Unmarshal(responseBody, &geminiResponse)
 	if err != nil {
@@ -324,8 +395,6 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 	}
 	markGeminiGoogleSearchCall(c, &geminiResponse)
 	if len(geminiResponse.Candidates) == 0 {
-		usage := buildUsageFromGeminiResponse(c, info, &geminiResponse)
-
 		var newAPIError *types.NewAPIError
 		if geminiResponse.PromptFeedback != nil && geminiResponse.PromptFeedback.BlockReason != nil {
 			common.SetContextKey(c, constant.ContextKeyAdminRejectReason, fmt.Sprintf("gemini_block_reason=%s", *geminiResponse.PromptFeedback.BlockReason))
@@ -344,19 +413,7 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 		}
 
 		service.ResetStatusCode(newAPIError, c.GetString("status_code_mapping"))
-
-		switch info.RelayFormat {
-		case types.RelayFormatClaude:
-			c.JSON(newAPIError.StatusCode, gin.H{
-				"type":  "error",
-				"error": newAPIError.ToClaudeError(),
-			})
-		default:
-			c.JSON(newAPIError.StatusCode, gin.H{
-				"error": newAPIError.ToOpenAIError(),
-			})
-		}
-		return &usage, nil
+		return nil, newAPIError
 	}
 	fullTextResponse := responseGeminiChat2OpenAI(c, &geminiResponse)
 	fullTextResponse.Model = info.UpstreamModelName
@@ -440,6 +497,9 @@ func GeminiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 		return nil, types.NewOpenAIError(readErr, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
 	_ = resp.Body.Close()
+	if upstreamErr := parseGeminiUpstreamError(responseBody, resp.StatusCode); upstreamErr != nil {
+		return nil, upstreamErr
+	}
 
 	var geminiResponse dto.GeminiImageResponse
 	if jsonErr := common.Unmarshal(responseBody, &geminiResponse); jsonErr != nil {

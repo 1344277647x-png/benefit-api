@@ -41,6 +41,41 @@ export type StreamErrorDetails = {
   errorMessage: string
 }
 
+const UPSTREAM_QUOTA_EXHAUSTED = 'upstream_quota_exhausted'
+const LEGACY_UPSTREAM_QUOTA_CODES = new Set([
+  'insufficient_quota',
+  'quota_exceeded',
+])
+const PLATFORM_QUOTA_CODES = new Set([
+  'insufficient_user_quota',
+  'pre_consume_token_quota_failed',
+])
+
+function isUpstreamQuotaError(
+  errorCode: string | undefined,
+  message: string
+): boolean {
+  if (
+    errorCode === UPSTREAM_QUOTA_EXHAUSTED ||
+    LEGACY_UPSTREAM_QUOTA_CODES.has(errorCode || '')
+  ) {
+    return true
+  }
+  if (PLATFORM_QUOTA_CODES.has(errorCode || '')) return false
+  const normalized = message.toLowerCase()
+  return [
+    'insufficient_quota',
+    'quota exceeded',
+    'quota_exceeded',
+    'exceeded your current quota',
+    'billing_hard_limit_reached',
+    'credits exhausted',
+    'insufficient credits',
+    'billing limit',
+    'account balance insufficient',
+  ].some((signal) => normalized.includes(signal))
+}
+
 export function parseStreamErrorDetails(data?: string): StreamErrorDetails {
   const fallbackMessage = data || ERROR_MESSAGES.API_REQUEST_ERROR
 
@@ -55,9 +90,12 @@ export function parseStreamErrorDetails(data?: string): StreamErrorDetails {
       return { errorMessage: fallbackMessage }
     }
 
+    const errorCode = parsed.error.code || undefined
     return {
-      errorCode: parsed.error.code || undefined,
-      errorMessage: parsed.error.message || fallbackMessage,
+      errorCode,
+      errorMessage: isUpstreamQuotaError(errorCode, parsed.error.message || '')
+        ? ERROR_MESSAGES.UPSTREAM_QUOTA_EXHAUSTED
+        : parsed.error.message || fallbackMessage,
     }
   } catch {
     return { errorMessage: fallbackMessage }

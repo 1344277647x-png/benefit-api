@@ -2,6 +2,7 @@ package openai
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -45,7 +46,7 @@ func OpenaiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
 
-	if oaiError := usageResp.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
+	if oaiError := usageResp.GetOpenAIError(); dto.HasOpenAIError(oaiError) {
 		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
 	}
 
@@ -112,14 +113,21 @@ func OpenaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 	usage := &dto.Usage{}
 	var lastStreamData []byte
 	var completedImages int64
+	completed := false
+	var streamErr *types.NewAPIError
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		raw := common.StringToByteSlice(data)
 		lastStreamData = raw
 		if isOpenAIImageStreamErrorEvent(raw) {
-			// Record the error as a soft error; the scanner drives the final
-			// EndReason. HasErrors() flags the failure for logging/handling.
-			sr.Error(fmt.Errorf("%s", extractOpenAIImageStreamErrorMessage(raw)))
+			code, errorType, message := extractOpenAIImageStreamError(raw)
+			if types.ClassifyUpstreamError(code, errorType, message, http.StatusBadGateway) == types.ErrorClassUpstreamQuotaExhausted {
+				streamErr = types.WithOpenAIError(types.OpenAIError{Message: message, Type: "upstream_error"}, http.StatusBadGateway)
+			} else {
+				streamErr = types.NewOpenAIError(errors.New(message), types.ErrorCodeBadResponse, http.StatusBadGateway)
+			}
+			sr.Stop(streamErr)
+			return
 		}
 		var chunk struct {
 			Type  string    `json:"type"`
@@ -132,12 +140,30 @@ func OpenaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 			}
 			if chunk.Type == "image_generation.completed" || chunk.Type == "image_edit.completed" {
 				completedImages++
+				completed = true
 			}
 		}
 		if err := writeOpenaiImageStreamChunk(c, raw); err != nil {
 			sr.Stop(err)
 		}
 	})
+	if streamErr != nil {
+		return nil, streamErr
+	}
+	if info.StreamStatus == nil {
+		return nil, types.NewOpenAIError(errors.New("upstream image stream ended without status"), types.ErrorCodeBadResponse, http.StatusBadGateway)
+	}
+	// Only a completed image event plus a normal upstream terminator can be
+	// settled as success. Client aborts retain the existing conservative
+	// billing path because upstream work may already have been charged.
+	reason := info.StreamStatus.EndReason
+	clientAborted := reason == relaycommon.StreamEndReasonClientGone || reason == relaycommon.StreamEndReasonHandlerStop
+	if !clientAborted && reason != relaycommon.StreamEndReasonDone && reason != relaycommon.StreamEndReasonEOF {
+		return nil, types.NewOpenAIError(errors.New("upstream image stream did not finish normally"), types.ErrorCodeBadResponse, http.StatusBadGateway)
+	}
+	if !completed && !clientAborted {
+		return nil, types.NewOpenAIError(errors.New("upstream image stream ended without a completed event"), types.ErrorCodeBadResponse, http.StatusBadGateway)
+	}
 
 	// StreamScannerHandler consumes the upstream [DONE]; re-emit it so the
 	// client still receives a terminal data: [DONE].
@@ -198,37 +224,64 @@ func isOpenAIImageStreamErrorEvent(data []byte) bool {
 		return false
 	}
 	payloadType := strings.ToLower(strings.TrimSpace(payload.Type))
-	return payloadType == "error" || payloadType == "upstream_error" || len(payload.Error) > 0
+	if payloadType == "error" || payloadType == "upstream_error" || len(payload.Error) > 0 {
+		return true
+	}
+	return strings.HasSuffix(payloadType, ".failed") ||
+		strings.HasSuffix(payloadType, ".incomplete") ||
+		strings.HasSuffix(payloadType, ".cancelled") ||
+		strings.HasSuffix(payloadType, ".canceled")
 }
 
-func extractOpenAIImageStreamErrorMessage(data []byte) string {
+func extractOpenAIImageStreamError(data []byte) (code, errorType, message string) {
 	if len(data) == 0 || !json.Valid(data) {
-		return "upstream image stream returned error event"
+		return "", "upstream_error", "upstream image stream returned error event"
 	}
 	var payload struct {
 		Message string          `json:"message"`
+		Type    string          `json:"type"`
+		Code    any             `json:"code"`
 		Error   json.RawMessage `json:"error"`
 	}
 	if err := common.Unmarshal(data, &payload); err != nil {
-		return "upstream image stream returned error event"
+		return "", "upstream_error", "upstream image stream returned error event"
 	}
-	if msg := strings.TrimSpace(payload.Message); msg != "" {
-		return msg
-	}
+	code = strings.TrimSpace(fmt.Sprint(payload.Code))
+	errorType = strings.TrimSpace(payload.Type)
+	message = strings.TrimSpace(payload.Message)
 	if len(payload.Error) > 0 {
 		var nested struct {
 			Message string `json:"message"`
+			Type    string `json:"type"`
+			Code    any    `json:"code"`
 		}
 		if err := common.Unmarshal(payload.Error, &nested); err == nil {
-			if msg := strings.TrimSpace(nested.Message); msg != "" {
-				return msg
+			if code == "<nil>" || code == "" {
+				code = strings.TrimSpace(fmt.Sprint(nested.Code))
+			}
+			if errorType == "" || errorType == "error" {
+				errorType = strings.TrimSpace(nested.Type)
+			}
+			if message == "" {
+				message = strings.TrimSpace(nested.Message)
 			}
 		}
+	}
+	if code == "<nil>" {
+		code = ""
+	}
+	if message == "" && len(payload.Error) > 0 {
 		if msg := strings.TrimSpace(common.JsonRawMessageToString(payload.Error)); msg != "" {
-			return msg
+			message = msg
 		}
 	}
-	return "upstream image stream returned error event"
+	if errorType == "" {
+		errorType = "upstream_error"
+	}
+	if message == "" {
+		message = "upstream image stream returned error event"
+	}
+	return code, errorType, message
 }
 
 func openaiImageJSONAsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
@@ -246,7 +299,7 @@ func openaiImageJSONAsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo,
 	if err := common.Unmarshal(responseBody, &usageResp); err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
-	if oaiError := usageResp.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
+	if oaiError := usageResp.GetOpenAIError(); dto.HasOpenAIError(oaiError) {
 		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
 	}
 	normalizeOpenAIUsage(&usageResp.Usage)

@@ -1,6 +1,7 @@
 package xai
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -40,6 +41,7 @@ func xAIStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	var responseTextBuilder strings.Builder
 	var toolCount int
 	var containStreamUsage bool
+	var streamErr *types.NewAPIError
 
 	helper.SetEventStreamHeaders(c)
 
@@ -47,7 +49,18 @@ func xAIStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		var xAIResp *dto.ChatCompletionsStreamResponse
 		if err := common.UnmarshalJsonStr(data, &xAIResp); err != nil {
 			common.SysLog("error unmarshalling stream response: " + err.Error())
-			sr.Error(err)
+			streamErr = types.NewError(err, types.ErrorCodeBadResponseBody)
+			sr.Stop(streamErr)
+			return
+		}
+		if xAIResp == nil {
+			streamErr = types.NewError(errors.New("empty xAI stream response"), types.ErrorCodeBadResponseBody)
+			sr.Stop(streamErr)
+			return
+		}
+		if xAIError := xAIResp.GetOpenAIError(); dto.HasOpenAIError(xAIError) {
+			streamErr = types.WithOpenAIError(*xAIError, resp.StatusCode)
+			sr.Stop(streamErr)
 			return
 		}
 
@@ -66,6 +79,10 @@ func xAIStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			sr.Error(err)
 		}
 	})
+	if streamErr != nil {
+		service.CloseResponseBodyGracefully(resp)
+		return nil, streamErr
+	}
 
 	if !containStreamUsage {
 		usage = service.ResponseText2Usage(c, responseTextBuilder.String(), info.UpstreamModelName, info.GetEstimatePromptTokens())

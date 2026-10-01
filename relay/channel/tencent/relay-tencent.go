@@ -92,6 +92,7 @@ func streamResponseTencent2OpenAI(TencentResponse *TencentChatResponse) *dto.Cha
 
 func tencentStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	var responseText string
+	completed := false
 	scanner := helper.NewStreamScanner(resp.Body)
 	scanner.Split(bufio.ScanLines)
 
@@ -103,27 +104,49 @@ func tencentStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *htt
 			continue
 		}
 		data = strings.TrimPrefix(data, "data:")
+		data = strings.TrimSpace(data)
+		if data == "[DONE]" {
+			completed = true
+			break
+		}
 
 		var tencentResponse TencentChatResponse
 		err := common.Unmarshal([]byte(data), &tencentResponse)
 		if err != nil {
-			common.SysLog("error unmarshalling stream response: " + err.Error())
-			continue
+			service.CloseResponseBodyGracefully(resp)
+			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+		}
+		if tencentResponse.Error.Code != 0 || tencentResponse.Error.Message != "" {
+			service.CloseResponseBodyGracefully(resp)
+			return nil, types.WithOpenAIError(types.OpenAIError{
+				Message: tencentResponse.Error.Message,
+				Type:    "upstream_error",
+				Code:    tencentResponse.Error.Code,
+			}, http.StatusBadGateway)
 		}
 
 		response := streamResponseTencent2OpenAI(&tencentResponse)
 		if len(response.Choices) != 0 {
 			responseText += response.Choices[0].Delta.GetContentString()
+			if response.Choices[0].FinishReason != nil && *response.Choices[0].FinishReason != "" {
+				completed = true
+			}
 		}
 
 		err = helper.ObjectData(c, response)
 		if err != nil {
-			common.SysLog(err.Error())
+			service.CloseResponseBodyGracefully(resp)
+			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusBadGateway)
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		common.SysLog("error reading stream: " + err.Error())
+		service.CloseResponseBodyGracefully(resp)
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusBadGateway)
+	}
+	if !completed {
+		service.CloseResponseBodyGracefully(resp)
+		return nil, types.NewOpenAIError(errors.New("tencent stream ended without a completed event"), types.ErrorCodeBadResponse, http.StatusBadGateway)
 	}
 
 	helper.Done(c)

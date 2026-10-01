@@ -36,6 +36,9 @@ type DifyChatCompletionResponse struct {
 	Answer         string       `json:"answer"`
 	CreateAt       int64        `json:"create_at"`
 	MetaData       DifyMetaData `json:"metadata"`
+	Code           string       `json:"code,omitempty"`
+	Message        string       `json:"message,omitempty"`
+	Status         int          `json:"status,omitempty"`
 }
 
 type DifyChunkChatCompletionResponse struct {
@@ -44,4 +47,7 @@ type DifyChunkChatCompletionResponse struct {
 	Answer         string       `json:"answer"`
 	Data           DifyData     `json:"data"`
 	MetaData       DifyMetaData `json:"metadata"`
+	Code           string       `json:"code,omitempty"`
+	Message        string       `json:"message,omitempty"`
+	Status         int          `json:"status,omitempty"`
 }

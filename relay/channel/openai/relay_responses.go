@@ -30,7 +30,7 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
-	if oaiError := responsesResponse.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
+	if oaiError := responsesResponse.GetOpenAIError(); dto.HasOpenAIError(oaiError) {
 		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
 	}
 
@@ -84,6 +84,8 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	var responseTextBuilder strings.Builder
 	imageCounter := &relaycommon.ImageGenerationCallCounter{}
 	imageCommitted := false
+	var streamErr *types.NewAPIError
+	completed := false
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 
@@ -91,12 +93,27 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		var streamResponse dto.ResponsesStreamResponse
 		if err := common.UnmarshalJsonStr(data, &streamResponse); err != nil {
 			logger.LogError(c, "failed to unmarshal stream response: "+err.Error())
-			sr.Error(err)
+			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+			sr.Stop(streamErr)
 			return
 		}
-		sendResponsesStreamData(c, streamResponse, data)
+		if streamErr != nil {
+			sr.Stop(streamErr)
+			return
+		}
+		if oaiErr := streamResponse.GetOpenAIError(); dto.HasOpenAIError(oaiErr) {
+			streamErr = types.WithOpenAIError(*oaiErr, http.StatusBadGateway)
+			sr.Stop(streamErr)
+			return
+		}
 		switch streamResponse.Type {
 		case "response.completed", "response.done":
+			completed = true
+			if err := sendResponsesStreamData(c, streamResponse, data); err != nil {
+				streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusBadGateway)
+				sr.Stop(streamErr)
+				return
+			}
 			if streamResponse.Response != nil {
 				if streamResponse.Response.Usage != nil {
 					if streamResponse.Response.Usage.InputTokens != 0 {
@@ -131,16 +148,38 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				imageCounter.Commit(info)
 				imageCommitted = true
 			}
-		case "response.failed", "response.incomplete", "response.cancelled", "response.canceled":
+		case "response.failed", "response.error":
+			if streamResponse.Response != nil {
+				if oaiErr := streamResponse.Response.GetOpenAIError(); dto.HasOpenAIError(oaiErr) {
+					streamErr = types.WithOpenAIError(*oaiErr, http.StatusBadGateway)
+				}
+			}
+			if streamErr == nil {
+				streamErr = types.NewOpenAIError(fmt.Errorf("upstream Responses stream failed"), types.ErrorCodeBadResponse, http.StatusBadGateway)
+			}
+			sr.Stop(streamErr)
+		case "response.incomplete", "response.cancelled", "response.canceled":
+			streamErr = types.NewOpenAIError(fmt.Errorf("upstream Responses stream did not complete"), types.ErrorCodeBadResponse, http.StatusBadGateway)
+			sr.Stop(streamErr)
 			if !imageCommitted {
 				imageCounter.Reset()
 				imageCounter.Commit(info)
 				imageCommitted = true
 			}
 		case "response.output_text.delta":
+			if err := sendResponsesStreamData(c, streamResponse, data); err != nil {
+				streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusBadGateway)
+				sr.Stop(streamErr)
+				return
+			}
 			// 处理输出文本
 			responseTextBuilder.WriteString(streamResponse.Delta)
 		case dto.ResponsesOutputTypeItemDone:
+			if err := sendResponsesStreamData(c, streamResponse, data); err != nil {
+				streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusBadGateway)
+				sr.Stop(streamErr)
+				return
+			}
 			if streamResponse.Item != nil {
 				switch streamResponse.Item.Type {
 				case dto.BuildInCallWebSearchCall:
@@ -157,6 +196,16 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			}
 		}
 	})
+	if streamErr != nil {
+		return nil, streamErr
+	}
+	if !completed {
+		return nil, types.NewErrorWithStatusCode(
+			fmt.Errorf("upstream Responses stream ended without a completed event"),
+			types.ErrorCodeReadResponseBodyFailed,
+			http.StatusBadGateway,
+		)
+	}
 
 	if info.ReceivedResponseCount == 0 && info.StreamStatus != nil {
 		reason := info.StreamStatus.EndReason

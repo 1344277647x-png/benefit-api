@@ -97,6 +97,13 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if newAPIError != nil {
 			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
+			if relayStreamResponseWritten(c) {
+				// The client already received part of the stream. Do not append a
+				// second JSON response or retry the charged request; the stream
+				// terminates and the internal log records a partial failure.
+				c.Set("relay_stream_partial_failed", true)
+				return
+			}
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
 				helper.WssError(c, ws, newAPIError.ToOpenAIError())
@@ -347,6 +354,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError
+		if relayStreamResponseWritten(c) {
+			c.Set("relay_stream_partial_failed", true)
+		}
 		if teamUpstreamMarked {
 			// The upstream outcome is ambiguous after an attempt. Retrying a
 			// team request could produce another billable result without a
@@ -453,6 +463,13 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		return false
 	}
+	// Once any response bytes have reached the client, switching channels would
+	// mix two upstream responses and can charge the request twice. This must be
+	// checked before channel-error handling so every error class follows the
+	// same no-retry rule after a partial response.
+	if relayStreamResponseWritten(c) {
+		return false
+	}
 	if types.IsChannelError(openaiErr) {
 		return true
 	}
@@ -476,6 +493,16 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 		return false
 	}
 	return operation_setting.ShouldRetryByStatusCode(code)
+}
+
+func relayStreamResponseWritten(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	if c.GetBool("relay_stream_response_written") {
+		return true
+	}
+	return c.Writer != nil && c.Writer.Size() > 0
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {
@@ -502,6 +529,8 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		}
 		other["error_type"] = err.GetErrorType()
 		other["error_code"] = err.GetErrorCode()
+		other["error_class"] = err.GetErrorClass()
+		other["partial_failed"] = c.GetBool("relay_stream_partial_failed")
 		other["status_code"] = err.StatusCode
 		other["channel_id"] = channelId
 		other["channel_name"] = c.GetString("channel_name")

@@ -37,6 +37,20 @@ const (
 
 type ErrorCode string
 
+// ErrorClass is the stable, internal classification used for retry, billing
+// and administrator diagnostics. It must not expose upstream response text.
+type ErrorClass string
+
+const (
+	ErrorClassPlatformQuotaInsufficient ErrorClass = "PLATFORM_QUOTA_INSUFFICIENT"
+	ErrorClassUpstreamQuotaExhausted    ErrorClass = "UPSTREAM_QUOTA_EXHAUSTED"
+	ErrorClassUpstreamRateLimited       ErrorClass = "UPSTREAM_RATE_LIMITED"
+	ErrorClassUpstreamAuthFailed        ErrorClass = "UPSTREAM_AUTH_FAILED"
+	ErrorClassUpstreamModelUnavailable  ErrorClass = "UPSTREAM_MODEL_UNAVAILABLE"
+	ErrorClassUpstreamTemporaryError    ErrorClass = "UPSTREAM_TEMPORARY_ERROR"
+	ErrorClassUpstreamUnknown           ErrorClass = "UPSTREAM_UNKNOWN"
+)
+
 const (
 	ErrorCodeInvalidRequest         ErrorCode = "invalid_request"
 	ErrorCodeSensitiveWordsDetected ErrorCode = "sensitive_words_detected"
@@ -85,7 +99,66 @@ const (
 	// quota error
 	ErrorCodeInsufficientUserQuota      ErrorCode = "insufficient_user_quota"
 	ErrorCodePreConsumeTokenQuotaFailed ErrorCode = "pre_consume_token_quota_failed"
+	ErrorCodeUpstreamQuotaExhausted     ErrorCode = "upstream_quota_exhausted"
 )
+
+const UpstreamQuotaPublicMessage = "当前模型暂时不可用，请稍后重试或切换其他模型。"
+
+// ClassifyUpstreamError deliberately requires an explicit quota signal. HTTP
+// 402/429 alone is insufficient because providers use them for other failures.
+func ClassifyUpstreamError(code, errorType, message string, statusCode int) ErrorClass {
+	if strings.EqualFold(code, string(ErrorCodeInsufficientUserQuota)) {
+		return ErrorClassPlatformQuotaInsufficient
+	}
+	// Local New API errors must not become upstream quota errors merely because
+	// their diagnostic text happens to contain a quota phrase. Upstream quota
+	// classification is driven by the structured provider error constructors
+	// below (or by the explicit stable quota code).
+	if errorType == string(ErrorTypeNewAPIError) && code != string(ErrorCodeUpstreamQuotaExhausted) {
+		return classifyStatusError(statusCode)
+	}
+	joined := strings.ToLower(strings.TrimSpace(strings.Join([]string{code, errorType, message}, " ")))
+	quotaSignals := []string{
+		"insufficient_quota",
+		"quota exceeded",
+		"quota_exceeded",
+		"exceeded your current quota",
+		"current quota",
+		"billing_limit_reached",
+		"billing_hard_limit_reached",
+		"credits exhausted",
+		"credit exhausted",
+		"insufficient credits",
+		"resource_exhausted",
+		"resource exhausted",
+		"billing limit",
+		"account balance insufficient",
+		"balance insufficient",
+		"余额不足",
+	}
+	for _, signal := range quotaSignals {
+		if strings.Contains(joined, signal) {
+			return ErrorClassUpstreamQuotaExhausted
+		}
+	}
+	return classifyStatusError(statusCode)
+}
+
+func classifyStatusError(statusCode int) ErrorClass {
+	if statusCode == http.StatusTooManyRequests {
+		return ErrorClassUpstreamRateLimited
+	}
+	if statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden {
+		return ErrorClassUpstreamAuthFailed
+	}
+	if statusCode == http.StatusNotFound {
+		return ErrorClassUpstreamModelUnavailable
+	}
+	if statusCode >= 500 && statusCode <= 599 {
+		return ErrorClassUpstreamTemporaryError
+	}
+	return ErrorClassUpstreamUnknown
+}
 
 type NewAPIError struct {
 	Err            error
@@ -94,6 +167,7 @@ type NewAPIError struct {
 	recordErrorLog *bool
 	errorType      ErrorType
 	errorCode      ErrorCode
+	errorClass     ErrorClass
 	StatusCode     int
 	Metadata       json.RawMessage
 }
@@ -120,9 +194,26 @@ func (e *NewAPIError) GetErrorType() ErrorType {
 	return e.errorType
 }
 
+func (e *NewAPIError) GetErrorClass() ErrorClass {
+	if e == nil {
+		return ""
+	}
+	return e.errorClass
+}
+
+func (e *NewAPIError) PublicMessage() string {
+	if e != nil && e.errorClass == ErrorClassUpstreamQuotaExhausted {
+		return UpstreamQuotaPublicMessage
+	}
+	return e.Error()
+}
+
 func (e *NewAPIError) Error() string {
 	if e == nil {
 		return ""
+	}
+	if e.errorClass == ErrorClassUpstreamQuotaExhausted {
+		return UpstreamQuotaPublicMessage
 	}
 	if e.Err == nil {
 		// fallback message when underlying error is missing
@@ -148,6 +239,13 @@ func (e *NewAPIError) ErrorWithStatusCode() string {
 func (e *NewAPIError) MaskSensitiveError() string {
 	if e == nil {
 		return ""
+	}
+	// Upstream quota errors may carry the provider's complete response in Err
+	// for diagnostics (for example when RelayErrorHandler was asked to include
+	// the body). Never place that response in the regular error log. The stable
+	// class and public-safe message are sufficient for operator triage.
+	if e.errorClass == ErrorClassUpstreamQuotaExhausted {
+		return UpstreamQuotaPublicMessage
 	}
 	if e.Err == nil {
 		return string(e.errorCode)
@@ -204,6 +302,10 @@ func (e *NewAPIError) ToOpenAIError() OpenAIError {
 	if e.errorCode != ErrorCodeCountTokenFailed {
 		result.Message = kitutil.MaskSensitiveInfo(result.Message)
 	}
+	if e.errorClass == ErrorClassUpstreamQuotaExhausted {
+		result.Message = UpstreamQuotaPublicMessage
+		result.Code = ErrorCodeUpstreamQuotaExhausted
+	}
 	if result.Message == "" {
 		result.Message = string(e.errorType)
 	}
@@ -233,6 +335,10 @@ func (e *NewAPIError) ToClaudeError() ClaudeError {
 	if e.errorCode != ErrorCodeCountTokenFailed {
 		result.Message = kitutil.MaskSensitiveInfo(result.Message)
 	}
+	if e.errorClass == ErrorClassUpstreamQuotaExhausted {
+		result.Message = UpstreamQuotaPublicMessage
+		result.Type = string(ErrorCodeUpstreamQuotaExhausted)
+	}
 	if result.Message == "" {
 		result.Message = string(e.errorType)
 	}
@@ -257,6 +363,7 @@ func NewError(err error, errorCode ErrorCode, ops ...NewAPIErrorOptions) *NewAPI
 		StatusCode: http.StatusInternalServerError,
 		errorCode:  errorCode,
 	}
+	e.errorClass = ClassifyUpstreamError(string(errorCode), string(ErrorTypeNewAPIError), e.Error(), e.StatusCode)
 	for _, op := range ops {
 		op(e)
 	}
@@ -307,6 +414,7 @@ func NewErrorWithStatusCode(err error, errorCode ErrorCode, statusCode int, ops 
 		StatusCode: statusCode,
 		errorCode:  errorCode,
 	}
+	e.errorClass = ClassifyUpstreamError(string(errorCode), string(ErrorTypeNewAPIError), err.Error(), statusCode)
 	for _, op := range ops {
 		op(e)
 	}
@@ -333,8 +441,20 @@ func WithOpenAIError(openAIError OpenAIError, statusCode int, ops ...NewAPIError
 		Err:        errors.New(openAIError.Message),
 		errorCode:  ErrorCode(code),
 	}
+	e.errorClass = ClassifyUpstreamError(code, openAIError.Type, openAIError.Message, statusCode)
+	if e.errorClass == ErrorClassUpstreamQuotaExhausted {
+		// A provider account with exhausted quota cannot succeed by retrying the
+		// same request through the same account. Keep the error out of the
+		// channel failover loop; operators can still inspect the classified log.
+		e.skipRetry = true
+		openAIError.Message = UpstreamQuotaPublicMessage
+		openAIError.Code = ErrorCodeUpstreamQuotaExhausted
+		e.RelayError = openAIError
+		e.Err = errors.New(UpstreamQuotaPublicMessage)
+		e.errorCode = ErrorCodeUpstreamQuotaExhausted
+	}
 	// OpenRouter
-	if len(openAIError.Metadata) > 0 {
+	if len(openAIError.Metadata) > 0 && e.errorClass != ErrorClassUpstreamQuotaExhausted {
 		openAIError.Message = fmt.Sprintf("%s (%s)", openAIError.Message, openAIError.Metadata)
 		e.Metadata = openAIError.Metadata
 		e.RelayError = openAIError
@@ -356,6 +476,15 @@ func WithClaudeError(claudeError ClaudeError, statusCode int, ops ...NewAPIError
 		StatusCode: statusCode,
 		Err:        errors.New(claudeError.Message),
 		errorCode:  ErrorCode(claudeError.Type),
+	}
+	e.errorClass = ClassifyUpstreamError(claudeError.Type, claudeError.Type, claudeError.Message, statusCode)
+	if e.errorClass == ErrorClassUpstreamQuotaExhausted {
+		e.skipRetry = true
+		claudeError.Message = UpstreamQuotaPublicMessage
+		claudeError.Type = string(ErrorCodeUpstreamQuotaExhausted)
+		e.RelayError = claudeError
+		e.Err = errors.New(UpstreamQuotaPublicMessage)
+		e.errorCode = ErrorCodeUpstreamQuotaExhausted
 	}
 	for _, op := range ops {
 		op(e)

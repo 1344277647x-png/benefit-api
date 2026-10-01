@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -120,6 +121,43 @@ func TestRelayErrorHandlerKeepsOpenAIErrorMessage(t *testing.T) {
 
 	require.NotNil(t, newAPIError)
 	require.Equal(t, message, newAPIError.Error())
+}
+
+func TestRelayErrorHandlerHidesUpstreamQuotaMessage(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusPaymentRequired,
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"insufficient_quota: account balance insufficient","type":"invalid_request_error","code":"insufficient_quota"}}`)),
+	}
+
+	newAPIError := RelayErrorHandler(context.Background(), resp, false)
+
+	require.NotNil(t, newAPIError)
+	require.Equal(t, types.ErrorClassUpstreamQuotaExhausted, newAPIError.GetErrorClass())
+	require.Equal(t, types.ErrorCodeUpstreamQuotaExhausted, newAPIError.GetErrorCode())
+	require.Equal(t, types.UpstreamQuotaPublicMessage, newAPIError.Error())
+	require.Equal(t, types.UpstreamQuotaPublicMessage, newAPIError.ToOpenAIError().Message)
+	require.NotContains(t, newAPIError.ToOpenAIError().Message, "insufficient_quota")
+}
+
+func TestRelayErrorHandlerDoesNotClassifyGenericRateLimitAsQuota(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusTooManyRequests,
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"rate limit exceeded","type":"rate_limit_error","code":"rate_limit_exceeded"}}`)),
+	}
+
+	newAPIError := RelayErrorHandler(context.Background(), resp, false)
+
+	require.NotNil(t, newAPIError)
+	require.Equal(t, types.ErrorClassUpstreamRateLimited, newAPIError.GetErrorClass())
+	require.NotEqual(t, types.ErrorCodeUpstreamQuotaExhausted, newAPIError.GetErrorCode())
+	require.Contains(t, newAPIError.ToOpenAIError().Message, "rate limit exceeded")
+}
+
+func TestRelayErrorHandlerKeepsPlatformQuotaErrorDistinct(t *testing.T) {
+	err := types.NewErrorWithStatusCode(errors.New("余额不足，请充值"), types.ErrorCodeInsufficientUserQuota, http.StatusForbidden)
+	require.Equal(t, types.ErrorClassPlatformQuotaInsufficient, err.GetErrorClass())
+	require.Equal(t, types.ErrorCodeInsufficientUserQuota, err.GetErrorCode())
+	require.Contains(t, err.ToOpenAIError().Message, "余额不足")
 }
 
 func TestRelayErrorHandlerKeepsInvalidJSONBodyInDebugLog(t *testing.T) {
