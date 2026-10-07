@@ -136,6 +136,7 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	}
 
 	AppendChannelAffinityAdminInfo(ctx, adminInfo)
+	AppendStreamDiagnosticsAdminInfo(ctx, adminInfo)
 
 	other["admin_info"] = adminInfo
 	AppendImageBatchLogInfo(other, relayInfo.ImageBatchInfo)
@@ -146,6 +147,17 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	appendParamOverrideInfo(relayInfo, other)
 	appendStreamStatus(relayInfo, other)
 	return other
+}
+
+func AppendStreamDiagnosticsAdminInfo(ctx *gin.Context, adminInfo map[string]interface{}) {
+	if ctx == nil || adminInfo == nil {
+		return
+	}
+	if value, ok := ctx.Get(relaycommon.StreamDiagnosticsContextKey); ok {
+		if diagnostics, ok := value.(*relaycommon.StreamDiagnostics); ok {
+			adminInfo["stream_diagnostics"] = diagnostics.Snapshot()
+		}
+	}
 }
 
 func appendParamOverrideInfo(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {

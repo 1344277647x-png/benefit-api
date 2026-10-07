@@ -69,6 +69,7 @@ func geminiRelayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewA
 }
 
 func Relay(c *gin.Context, relayFormat types.RelayFormat) {
+	c.Set(relaycommon.RelaySuccessContextKey, false)
 
 	requestId := c.GetString(common.RequestIdKey)
 	//group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
@@ -349,6 +350,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		if newAPIError == nil {
 			relayInfo.LastError = nil
+			ss := relayInfo.StreamStatus
+			c.Set(relaycommon.RelaySuccessContextKey, !relayInfo.IsStream || (ss != nil && ss.IsNormalEnd() && ss.EndError == nil && !ss.HasErrors() && c.Request.Context().Err() == nil))
 			return
 		}
 
@@ -506,7 +509,7 @@ func relayStreamResponseWritten(c *gin.Context) bool {
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {
-	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
+	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d, class: %s)", channelError.ChannelId, err.StatusCode, err.GetErrorClass()))
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
 	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
 	if service.ShouldDisableChannel(err) && channelError.AutoBan {
@@ -543,6 +546,7 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 			adminInfo["multi_key_index"] = common.GetContextKeyInt(c, constant.ContextKeyChannelMultiKeyIndex)
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
+		service.AppendStreamDiagnosticsAdminInfo(c, adminInfo)
 		other["admin_info"] = adminInfo
 		if result, ok := relay.GetCreationImageExecutionResult(c); ok {
 			service.AppendImageBatchLogInfo(other, result.BatchInfo)
@@ -552,7 +556,9 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 			startTime = time.Now()
 		}
 		useTimeSeconds := int(time.Since(startTime).Seconds())
-		model.RecordErrorLog(c, userId, channelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
+		// Provider error messages can contain credentials or echoed request content.
+		// Store only a generic message; typed classification and timings remain available.
+		model.RecordErrorLog(c, userId, channelId, modelName, tokenName, fmt.Sprintf("Relay request failed (status %d)", err.StatusCode), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
 	}
 
 }

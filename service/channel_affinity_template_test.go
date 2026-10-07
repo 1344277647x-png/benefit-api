@@ -8,9 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/pkg/cachex"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/require"
 )
 
@@ -261,6 +264,49 @@ func TestClearCurrentChannelAffinityCache(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, found)
 	require.False(t, ShouldSkipRetryAfterChannelAffinityFailure(ctx))
+}
+
+func TestRecordChannelAffinityRejectsFailedBusinessOutcome(t *testing.T) {
+	setting := operation_setting.GetChannelAffinitySetting()
+	original := *setting
+	setting.Enabled = true
+	setting.SwitchOnSuccess = false
+	t.Cleanup(func() { *setting = original })
+	originalCache := getChannelAffinityCache()
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close(); channelAffinityCache = originalCache })
+	cache := cachex.NewHybridCache[int](cachex.HybridCacheConfig[int]{Namespace: cachex.Namespace(channelAffinityCacheNamespace), Redis: client, RedisCodec: cachex.IntCodec{}})
+	channelAffinityCache = cache
+	for _, tc := range []struct {
+		name             string
+		success, partial bool
+		want             int
+	}{
+		{"failed-http-200", false, false, 91},
+		{"partial-http-200", true, true, 91},
+		{"completed", true, false, 92},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			key := "completion-regression-" + tc.name
+			require.NoError(t, cache.SetWithTTL(key, 91, time.Minute))
+			server.FastForward(10 * time.Second)
+			ttlBefore := server.TTL(cache.FullKey(key))
+			ctx := buildChannelAffinityTemplateContextForTest(channelAffinityMeta{CacheKey: key, TTLSeconds: 60})
+			ctx.Set(relaycommon.RelaySuccessContextKey, tc.success)
+			ctx.Set("relay_stream_partial_failed", tc.partial)
+			RecordChannelAffinity(ctx, 92)
+			value, found, err := cache.Get(key)
+			require.NoError(t, err)
+			require.True(t, found)
+			require.Equal(t, tc.want, value)
+			if tc.want == 91 {
+				require.Equal(t, ttlBefore, server.TTL(cache.FullKey(key)), "failed stream must not renew binding TTL")
+			} else {
+				require.Equal(t, time.Minute, server.TTL(cache.FullKey(key)))
+			}
+		})
+	}
 }
 
 func TestChannelAffinityHitCodexTemplatePassHeadersEffective(t *testing.T) {

@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 
@@ -35,6 +37,9 @@ func FlushWriter(c *gin.Context) (err error) {
 	}
 
 	flusher.Flush()
+	if requestContextDone(c) {
+		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
+	}
 	return nil
 }
 
@@ -87,16 +92,30 @@ func ClaudeChunkData(c *gin.Context, resp dto.ClaudeResponse, data string) {
 }
 
 func ResponseChunkData(c *gin.Context, resp dto.ResponsesStreamResponse, data string) error {
+	start := time.Now()
+	var diagnostics *relaycommon.StreamDiagnostics
+	if value, ok := c.Get(relaycommon.StreamDiagnosticsContextKey); ok {
+		diagnostics, _ = value.(*relaycommon.StreamDiagnostics)
+	}
+	defer func() {
+		if diagnostics != nil {
+			diagnostics.Write(start, time.Now(), false)
+		}
+	}()
 	if requestContextDone(c) {
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
 
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("data: %s", data)})
+	if _, err := c.Writer.Write([]byte(fmt.Sprintf("event: %s\ndata: %s\n\n", resp.Type, data))); err != nil {
+		return err
+	}
 	if err := FlushWriter(c); err != nil {
 		return err
 	}
 	c.Set("relay_stream_response_written", true)
+	if diagnostics != nil && resp.Type == "response.output_text.delta" && resp.Delta != "" {
+		diagnostics.Write(start, time.Now(), true)
+	}
 	return nil
 }
 

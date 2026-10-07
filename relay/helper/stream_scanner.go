@@ -82,6 +82,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 
 	// 无条件新建 StreamStatus
 	info.StreamStatus = relaycommon.NewStreamStatus()
+	diagnostics := relaycommon.NewStreamDiagnostics(info.StartTime)
+	c.Set(relaycommon.StreamDiagnosticsContextKey, diagnostics)
+	defer func() { diagnostics.Finish(time.Now()) }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -178,6 +181,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 					if err != nil {
 						logger.LogError(c, "ping data error: "+err.Error())
 						info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonPingFail, err)
+						stop()
 						return
 					}
 					logger.LogDebug(c, "ping data sent")
@@ -197,6 +201,8 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	}
 
 	dataChan := make(chan string, 10)
+	readerEnd := relaycommon.StreamEndReasonEOF
+	var readerError error
 
 	wg.Add(1)
 	gopool.Go(func() {
@@ -221,18 +227,20 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				return
 			}
 		}
+		// The closed channel synchronizes readerEnd and readerError. Drain all
+		// queued events before recording EOF/DONE or closing the upstream.
+		info.StreamStatus.SetEndReason(readerEnd, readerError)
 	})
 
 	// Scanner goroutine with improved error handling
 	wg.Add(1)
 	common.RelayCtxGo(ctx, func() {
 		defer func() {
-			close(dataChan)
 			if r := recover(); r != nil {
 				logger.LogError(c, fmt.Sprintf("scanner goroutine panic: %v", r))
 				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonPanic, fmt.Errorf("scanner panic: %v", r))
 			}
-			stop()
+			close(dataChan)
 			logger.LogDebug(c, "scanner goroutine exited")
 			wg.Done()
 		}()
@@ -249,7 +257,6 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 
 			ticker.Reset(streamingTimeout)
 			data := scanner.Text()
-			logger.LogDebug(c, "stream scanner data: %s", data)
 
 			if len(data) < 6 {
 				continue
@@ -263,6 +270,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				continue
 			}
 			if !strings.HasPrefix(data, "[DONE]") {
+				diagnostics.Event(time.Now())
 				info.SetFirstResponseTime()
 				info.ReceivedResponseCount++
 
@@ -274,7 +282,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 					return
 				}
 			} else {
-				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
+				readerEnd = relaycommon.StreamEndReasonDone
 				logger.LogDebug(c, "received [DONE], stopping scanner")
 				return
 			}
@@ -283,10 +291,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		if err := scanner.Err(); err != nil {
 			if err != io.EOF {
 				logger.LogError(c, "scanner error: "+err.Error())
-				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
+				readerEnd, readerError = relaycommon.StreamEndReasonScannerErr, err
 			}
 		}
-		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, nil)
 	})
 
 	// 主循环等待完成或超时

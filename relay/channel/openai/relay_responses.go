@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -101,6 +102,13 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			sr.Stop(streamErr)
 			return
 		}
+		// Type is inserted into the SSE event header. Never allow an upstream
+		// type to inject additional lines into the downstream event framing.
+		if streamResponse.Type == "" || strings.ContainsAny(streamResponse.Type, "\r\n\x00") {
+			streamErr = types.NewOpenAIError(fmt.Errorf("invalid upstream Responses event type"), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+			sr.Stop(streamErr)
+			return
+		}
 		if oaiErr := streamResponse.GetOpenAIError(); dto.HasOpenAIError(oaiErr) {
 			streamErr = types.WithOpenAIError(*oaiErr, http.StatusBadGateway)
 			sr.Stop(streamErr)
@@ -108,7 +116,24 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		}
 		switch streamResponse.Type {
 		case "response.completed", "response.done":
-			completed = true
+			status := ""
+			if streamResponse.Response != nil && len(streamResponse.Response.Status) > 0 {
+				if err := common.Unmarshal(streamResponse.Response.Status, &status); err != nil {
+					streamErr = types.NewOpenAIError(fmt.Errorf("invalid upstream Responses terminal status"), types.ErrorCodeBadResponse, http.StatusBadGateway)
+					sr.Stop(streamErr)
+					return
+				}
+			}
+			if status != "" && status != "completed" {
+				streamErr = types.NewOpenAIError(fmt.Errorf("upstream Responses terminal status is not completed"), types.ErrorCodeBadResponse, http.StatusBadGateway)
+				sr.Stop(streamErr)
+				return
+			}
+			if value, ok := c.Get(relaycommon.StreamDiagnosticsContextKey); ok {
+				if diagnostics, ok := value.(*relaycommon.StreamDiagnostics); ok {
+					diagnostics.Completed(time.Now())
+				}
+			}
 			if err := sendResponsesStreamData(c, streamResponse, data); err != nil {
 				streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusBadGateway)
 				sr.Stop(streamErr)
@@ -148,6 +173,8 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				imageCounter.Commit(info)
 				imageCommitted = true
 			}
+			completed = true
+			sr.Done()
 		case "response.failed", "response.error":
 			if streamResponse.Response != nil {
 				if oaiErr := streamResponse.Response.GetOpenAIError(); dto.HasOpenAIError(oaiErr) {
@@ -192,6 +219,19 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 					if !imageCommitted {
 						imageCounter.Observe(streamResponse.Item, streamResponse.OutputIndex)
 					}
+				}
+			}
+		default:
+			// Codex needs item/content lifecycle events before text deltas, and
+			// reasoning/tool events while generation is in progress. Preserve the
+			// original JSON, including fields unknown to our billing DTO, and the
+			// upstream order. Error/terminal events are handled above, never blindly
+			// forwarded, and no synthetic events are used to hide upstream silence.
+			if strings.HasPrefix(streamResponse.Type, "response.") {
+				if err := sendResponsesStreamData(c, streamResponse, data); err != nil {
+					streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusBadGateway)
+					sr.Stop(streamErr)
+					return
 				}
 			}
 		}

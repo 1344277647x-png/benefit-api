@@ -63,7 +63,7 @@ func TestTeamTokenAuthDistributorRelaySettlesAndRevokesLiveCredentials(t *testin
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Ability{},
 		&model.ChannelHealthSnapshot{}, &model.ChannelHealthBucket{}, &model.Team{}, &model.TeamMember{},
 		&model.TeamSubscription{}, &model.TeamQuotaPeriod{}, &model.TeamUsage{}, &model.TeamSyncBillingEvent{},
-		&model.TeamSyncLogReceipt{}, &model.Log{}))
+		&model.TeamSyncLogReceipt{}, &model.BusinessEvent{}, &model.Log{}))
 	owner := &model.User{Id: 900001, Username: "local-auth-team-owner", Status: common.UserStatusEnabled,
 		Group: "default", Quota: 1000, AffCode: "local-auth-owner"}
 	member := &model.User{Id: 900002, Username: "local-auth-team-member", Status: common.UserStatusEnabled,
