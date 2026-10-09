@@ -18,9 +18,26 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, it } from 'vitest'
 
+import { LOG_TYPE_FILTERS, USER_LOG_TYPE_FILTERS } from '../../constants'
 import { logTypeSearchSchema } from '../log-type-search'
 
 describe('usage log type search validation', () => {
+  it('hides the error filter from personal logs while keeping admin and business filters', () => {
+    expect(LOG_TYPE_FILTERS.some((type) => type.value === '5')).toBe(true)
+    expect(USER_LOG_TYPE_FILTERS.some((type) => type.value === '5')).toBe(false)
+    expect(USER_LOG_TYPE_FILTERS.map((type) => type.value)).toEqual([
+      '0',
+      '1',
+      '2',
+      '3',
+      '4',
+      '6',
+      '7',
+      '8',
+      '9',
+      '10',
+    ])
+  })
   it.each(['6', '8', '9', '10'])(
     'preserves selectable log type %s in the route search state',
     (type) => {

@@ -121,6 +121,10 @@ export const LOG_TYPE_FILTERS = [
   ),
 ] as const
 
+export const USER_LOG_TYPE_FILTERS = LOG_TYPE_FILTERS.filter(
+  (type) => type.value !== String(LOG_TYPE_ENUM.ERROR)
+)
+
 // ============================================================================
 // Drawing Logs (MjProxy) Constants
 // ============================================================================
