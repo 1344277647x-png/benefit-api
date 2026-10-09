@@ -144,6 +144,11 @@ type RelayInfo struct {
 	// Billing 是计费会话，封装了预扣费/结算/退款的统一生命周期。
 	// 初始免费组可为 nil；若 auto 重试切换到付费组，会在发送前创建。
 	Billing BillingSettler
+
+	// PartialStreamUsage is evidence retained by text adaptors when a stream
+	// fails after generation. It never changes the request's failure status.
+	PartialStreamUsage       *dto.Usage
+	PartialStreamUsageSource string
 	// BillingSource indicates whether this request is billed from wallet quota or subscription.
 	// "" or "wallet" => wallet; "subscription" => subscription
 	BillingSource string

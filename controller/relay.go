@@ -92,6 +92,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			return
 		}
 		defer ws.Close()
+		ws.SetReadLimit(relaycommon.RealtimeClientMessageLimit())
 	}
 
 	defer func() {
@@ -224,7 +225,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			if relayInfo.Billing != nil {
 				if result, ok := relay.GetCreationImageExecutionResult(c); ok {
 					relay.RefundCreationImageBilling(c, result)
-				} else {
+				} else if !service.SettleFailedTextStream(c, relayInfo) {
 					relayInfo.Billing.Refund(c)
 				}
 			}
@@ -244,6 +245,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	teamUpstreamMarked := false
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+		relayInfo.PartialStreamUsage = nil
+		relayInfo.PartialStreamUsageSource = ""
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
@@ -368,6 +371,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
+		if relayInfo.PartialStreamUsage != nil {
+			// Generation has already incurred observable usage, even when the
+			// downstream write failed. Do not generate a second billable result.
+			break
+		}
 
 		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
 			break
@@ -388,9 +396,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 var upgrader = websocket.Upgrader{
 	Subprotocols: []string{"realtime"}, // WS 握手支持的协议，如果有使用 Sec-WebSocket-Protocol，则必须在此声明对应的 Protocol TODO add other protocol
-	CheckOrigin: func(r *http.Request) bool {
-		return true // 允许跨域
-	},
+	CheckOrigin:  realtimeOriginAllowed,
 }
 
 func addUsedChannel(c *gin.Context, channelId int) {

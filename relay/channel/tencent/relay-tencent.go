@@ -90,8 +90,14 @@ func streamResponseTencent2OpenAI(TencentResponse *TencentChatResponse) *dto.Cha
 	return &response
 }
 
-func tencentStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+func tencentStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (resultUsage *dto.Usage, resultErr *types.NewAPIError) {
 	var responseText string
+	usage := &dto.Usage{}
+	defer func() {
+		if resultErr != nil {
+			service.RetainPartialStreamUsage(c, info, usage, responseText)
+		}
+	}()
 	completed := false
 	scanner := helper.NewStreamScanner(resp.Body)
 	scanner.Split(bufio.ScanLines)
@@ -126,6 +132,10 @@ func tencentStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *htt
 		}
 
 		response := streamResponseTencent2OpenAI(&tencentResponse)
+		if tencentResponse.Usage.TotalTokens > 0 {
+			usage = &dto.Usage{PromptTokens: tencentResponse.Usage.PromptTokens,
+				CompletionTokens: tencentResponse.Usage.CompletionTokens, TotalTokens: tencentResponse.Usage.TotalTokens}
+		}
 		if len(response.Choices) != 0 {
 			responseText += response.Choices[0].Delta.GetContentString()
 			if response.Choices[0].FinishReason != nil && *response.Choices[0].FinishReason != "" {
@@ -153,6 +163,9 @@ func tencentStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *htt
 
 	service.CloseResponseBodyGracefully(resp)
 
+	if service.ValidUsage(usage) {
+		return usage, nil
+	}
 	return service.ResponseText2Usage(c, responseText, info.UpstreamModelName, info.GetEstimatePromptTokens()), nil
 }
 

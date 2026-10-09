@@ -91,7 +91,7 @@ func normalizeOpenAIUsage(usage *dto.Usage) {
 	}
 }
 
-func OpenaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+func OpenaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (resultUsage *dto.Usage, resultErr *types.NewAPIError) {
 	if resp == nil || resp.Body == nil {
 		logger.LogError(c, "invalid image stream response")
 		return nil, types.NewOpenAIError(fmt.Errorf("invalid response"), types.ErrorCodeBadResponse, http.StatusInternalServerError)
@@ -115,6 +115,13 @@ func OpenaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 	var completedImages int64
 	completed := false
 	var streamErr *types.NewAPIError
+	defer func() {
+		if resultErr != nil && service.ValidUsage(usage) {
+			// Image bytes cannot be priced as text. Retain only provider usage.
+			applyUsagePostProcessing(info, usage, lastStreamData)
+			service.RetainPartialStreamUsage(c, info, usage, "")
+		}
+	}()
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		raw := common.StringToByteSlice(data)

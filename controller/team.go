@@ -236,7 +236,7 @@ func TeamCancelPendingPayment(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	_ = service.DeliverPendingBusinessEvents(c.Request.Context(), 100)
+	service.NotifyBusinessEventDelivery()
 	common.ApiSuccess(c, nil)
 }
 
@@ -246,7 +246,7 @@ func TeamPlanDissolution(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	_ = service.DeliverPendingBusinessEvents(c.Request.Context(), 100)
+	service.NotifyBusinessEventDelivery()
 	common.ApiSuccess(c, gin.H{"dissolve_at": dissolveAt})
 }
 
@@ -255,7 +255,7 @@ func TeamRevokeDissolution(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	_ = service.DeliverPendingBusinessEvents(c.Request.Context(), 100)
+	service.NotifyBusinessEventDelivery()
 	common.ApiSuccess(c, nil)
 }
 
@@ -381,7 +381,7 @@ func TeamBalancePay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	_ = service.DeliverPendingBusinessEvents(c.Request.Context(), 100)
+	service.NotifyBusinessEventDelivery()
 	common.ApiSuccess(c, nil)
 }
 
@@ -525,6 +525,6 @@ func AdminResolvePaidAfterCancelTeamOrder(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	_ = service.DeliverPendingBusinessEvents(c.Request.Context(), 100)
+	service.NotifyBusinessEventDelivery()
 	common.ApiSuccess(c, nil)
 }

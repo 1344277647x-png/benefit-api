@@ -160,7 +160,7 @@ func main() {
 
 	if os.Getenv("ENABLE_PPROF") == "true" {
 		gopool.Go(func() {
-			log.Println(http.ListenAndServe("0.0.0.0:8005", nil))
+			log.Println(http.ListenAndServe("127.0.0.1:8005", nil))
 		})
 		go common.Monitor()
 		common.SysLog("pprof enabled")
@@ -181,7 +181,7 @@ func main() {
 		common.SysLog(fmt.Sprintf("panic detected: %v", err))
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": gin.H{
-				"message": fmt.Sprintf("Panic detected, error: %v. Please submit a issue here: https://github.com/Calcium-Ion/new-api", err),
+				"message": "Internal server error. Please submit a issue here: https://github.com/Calcium-Ion/new-api",
 				"type":    "new_api_panic",
 			},
 		})
@@ -206,8 +206,11 @@ func main() {
 	}
 
 	srv := &http.Server{
-		Addr:    ":" + port,
-		Handler: server,
+		Addr:              ":" + port,
+		Handler:           server,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	go func() {
@@ -231,6 +234,14 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		common.SysError(fmt.Sprintf("server forced to shutdown: %v", err))
+	}
+	refundCtx, refundCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	if err := service.WaitForBillingRefunds(refundCtx); err != nil {
+		common.SysError("shutdown timed out waiting for billing refunds")
+	}
+	refundCancel()
+	if err := model.FlushBatchUpdates(); err != nil {
+		common.SysError("shutdown batch accounting flush failed; pending increments retained in memory")
 	}
 	// 内存中的看板数据保存入库，避免重启丢失未落库数据 (issue #5679)
 	if common.DataExportEnabled {
@@ -340,9 +351,7 @@ func InitResources() error {
 		return err
 	}
 	if common.IsMasterNode {
-		if err := service.DeliverPendingBusinessEvents(context.Background(), 200); err != nil {
-			common.SysError("failed to recover pending business event logs: " + err.Error())
-		}
+		service.StartBusinessEventDelivery()
 	}
 
 	perfmetrics.Init()

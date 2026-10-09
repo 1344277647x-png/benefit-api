@@ -205,7 +205,10 @@ func InitDB() (err error) {
 		}
 		common.SysLog("database migration started")
 		err = migrateDB()
-		return err
+		if err != nil {
+			return err
+		}
+		return ensureUserQuotaColumns(DB, common.MainDatabaseType())
 	} else {
 		common.FatalLog(err)
 	}
@@ -274,14 +277,19 @@ func ensureUserQuotaColumns(db *gorm.DB, dbType common.DatabaseType) error {
 		return fmt.Errorf("failed to inspect users schema: %w", err)
 	}
 	for _, expected := range userQuotaColumns {
+		found := false
 		for _, actual := range columnTypes {
 			if !strings.EqualFold(actual.Name(), expected) {
 				continue
 			}
 			dataType := actual.DatabaseTypeName()
+			found = true
 			if !is64BitIntegerType(dbType, dataType) {
 				return fmt.Errorf("users.%s uses %s; 32-bit is not supported", expected, dataType)
 			}
+		}
+		if !found {
+			return fmt.Errorf("users.%s is missing; wallet schema is incomplete", expected)
 		}
 	}
 	return nil

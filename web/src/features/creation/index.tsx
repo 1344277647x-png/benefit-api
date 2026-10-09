@@ -896,7 +896,7 @@ export function Creation() {
                   <CardDescription>
                     {t(
                       'Generated files stay private and expire after {{days}} days.',
-                      { days: data?.retention_days ?? 7 }
+                      { days: data?.retention_days ?? 3 }
                     )}
                   </CardDescription>
                 </div>

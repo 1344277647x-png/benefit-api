@@ -168,7 +168,21 @@ func appendParamOverrideInfo(relayInfo *relaycommon.RelayInfo, other map[string]
 }
 
 func appendStreamStatus(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
-	if relayInfo == nil || other == nil || !relayInfo.IsStream || relayInfo.StreamStatus == nil {
+	if relayInfo == nil || other == nil || !relayInfo.IsStream {
+		return
+	}
+	if relayInfo.PartialStreamUsage != nil {
+		adminInfo, ok := other["admin_info"].(map[string]interface{})
+		if !ok {
+			adminInfo = map[string]interface{}{}
+			other["admin_info"] = adminInfo
+		}
+		adminInfo["partial_stream_billing"] = map[string]interface{}{
+			"usage_source":      relayInfo.PartialStreamUsageSource,
+			"request_succeeded": false,
+		}
+	}
+	if relayInfo.StreamStatus == nil {
 		return
 	}
 	ss := relayInfo.StreamStatus

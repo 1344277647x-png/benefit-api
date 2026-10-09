@@ -498,6 +498,13 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	// transparent stream retries.
 	relayClient := *client
 	relayClient.CheckRedirect = keepUpstreamRedirectResponse
+	if !info.IsStream && relayClient.Timeout == 0 {
+		seconds := common2.GetEnvOrDefault("NON_STREAM_RELAY_TIMEOUT_SECONDS", 300)
+		if seconds <= 0 {
+			seconds = 300
+		}
+		relayClient.Timeout = time.Duration(seconds) * time.Second
+	}
 	if common2.DebugEnabled && req != nil && req.URL != nil {
 		policy := service.NormalizeHTTPTransportPolicy(info.ChannelSetting)
 		logger.LogDebug(c, fmt.Sprintf(

@@ -24,11 +24,13 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 	info.IsStream = true
 	clientConn := info.ClientWs
 	targetConn := info.TargetWs
+	clientConn.SetReadLimit(relaycommon.RealtimeClientMessageLimit())
+	targetConn.SetReadLimit(relaycommon.RealtimeUpstreamMessageLimit())
 
 	clientClosed := make(chan struct{})
 	targetClosed := make(chan struct{})
-	sendChan := make(chan []byte, 100)
-	receiveChan := make(chan []byte, 100)
+	sendChan := make(chan []byte, 1)
+	receiveChan := make(chan []byte, 1)
 	errChan := make(chan error, 2)
 
 	usage := &dto.RealtimeUsage{}

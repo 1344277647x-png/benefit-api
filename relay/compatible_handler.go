@@ -210,13 +210,17 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		return newApiErr
 	}
 
-	var containAudioTokens = usage.(*dto.Usage).CompletionTokenDetails.AudioTokens > 0 || usage.(*dto.Usage).PromptTokensDetails.AudioTokens > 0
+	textUsage, ok := usage.(*dto.Usage)
+	if !ok || textUsage == nil {
+		return types.NewOpenAIError(fmt.Errorf("upstream response missing usage"), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+	}
+	var containAudioTokens = textUsage.CompletionTokenDetails.AudioTokens > 0 || textUsage.PromptTokensDetails.AudioTokens > 0
 	var containsAudioRatios = ratio_setting.ContainsAudioRatio(info.OriginModelName) || ratio_setting.ContainsAudioCompletionRatio(info.OriginModelName)
 
 	if containAudioTokens && containsAudioRatios {
-		service.PostAudioConsumeQuota(c, info, usage.(*dto.Usage), "")
+		service.PostAudioConsumeQuota(c, info, textUsage, "")
 	} else {
-		service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
+		service.PostTextConsumeQuota(c, info, textUsage, nil)
 	}
 	return nil
 }

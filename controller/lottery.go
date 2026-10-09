@@ -40,7 +40,7 @@ func DrawLottery(c *gin.Context) {
 		}
 		return
 	}
-	_ = service.DeliverPendingBusinessEvents(c.Request.Context(), 100)
+	service.NotifyBusinessEventDelivery()
 	common.ApiSuccess(c, gin.H{"draw": draw, "status": status})
 }
 

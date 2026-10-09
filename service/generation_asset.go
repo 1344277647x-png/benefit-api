@@ -174,7 +174,22 @@ func SaveRemoteGenerationAssetWithHeaders(ctx context.Context, rawURL string, he
 			httpRequest.Header.Add(key, value)
 		}
 	}
-	response, err := GetSSRFProtectedHTTPClient().Do(httpRequest)
+	client := *GetSSRFProtectedHTTPClient()
+	checkRedirect := client.CheckRedirect
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		// Custom provider credentials must never follow a cross-origin redirect.
+		if len(headers) > 0 && (req.URL.Scheme != parsed.Scheme || req.URL.Host != parsed.Host) {
+			return errors.New("credentialed generation asset redirect blocked")
+		}
+		if checkRedirect != nil {
+			return checkRedirect(req, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("too many generation asset redirects")
+		}
+		return nil
+	}
+	response, err := client.Do(httpRequest)
 	if err != nil {
 		return nil, fmt.Errorf("download generation asset: %w", err)
 	}
@@ -245,20 +260,36 @@ func CleanupExpiredGenerationAssets(now int64, limit int) (int, error) {
 		return 0, err
 	}
 	deleted := 0
+	var cleanupErr error
 	for i := range assets {
 		asset := &assets[i]
-		if err := RemoveGenerationAssetFile(asset); err != nil {
+		claimed, err := model.ClaimGenerationAssetCleanup(asset.ID, now)
+		if err != nil {
 			return deleted, err
 		}
+		if !claimed {
+			continue
+		}
+		if err := RemoveGenerationAssetFile(asset); err != nil {
+			cleanupErr = errors.New("generation asset file cleanup failed")
+			if delayErr := model.DelayGenerationAssetCleanup(asset.ID, now); delayErr != nil {
+				return deleted, delayErr
+			}
+			continue
+		}
 		if err := model.DeleteGenerationAssetRecord(asset.ID); err != nil {
-			return deleted, err
+			cleanupErr = err
+			if delayErr := model.DelayGenerationAssetCleanup(asset.ID, now); delayErr != nil {
+				return deleted, delayErr
+			}
+			continue
 		}
 		deleted++
 	}
 	if err := model.DeleteExpiredEmptyGenerationJobs(now, limit); err != nil {
 		return deleted, err
 	}
-	return deleted, nil
+	return deleted, cleanupErr
 }
 
 func inspectGenerationAsset(path string, kind string) (string, string, error) {

@@ -285,6 +285,10 @@ func UpdateOption(c *gin.Context) {
 		})
 		return
 	}
+	if strings.HasPrefix(option.Key, "content_audit.") || strings.HasPrefix(option.Key, "lottery_setting.") {
+		common.ApiErrorMsg(c, "此配置必须通过专用设置接口修改")
+		return
+	}
 	switch option.Value.(type) {
 	case bool:
 		option.Value = common.Interface2String(option.Value.(bool))

@@ -30,7 +30,9 @@ jobs:
           cache: true
 
       - name: Test backend
-        run: go test ./common ./controller ./model ./router ./service ./setting/... -count=1
+        run: |
+          go test ./common ./controller ./model ./router ./service ./setting/... -count=1
+          go test ./relay ./relay/common ./relay/helper ./relay/channel ./relay/channel/openai ./relay/channel/claude ./relay/channel/coze ./relay/channel/gemini ./relay/channel/tencent ./relay/channel/baidu ./relay/channel/zhipu ./relay/channel/xunfei -count=1
 
       - name: Check Go formatting
         run: |

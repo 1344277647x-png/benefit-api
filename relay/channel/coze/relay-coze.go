@@ -99,7 +99,8 @@ func cozeChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Res
 	return &usage, nil
 }
 
-func cozeChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+func cozeChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (resultUsage *dto.Usage, resultErr *types.NewAPIError) {
+	defer service.CloseResponseBodyGracefully(resp)
 	scanner := helper.NewStreamScanner(resp.Body)
 	scanner.Split(bufio.ScanLines)
 	helper.SetEventStreamHeaders(c)
@@ -109,6 +110,11 @@ func cozeChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *ht
 	var currentEvent string
 	var currentData string
 	var usage = &dto.Usage{}
+	defer func() {
+		if resultErr != nil {
+			service.RetainPartialStreamUsage(c, info, usage, responseText)
+		}
+	}()
 	completed := false
 	var streamErr *types.NewAPIError
 
@@ -121,7 +127,7 @@ func cozeChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *ht
 		if line == "" {
 			if currentEvent != "" && currentData != "" {
 				// handle last event
-			streamErr = handleCozeEvent(c, currentEvent, currentData, &responseText, usage, id, info, &completed)
+				streamErr = handleCozeEvent(c, currentEvent, currentData, &responseText, usage, id, info, &completed)
 				currentEvent = ""
 				currentData = ""
 			}
@@ -167,7 +173,7 @@ func handleCozeEvent(c *gin.Context, event string, data string, responseText *st
 	case "conversation.chat.completed":
 		// 将 data 解析为 CozeChatResponseData
 		var chatData CozeChatResponseData
-		err := json.Unmarshal([]byte(data), &chatData)
+		err := common.Unmarshal([]byte(data), &chatData)
 		if err != nil {
 			return types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
 		}
@@ -178,19 +184,21 @@ func handleCozeEvent(c *gin.Context, event string, data string, responseText *st
 
 		finishReason := "stop"
 		stopResponse := helper.GenerateStopResponse(id, common.GetTimestamp(), info.UpstreamModelName, finishReason)
-		helper.ObjectData(c, stopResponse)
+		if err := helper.ObjectData(c, stopResponse); err != nil {
+			return types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusBadGateway)
+		}
 		*completed = true
 
 	case "conversation.message.delta":
 		// 将 data 解析为 CozeChatV3MessageDetail
 		var messageData CozeChatV3MessageDetail
-		err := json.Unmarshal([]byte(data), &messageData)
+		err := common.Unmarshal([]byte(data), &messageData)
 		if err != nil {
 			return types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
 		}
 
 		var content string
-		err = json.Unmarshal(messageData.Content, &content)
+		err = common.Unmarshal(messageData.Content, &content)
 		if err != nil {
 			return types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
 		}
@@ -210,11 +218,13 @@ func handleCozeEvent(c *gin.Context, event string, data string, responseText *st
 		choice.Delta.SetContentString(content)
 		openaiResponse.Choices = append(openaiResponse.Choices, choice)
 
-		helper.ObjectData(c, openaiResponse)
+		if err := helper.ObjectData(c, openaiResponse); err != nil {
+			return types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusBadGateway)
+		}
 
 	case "error", "conversation.chat.failed", "conversation.chat.canceled", "conversation.chat.cancelled":
 		var errorData CozeError
-		err := json.Unmarshal([]byte(data), &errorData)
+		err := common.Unmarshal([]byte(data), &errorData)
 		if err != nil {
 			return types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
 		}

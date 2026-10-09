@@ -730,19 +730,38 @@ func teamSubscriptionPeriodBounds(sub *TeamSubscription, now int64) (int64, int6
 		return start, end
 	}
 	plan := &SubscriptionPlan{QuotaResetPeriod: sub.ResetPeriod, QuotaResetCustomSeconds: sub.ResetCustomSeconds}
-	for next := calcNextResetTime(time.Unix(start, 0), plan, end); next > start && next <= now && next < end; next = calcNextResetTime(time.Unix(start, 0), plan, end) {
+	zone := time.FixedZone("Asia/Shanghai", 8*60*60)
+	for next := calcNextResetTime(time.Unix(start, 0).In(zone), plan, end); next > start && next <= now && next < end; next = calcNextResetTime(time.Unix(start, 0).In(zone), plan, end) {
 		start = next
 	}
-	if next := calcNextResetTime(time.Unix(start, 0), plan, end); next > start && next < end {
+	if next := calcNextResetTime(time.Unix(start, 0).In(zone), plan, end); next > start && next < end {
 		end = next
 	}
 	return start, end
 }
 
 func currentTeamPeriodTx(tx *gorm.DB, sub *TeamSubscription, now int64) (*TeamQuotaPeriod, error) {
-	start, end := teamSubscriptionPeriodBounds(sub, now)
 	var period TeamQuotaPeriod
-	result := tx.Where("team_subscription_id = ? AND start_time = ?", sub.Id, start).First(&period)
+	// Reuse an active legacy period even if it was created in another timezone.
+	result := tx.Where("team_subscription_id = ? AND start_time <= ? AND end_time > ?", sub.Id, now, now).
+		Order("start_time desc").First(&period)
+	if result.Error == nil {
+		return &period, nil
+	}
+	if !errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return nil, result.Error
+	}
+	start, end := teamSubscriptionPeriodBounds(sub, now)
+	// Do not overlap the tail of a legacy period when switching boundaries.
+	var previous TeamQuotaPeriod
+	previousResult := tx.Where("team_subscription_id = ? AND end_time <= ?", sub.Id, now).Order("end_time desc").First(&previous)
+	if previousResult.Error != nil && !errors.Is(previousResult.Error, gorm.ErrRecordNotFound) {
+		return nil, previousResult.Error
+	}
+	if previousResult.Error == nil && previous.EndTime > start {
+		start = previous.EndTime
+	}
+	result = tx.Where("team_subscription_id = ? AND start_time = ?", sub.Id, start).First(&period)
 	if result.Error == nil {
 		return &period, nil
 	}

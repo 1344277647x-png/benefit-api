@@ -22,35 +22,48 @@ import (
 const creationArchiveMaxAttempts = 3
 
 func StartGenerationMaintenance() {
+	if !common.IsMasterNode {
+		return
+	}
 	go func() {
 		archiveTicker := time.NewTicker(15 * time.Second)
 		cleanupTicker := time.NewTicker(time.Hour)
+		assetTicker := time.NewTicker(time.Minute)
 		defer archiveTicker.Stop()
 		defer cleanupTicker.Stop()
+		defer assetTicker.Stop()
 		for {
-			select {
-			case <-archiveTicker.C:
-				if creation_setting.Enabled() {
-					if err := processGenerationVideoArchives(context.Background(), time.Now()); err != nil {
-						common.SysError("process generation video archives: " + err.Error())
+			func() {
+				defer func() {
+					if recover() != nil {
+						common.SysError("generation maintenance recovered from panic")
+					}
+				}()
+				select {
+				case <-assetTicker.C:
+					if _, err := model.DeleteExpiredContentAudits(time.Now().Unix()); err != nil {
+						common.SysError("cleanup content audits failed")
+					}
+					if _, err := service.CleanupExpiredGenerationAssets(time.Now().Unix(), 1000); err != nil {
+						common.SysError("cleanup generation assets: " + err.Error())
+					}
+				case <-archiveTicker.C:
+					if creation_setting.Enabled() {
+						if err := processGenerationVideoArchives(context.Background(), time.Now()); err != nil {
+							common.SysError("process generation video archives: " + err.Error())
+						}
+					}
+				case <-cleanupTicker.C:
+					if _, err := model.FinalizeDueTeamDissolutions(100); err != nil {
+						common.SysError("finalize team dissolutions: " + err.Error())
+					}
+					healthSetting := channel_health_setting.GetSetting()
+					cutoff := time.Now().Add(-time.Duration(healthSetting.RetentionDays) * 24 * time.Hour).Unix()
+					if err := model.DeleteChannelHealthBucketsBefore(cutoff); err != nil {
+						common.SysError("cleanup channel health buckets: " + err.Error())
 					}
 				}
-			case <-cleanupTicker.C:
-				if _, err := model.DeleteExpiredContentAudits(time.Now().Unix()); err != nil {
-					common.SysError("cleanup content audits: " + err.Error())
-				}
-				if _, err := model.FinalizeDueTeamDissolutions(100); err != nil {
-					common.SysError("finalize team dissolutions: " + err.Error())
-				}
-				if _, err := service.CleanupExpiredGenerationAssets(time.Now().Unix(), 100); err != nil {
-					common.SysError("cleanup generation assets: " + err.Error())
-				}
-				healthSetting := channel_health_setting.GetSetting()
-				cutoff := time.Now().Add(-time.Duration(healthSetting.RetentionDays) * 24 * time.Hour).Unix()
-				if err := model.DeleteChannelHealthBucketsBefore(cutoff); err != nil {
-					common.SysError("cleanup channel health buckets: " + err.Error())
-				}
-			}
+			}()
 		}
 	}()
 }

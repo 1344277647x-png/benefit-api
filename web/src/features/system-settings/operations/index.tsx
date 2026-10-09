@@ -59,7 +59,7 @@ const defaultOperationsSettings: OperationsSettings = {
   'perf_metrics_setting.bucket_time': 'hour',
   'perf_metrics_setting.retention_days': 0,
   'creation_setting.enabled': false,
-  'creation_setting.retention_days': 7,
+  'creation_setting.retention_days': 3,
   'creation_setting.max_image_mb': 20,
   'creation_setting.max_video_mb': 500,
   'creation_setting.max_user_storage_mb': 1024,

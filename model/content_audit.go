@@ -10,6 +10,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 )
@@ -18,7 +19,7 @@ const contentAuditFieldLimit = 65536
 
 var auditSecretPattern = regexp.MustCompile(`(?i)(bearer\s+|sk-|api[_-]?key["'\s:=]+|token["'\s:=]+|cookie["'\s:=]+|card[_-]?(?:number|no)["'\s:=]+)[^\s,"'}]{6,}`)
 var auditSecretKeyPattern = regexp.MustCompile(`(?i)(authorization|cookie|api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|card[_-]?(?:number|no))`)
-var auditHiddenKeyPattern = regexp.MustCompile(`(?i)^(system|system_prompt|instructions|developer|reasoning|reasoning_content|thinking|thoughts)$`)
+var auditHiddenKeyPattern = regexp.MustCompile(`(?i)^(system|system_prompt|systemInstruction|system_instruction|instructions|developer|reasoning|reasoning_content|thinking|thought|thoughts)$`)
 var auditBinaryKeyPattern = regexp.MustCompile(`(?i)^(b64_json|image_data|audio_data|video_data|file_data|binary|bytes)$`)
 var auditDataURIPattern = regexp.MustCompile(`(?i)data:[^;,\s]{1,128};base64,[a-z0-9+/=_-]+`)
 
@@ -62,10 +63,18 @@ func contentAuditAEAD() (cipher.AEAD, error) {
 func ContentAuditEncryptionReady() bool { _, err := contentAuditAEAD(); return err == nil }
 
 func encryptAuditText(value string) (string, bool, error) {
+	oversized := len(value) > 4*contentAuditFieldLimit
+	if oversized {
+		// Fail closed instead of parsing or slicing incomplete credential-bearing JSON.
+		value = "[AUDIT_CONTENT_OMITTED_SIZE_LIMIT]"
+	}
 	value = sanitizeAuditText(value)
-	truncated := len(value) > contentAuditFieldLimit
-	if truncated {
+	truncated := oversized || len(value) > contentAuditFieldLimit
+	if len(value) > contentAuditFieldLimit {
 		value = value[:contentAuditFieldLimit]
+		for !utf8.ValidString(value) && len(value) > 0 {
+			value = value[:len(value)-1]
+		}
 	}
 	aead, err := contentAuditAEAD()
 	if err != nil {
@@ -86,6 +95,9 @@ func sanitizeAuditText(value string) string {
 		scrub = func(current any) any {
 			switch typed := current.(type) {
 			case map[string]any:
+				if hidden, _ := typed["thought"].(bool); hidden {
+					return "[REDACTED]"
+				}
 				for key, item := range typed {
 					if auditSecretKeyPattern.MatchString(key) || auditHiddenKeyPattern.MatchString(key) || auditBinaryKeyPattern.MatchString(key) {
 						typed[key] = "[REDACTED]"
@@ -150,6 +162,9 @@ func sanitizeAuditText(value string) string {
 }
 
 func finalVisibleAuditOutput(value string) string {
+	if len(value) > 4*contentAuditFieldLimit {
+		return "[AUDIT_CONTENT_OMITTED_SIZE_LIMIT]"
+	}
 	lines := strings.Split(value, "\n")
 	var visible strings.Builder
 	sawSSE := false
@@ -220,6 +235,9 @@ func visibleTextFromAuditEvent(event map[string]any) string {
 			parts, _ := content["parts"].([]any)
 			for _, rawPart := range parts {
 				part, _ := rawPart.(map[string]any)
+				if hidden, _ := part["thought"].(bool); hidden {
+					continue
+				}
 				if value, ok := part["text"].(string); ok {
 					text.WriteString(value)
 				}
@@ -260,6 +278,7 @@ func InsertContentAudit(record *ContentAuditRecord, input, output, resultReferen
 		return err
 	}
 	record.OutputCiphertext, record.OutputTruncated, err = encryptAuditText(finalVisibleAuditOutput(output))
+	record.OutputTruncated = record.OutputTruncated || len(output) > 4*contentAuditFieldLimit
 	if err != nil {
 		return err
 	}
@@ -275,7 +294,7 @@ func InsertContentAudit(record *ContentAuditRecord, input, output, resultReferen
 }
 
 func ListContentAudits(userID int, modelName, requestID, source, status string, startAt, endAt int64, limit, offset int) ([]ContentAuditRecord, int64, error) {
-	query := DB.Model(&ContentAuditRecord{})
+	query := DB.Model(&ContentAuditRecord{}).Where("expires_at > ?", common.GetTimestamp())
 	if userID > 0 {
 		query = query.Where("user_id = ?", userID)
 	}
@@ -308,7 +327,7 @@ func ListContentAudits(userID int, modelName, requestID, source, status string, 
 
 func GetContentAuditDetail(id int64) (*ContentAuditDetail, error) {
 	var record ContentAuditRecord
-	if err := DB.First(&record, id).Error; err != nil {
+	if err := DB.Where("expires_at > ?", common.GetTimestamp()).First(&record, id).Error; err != nil {
 		return nil, err
 	}
 	input, err := decryptAuditText(record.InputCiphertext)
@@ -327,7 +346,13 @@ func GetContentAuditDetail(id int64) (*ContentAuditDetail, error) {
 }
 
 func DeleteExpiredContentAudits(now int64) (int64, error) {
-	result := DB.Model(&ContentAuditRecord{}).Where("expires_at > 0 AND expires_at <= ? AND (input_ciphertext <> '' OR output_ciphertext <> '' OR result_references <> '')", now).
-		Updates(map[string]any{"input_ciphertext": "", "output_ciphertext": "", "result_references": ""})
+	var ids []int64
+	if err := DB.Model(&ContentAuditRecord{}).Where("expires_at > 0 AND expires_at <= ?", now).Order("id asc").Limit(1000).Pluck("id", &ids).Error; err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	result := DB.Where("id IN ? AND expires_at > 0 AND expires_at <= ?", ids, now).Delete(&ContentAuditRecord{})
 	return result.RowsAffected, result.Error
 }

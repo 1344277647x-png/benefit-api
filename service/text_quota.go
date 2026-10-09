@@ -443,7 +443,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if !summary.hasBillableUsage() {
 		extraContent = append(extraContent, "上游没有返回计费信息，无法扣费（可能是上游超时）")
 		logger.LogError(ctx, fmt.Sprintf("total tokens is 0, cannot consume quota, userId %d, channelId %d, tokenId %d, model %s， pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, summary.ModelName, relayInfo.FinalPreConsumedQuota))
-	} else if relayInfo.BillingSource != BillingSourceTeam {
+	} else if relayInfo.BillingSource != BillingSourceTeam && !ctx.GetBool("partial_stream_billing_attempted") {
 		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, summary.Quota)
 		model.UpdateChannelUsedQuota(relayInfo.ChannelId, summary.Quota)
 	}
@@ -451,6 +451,15 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if relayInfo.BillingSource != BillingSourceTeam {
 		if err := SettleBilling(ctx, relayInfo, summary.Quota); err != nil {
 			logger.LogError(ctx, "error settling billing: "+err.Error())
+			if ctx.GetBool("partial_stream_billing_attempted") {
+				recordPartialSettlementException(ctx, relayInfo, summary.Quota)
+				logger.LogError(ctx, "partial stream settlement requires reconciliation; reservation retained")
+				return
+			}
+		}
+		if ctx.GetBool("partial_stream_billing_attempted") && summary.hasBillableUsage() {
+			model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, summary.Quota)
+			model.UpdateChannelUsedQuota(relayInfo.ChannelId, summary.Quota)
 		}
 	}
 
@@ -549,7 +558,10 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
+	partialStream := ctx.GetBool("partial_stream_billing_attempted")
 	gopool.Go(func() {
-		perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens))
+		if !partialStream {
+			perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens))
+		}
 	})
 }

@@ -170,14 +170,14 @@ func writeOperationsReportCSV(c *gin.Context, report *model.OperationsReport) {
 			profit = strconv.FormatFloat(*row.ProfitUSD, 'f', 6, 64)
 		}
 		_ = writer.Write([]string{
-			row.Key,
-			row.Label,
-			row.ModelName,
+			operationsCSVText(row.Key),
+			operationsCSVText(row.Label),
+			operationsCSVText(row.ModelName),
 			strconv.Itoa(row.ChannelID),
-			row.ChannelName,
+			operationsCSVText(row.ChannelName),
 			strconv.Itoa(row.UserID),
-			row.Username,
-			row.Group,
+			operationsCSVText(row.Username),
+			operationsCSVText(row.Group),
 			strconv.FormatInt(row.RequestCount, 10),
 			strconv.FormatInt(row.SuccessCount, 10),
 			strconv.FormatInt(row.ErrorCount, 10),
@@ -187,7 +187,7 @@ func writeOperationsReportCSV(c *gin.Context, report *model.OperationsReport) {
 			strconv.FormatFloat(row.RevenueUSD, 'f', 6, 64),
 			strconv.FormatFloat(row.RefundUSD, 'f', 6, 64),
 			strconv.FormatFloat(row.CostUSD, 'f', 6, 64),
-			row.CostStatus,
+			operationsCSVText(row.CostStatus),
 			strconv.FormatInt(row.UnknownCostRequests, 10),
 			profit,
 			strconv.FormatFloat(row.ErrorRate, 'f', 4, 64),
@@ -199,4 +199,15 @@ func writeOperationsReportCSV(c *gin.Context, report *model.OperationsReport) {
 		// partially streamed CSV with a second response body.
 		common.SysLog("failed to write operations report csv: " + err.Error())
 	}
+}
+
+// CSV quoting alone does not stop spreadsheet formula evaluation. Only text
+// fields are escaped, so legitimate negative numeric totals stay numeric.
+func operationsCSVText(value string) string {
+	trimmed := strings.TrimLeft(value, " \t\r\n\ufeff")
+	if strings.HasPrefix(value, "\t") || strings.HasPrefix(value, "\r") || strings.HasPrefix(value, "\n") ||
+		(trimmed != "" && strings.ContainsRune("=+-@", rune(trimmed[0]))) {
+		return "'" + value
+	}
+	return value
 }

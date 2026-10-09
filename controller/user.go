@@ -457,6 +457,8 @@ func GetUser(c *gin.Context) {
 		return
 	}
 	user.AdminPermissions = authz.Capabilities(user.Id, user.Role)
+	// Notification credentials are only exposed through the owner's settings API.
+	user.Setting = ""
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -518,7 +520,7 @@ func TransferAffQuota(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserTransferFailed, map[string]any{"Error": err.Error()})
 		return
 	}
-	_ = service.DeliverPendingBusinessEvents(c.Request.Context(), 100)
+	service.NotifyBusinessEventDelivery()
 	common.ApiSuccessI18n(c, i18n.MsgUserTransferSuccess, nil)
 }
 

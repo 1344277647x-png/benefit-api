@@ -38,7 +38,7 @@ func TeamEpayPay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	_ = service.DeliverPendingBusinessEvents(c.Request.Context(), 100)
+	service.NotifyBusinessEventDelivery()
 	teamEpayPaymentForm(c, client, order, returnURL, notifyURL, true)
 }
 
@@ -143,7 +143,7 @@ func TeamEpayNotify(c *gin.Context) {
 		_, _ = c.Writer.Write([]byte("fail"))
 		return
 	}
-	_ = service.DeliverPendingBusinessEvents(c.Request.Context(), 100)
+	service.NotifyBusinessEventDelivery()
 	_, _ = c.Writer.Write([]byte("success"))
 }
 

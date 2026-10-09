@@ -20,6 +20,24 @@ import (
 
 type generationZeroReader struct{}
 
+func TestCleanupFailureDoesNotBlockOtherExpiredAssets(t *testing.T) {
+	configureGenerationAssetTest(t)
+	now := time.Now().Unix()
+	bad := model.GenerationAsset{PublicID: "bad-cleanup", UserID: 42, RelativePath: "../outside", ExpiresAt: now - 1}
+	require.NoError(t, model.DB.Create(&bad).Error)
+	good, err := SaveGenerationAsset(GenerationAssetSaveRequest{UserID: 42, Role: "input", Kind: model.GenerationKindImage, Reader: bytes.NewReader(generationPNG(t))})
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(good).Update("expires_at", now-1).Error)
+	deleted, err := CleanupExpiredGenerationAssets(now, 100)
+	require.Error(t, err)
+	assert.Equal(t, 1, deleted)
+	require.NoError(t, model.DB.First(&bad, bad.ID).Error)
+	assert.Equal(t, now+300, bad.CleanupRetryAt)
+	pending, err := model.ListExpiredGenerationAssets(now, 100)
+	require.NoError(t, err)
+	assert.Empty(t, pending)
+}
+
 func (generationZeroReader) Read(data []byte) (int, error) {
 	for index := range data {
 		data[index] = 0
@@ -47,6 +65,7 @@ func configureGenerationAssetTest(t *testing.T) string {
 
 func TestSaveGenerationAssetValidatesAndStoresImage(t *testing.T) {
 	root := configureGenerationAssetTest(t)
+	beforeSave := time.Now().Unix()
 	asset, err := SaveGenerationAsset(GenerationAssetSaveRequest{
 		UserID: 42,
 		Role:   "input",
@@ -54,6 +73,8 @@ func TestSaveGenerationAssetValidatesAndStoresImage(t *testing.T) {
 		Reader: bytes.NewReader(generationPNG(t)),
 	})
 	require.NoError(t, err)
+	assert.GreaterOrEqual(t, asset.ExpiresAt, beforeSave+3*24*60*60)
+	assert.LessOrEqual(t, asset.ExpiresAt, time.Now().Unix()+3*24*60*60)
 	assert.Equal(t, "image/png", asset.MimeType)
 	assert.Equal(t, "input", asset.Role)
 	assert.Positive(t, asset.SizeBytes)

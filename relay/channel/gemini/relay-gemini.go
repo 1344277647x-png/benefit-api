@@ -174,12 +174,20 @@ func handleFinalStream(c *gin.Context, info *relaycommon.RelayInfo, resp *dto.Ch
 	return nil
 }
 
-func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response, callback func(data string, geminiResponse *dto.GeminiChatResponse) bool) (*dto.Usage, *types.NewAPIError) {
+func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response, callback func(data string, geminiResponse *dto.GeminiChatResponse) bool) (resultUsage *dto.Usage, resultErr *types.NewAPIError) {
 	var usage = &dto.Usage{}
 	var streamErr *types.NewAPIError
 	var imageCount int
 	var hasBillableUsageMetadata bool
 	responseText := strings.Builder{}
+	defer func() {
+		if resultErr != nil {
+			// Media cannot be priced as text when provider usage is absent.
+			if imageCount == 0 || hasBillableUsageMetadata {
+				service.RetainPartialStreamUsage(c, info, usage, responseText.String())
+			}
+		}
+	}()
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		if streamErr != nil {

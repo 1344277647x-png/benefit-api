@@ -126,15 +126,21 @@ func DeliverPendingBusinessEvents(ctx context.Context, limit int) error {
 	if err != nil {
 		return err
 	}
+	var deliveryErr error
 	for _, event := range events {
 		if err := model.DeliverBusinessEvent(ctx, event); err != nil {
-			return err
+			deliveryErr = err
+			if markErr := model.MarkBusinessEventFailed(ctx, event); markErr != nil {
+				return markErr
+			}
+			logger.LogError(ctx, fmt.Sprintf("business event delivery deferred: id=%d attempt=%d dead_letter=%t", event.Id, event.Attempts+1, event.Attempts+1 >= 10))
+			continue
 		}
 		if err := model.MarkBusinessEventDelivered(ctx, event.EventKey); err != nil {
-			return err
+			deliveryErr = err
 		}
 	}
-	return nil
+	return deliveryErr
 }
 
 // Keep only known, non-content pricing and usage fields in the durable event.

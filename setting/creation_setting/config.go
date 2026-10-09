@@ -19,7 +19,7 @@ type CreationSetting struct {
 
 var creationSetting = CreationSetting{
 	Enabled:             false,
-	RetentionDays:       7,
+	RetentionDays:       3,
 	MaxImageMB:          20,
 	MaxVideoMB:          500,
 	MaxUserStorageMB:    1024,
@@ -35,8 +35,8 @@ func GetSetting() CreationSetting {
 	setting := creationSetting
 	if setting.RetentionDays < 1 {
 		setting.RetentionDays = 1
-	} else if setting.RetentionDays > 30 {
-		setting.RetentionDays = 30
+	} else if setting.RetentionDays > 3 {
+		setting.RetentionDays = 3
 	}
 	if setting.MaxImageMB < 1 {
 		setting.MaxImageMB = 1

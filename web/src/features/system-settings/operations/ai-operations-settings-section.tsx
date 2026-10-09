@@ -53,7 +53,7 @@ import { safeNumberFieldProps } from '../utils/numeric-field'
 const creationSchema = z.object({
   creation_setting: z.object({
     enabled: z.boolean(),
-    retention_days: z.coerce.number().int().min(1).max(30),
+    retention_days: z.coerce.number().int().min(1).max(3),
     max_image_mb: z.coerce.number().int().min(1).max(20),
     max_video_mb: z.coerce.number().int().min(1).max(500),
     max_user_storage_mb: z.coerce.number().int().min(1).max(1024),
@@ -81,7 +81,10 @@ function creationFormDefaults(
   return {
     creation_setting: {
       enabled: defaults['creation_setting.enabled'],
-      retention_days: defaults['creation_setting.retention_days'],
+      retention_days: Math.min(
+        3,
+        Math.max(1, defaults['creation_setting.retention_days'] ?? 3)
+      ),
       max_image_mb: defaults['creation_setting.max_image_mb'],
       max_video_mb: defaults['creation_setting.max_video_mb'],
       max_user_storage_mb: defaults['creation_setting.max_user_storage_mb'],
@@ -185,7 +188,7 @@ export function CreationSettingsSection({
             name='creation_setting.retention_days'
             label={t('Result retention (days)')}
             min={1}
-            max={30}
+            max={3}
           />
           <NumberField
             control={form.control}

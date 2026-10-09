@@ -62,18 +62,19 @@ type GenerationJob struct {
 }
 
 type GenerationAsset struct {
-	ID           int64  `json:"-" gorm:"primaryKey"`
-	PublicID     string `json:"id" gorm:"type:varchar(64);uniqueIndex"`
-	JobID        int64  `json:"-" gorm:"index"`
-	UserID       int    `json:"-" gorm:"index"`
-	Role         string `json:"role" gorm:"type:varchar(16);index"`
-	RelativePath string `json:"-" gorm:"type:varchar(512);uniqueIndex"`
-	MimeType     string `json:"mime_type" gorm:"type:varchar(64)"`
-	SizeBytes    int64  `json:"size_bytes"`
-	Status       string `json:"status" gorm:"type:varchar(24);index"`
-	CreatedAt    int64  `json:"created_at" gorm:"autoCreateTime;index"`
-	ExpiresAt    int64  `json:"expires_at" gorm:"index"`
-	ContentURL   string `json:"content_url,omitempty" gorm:"-"`
+	ID             int64  `json:"-" gorm:"primaryKey"`
+	PublicID       string `json:"id" gorm:"type:varchar(64);uniqueIndex"`
+	JobID          int64  `json:"-" gorm:"index"`
+	UserID         int    `json:"-" gorm:"index"`
+	Role           string `json:"role" gorm:"type:varchar(16);index"`
+	RelativePath   string `json:"-" gorm:"type:varchar(512);uniqueIndex"`
+	MimeType       string `json:"mime_type" gorm:"type:varchar(64)"`
+	SizeBytes      int64  `json:"size_bytes"`
+	Status         string `json:"status" gorm:"type:varchar(24);index"`
+	CreatedAt      int64  `json:"created_at" gorm:"autoCreateTime;index"`
+	ExpiresAt      int64  `json:"expires_at" gorm:"index"`
+	CleanupRetryAt int64  `json:"-" gorm:"type:bigint;not null;default:0;index"`
+	ContentURL     string `json:"content_url,omitempty" gorm:"-"`
 }
 
 type GenerationStorageUsage struct {
@@ -592,8 +593,18 @@ func ListExpiredGenerationAssets(now int64, limit int) ([]GenerationAsset, error
 		limit = 100
 	}
 	var assets []GenerationAsset
-	err := DB.Where("expires_at > 0 AND expires_at <= ?", now).Order("id ASC").Limit(limit).Find(&assets).Error
+	err := DB.Where("expires_at > 0 AND expires_at <= ? AND cleanup_retry_at <= ?", now, now).Order("id ASC").Limit(limit).Find(&assets).Error
 	return assets, err
+}
+
+func DelayGenerationAssetCleanup(id int64, now int64) error {
+	return DB.Model(&GenerationAsset{}).Where("id = ?", id).Update("cleanup_retry_at", now+300).Error
+}
+
+func ClaimGenerationAssetCleanup(id int64, now int64) (bool, error) {
+	result := DB.Model(&GenerationAsset{}).Where("id = ? AND expires_at > 0 AND expires_at <= ? AND cleanup_retry_at <= ?", id, now, now).
+		Update("cleanup_retry_at", now+300)
+	return result.RowsAffected == 1, result.Error
 }
 
 func DeleteGenerationAssetRecord(id int64) error {
@@ -615,7 +626,9 @@ func DeleteExpiredEmptyGenerationJobs(now int64, limit int) error {
 		limit = 100
 	}
 	var jobs []GenerationJob
-	if err := DB.Where("expires_at > 0 AND expires_at <= ?", now).Order("id ASC").Limit(limit).Find(&jobs).Error; err != nil {
+	if err := DB.Where("expires_at > 0 AND expires_at <= ?", now).
+		Where("NOT EXISTS (SELECT 1 FROM generation_assets WHERE generation_assets.job_id = generation_jobs.id)").
+		Order("id ASC").Limit(limit).Find(&jobs).Error; err != nil {
 		return err
 	}
 	for _, job := range jobs {

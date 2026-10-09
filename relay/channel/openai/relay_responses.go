@@ -73,7 +73,7 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	return &usage, nil
 }
 
-func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (resultUsage *dto.Usage, resultErr *types.NewAPIError) {
 	if resp == nil || resp.Body == nil {
 		logger.LogError(c, "invalid response or response body")
 		return nil, types.NewError(fmt.Errorf("invalid response"), types.ErrorCodeBadResponse)
@@ -87,6 +87,12 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	imageCommitted := false
 	var streamErr *types.NewAPIError
 	completed := false
+	var partialFunctionArguments strings.Builder
+	defer func() {
+		if resultErr != nil {
+			service.RetainPartialStreamUsage(c, info, usage, responseTextBuilder.String()+partialFunctionArguments.String())
+		}
+	}()
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 
@@ -108,6 +114,18 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			streamErr = types.NewOpenAIError(fmt.Errorf("invalid upstream Responses event type"), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
 			sr.Stop(streamErr)
 			return
+		}
+		// Capture trustworthy usage before forwarding a terminal event: the
+		// client may disconnect during that write while upstream has completed.
+		if streamResponse.Response != nil && streamResponse.Response.Usage != nil {
+			u := streamResponse.Response.Usage
+			usage.PromptTokens = u.InputTokens
+			usage.CompletionTokens = u.OutputTokens
+			usage.TotalTokens = u.TotalTokens
+			if u.InputTokensDetails != nil {
+				usage.PromptTokensDetails.CachedTokens = u.InputTokensDetails.CachedTokens
+				usage.PromptTokensDetails.CacheWriteTokens = u.InputTokensDetails.CacheWriteTokens
+			}
 		}
 		if oaiErr := streamResponse.GetOpenAIError(); dto.HasOpenAIError(oaiErr) {
 			streamErr = types.WithOpenAIError(*oaiErr, http.StatusBadGateway)
@@ -194,19 +212,14 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				imageCommitted = true
 			}
 		case "response.output_text.delta":
+			responseTextBuilder.WriteString(streamResponse.Delta)
 			if err := sendResponsesStreamData(c, streamResponse, data); err != nil {
 				streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusBadGateway)
 				sr.Stop(streamErr)
 				return
 			}
 			// 处理输出文本
-			responseTextBuilder.WriteString(streamResponse.Delta)
 		case dto.ResponsesOutputTypeItemDone:
-			if err := sendResponsesStreamData(c, streamResponse, data); err != nil {
-				streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusBadGateway)
-				sr.Stop(streamErr)
-				return
-			}
 			if streamResponse.Item != nil {
 				switch streamResponse.Item.Type {
 				case dto.BuildInCallWebSearchCall:
@@ -221,7 +234,15 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 					}
 				}
 			}
+			if err := sendResponsesStreamData(c, streamResponse, data); err != nil {
+				streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusBadGateway)
+				sr.Stop(streamErr)
+				return
+			}
 		default:
+			if streamResponse.Type == "response.function_call_arguments.delta" {
+				partialFunctionArguments.WriteString(streamResponse.Delta)
+			}
 			// Codex needs item/content lifecycle events before text deltas, and
 			// reasoning/tool events while generation is in progress. Preserve the
 			// original JSON, including fields unknown to our billing DTO, and the

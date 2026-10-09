@@ -24,6 +24,7 @@ const (
 
 var batchUpdateStores []map[int]int
 var batchUpdateLocks []sync.Mutex
+var batchFlushMu sync.Mutex
 
 func init() {
 	for i := 0; i < BatchUpdateTypeCount; i++ {
@@ -62,7 +63,11 @@ func addNewRecord(type_ int, id int, value int) {
 	batchUpdateStores[type_][id] = sum
 }
 
-func batchUpdate() {
+func FlushBatchUpdates() error { return batchUpdate() }
+
+func batchUpdate() error {
+	batchFlushMu.Lock()
+	defer batchFlushMu.Unlock()
 	// check if there's any data to update
 	hasData := false
 	for i := 0; i < BatchUpdateTypeCount; i++ {
@@ -76,7 +81,7 @@ func batchUpdate() {
 	}
 
 	if !hasData {
-		return
+		return nil
 	}
 
 	common.SysLog("batch update started")
@@ -88,6 +93,7 @@ func batchUpdate() {
 		batchUpdateLocks[i].Unlock()
 	}
 
+	var flushErr error
 	for i, store := range stores {
 		if i == BatchUpdateTypeUserQuota || i == BatchUpdateTypeUsedQuota || i == BatchUpdateTypeRequestCount {
 			continue
@@ -98,9 +104,14 @@ func batchUpdate() {
 				err := increaseTokenQuota(key, value)
 				if err != nil {
 					common.SysLog("failed to batch update token quota: " + err.Error())
+					addNewRecord(i, key, value)
+					flushErr = errors.Join(flushErr, err)
 				}
 			case BatchUpdateTypeChannelUsedQuota:
-				updateChannelUsedQuota(key, value)
+				if err := updateChannelUsedQuota(key, value); err != nil {
+					addNewRecord(i, key, value)
+					flushErr = errors.Join(flushErr, err)
+				}
 			}
 		}
 	}
@@ -120,9 +131,15 @@ func batchUpdate() {
 		userIDs[key] = struct{}{}
 	}
 	for key := range userIDs {
-		updateUserQuotaUsedQuotaAndRequestCount(key, userQuotaStore[key], usedQuotaStore[key], requestCountStore[key])
+		if err := updateUserQuotaUsedQuotaAndRequestCount(key, userQuotaStore[key], usedQuotaStore[key], requestCountStore[key]); err != nil {
+			addNewRecord(BatchUpdateTypeUserQuota, key, userQuotaStore[key])
+			addNewRecord(BatchUpdateTypeUsedQuota, key, usedQuotaStore[key])
+			addNewRecord(BatchUpdateTypeRequestCount, key, requestCountStore[key])
+			flushErr = errors.Join(flushErr, err)
+		}
 	}
 	common.SysLog("batch update finished")
+	return flushErr
 }
 
 func RecordExist(err error) (bool, error) {
