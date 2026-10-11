@@ -23,6 +23,7 @@ import { beforeAll, describe, expect, test } from 'vitest'
 
 import { formatLogQuota } from '@/lib/format'
 
+import { getBusinessLogDetails } from '../../lib/format'
 import { LogCostDisplay } from '../log-cost-display'
 
 function renderCost(
@@ -36,6 +37,84 @@ function normalizedText(value: string | null): string {
 }
 
 describe('log cost display', () => {
+  test('shows the stored lottery yuan prize instead of the zero consumption column', () => {
+    renderCost({
+      type: 9,
+      quota: 0,
+      other: { reward_cents: 10000, reward_quota: 7000000 },
+    })
+    expect(screen.getByText('¥100.00')).toBeInTheDocument()
+    expect(screen.getByText('Lottery prize amount')).toBeInTheDocument()
+  })
+
+  test.each(['referral.reward_created', 'referral.reward_settled'])(
+    'shows referral amount for %s',
+    (action) => {
+      const rendered = renderCost({
+        type: 8,
+        quota: 0,
+        other: { business_event: { action }, reward_quota: 25000 },
+      })
+      expect(normalizedText(rendered.container.textContent)).toContain(
+        normalizedText(formatLogQuota(25000))
+      )
+    }
+  )
+
+  test('shows a transfer and all four stored balances without treating it as another reward', () => {
+    const other = {
+      business_event: { action: 'referral.transfer_to_balance' },
+      quota: 25000,
+      referral_balance_before: 25000,
+      referral_balance_after: 0,
+      site_balance_before: 10000,
+      site_balance_after: 35000,
+    }
+    expect(getBusinessLogDetails(8, other, (key) => key)).toEqual([
+      { label: 'Transferred to site balance', value: formatLogQuota(25000) },
+      { label: 'Referral balance before', value: formatLogQuota(25000) },
+      { label: 'Referral balance after', value: formatLogQuota(0) },
+      { label: 'Site balance before', value: formatLogQuota(10000) },
+      { label: 'Site balance after', value: formatLogQuota(35000) },
+    ])
+  })
+
+  test('preserves draw pool, number and immutable string version in details', () => {
+    expect(
+      getBusinessLogDetails(
+        9,
+        {
+          reward_cents: 50,
+          tier: 'jackpot',
+          draw_number: 50,
+          rule_version: 'rule-123',
+        },
+        (key) => key
+      )
+    ).toEqual([
+      { label: 'Lottery prize amount', value: '¥0.50' },
+      { label: 'Draw number', value: '50' },
+      { label: 'Prize pool', value: 'Jackpot pool' },
+      { label: 'Rule version', value: 'rule-123' },
+    ])
+  })
+
+  test('does not invent a zero amount when historical business fields are missing', () => {
+    renderCost({ type: 8, quota: 0, other: null })
+    expect(screen.getByText('Amount not recorded')).toBeInTheDocument()
+  })
+
+  test('keeps explicit zero rewards visible but ignores malformed amounts', () => {
+    expect(
+      getBusinessLogDetails(8, { reward_quota: 0 }, (key) => key)[0].value
+    ).toBe(formatLogQuota(0))
+    expect(
+      getBusinessLogDetails(9, { reward_cents: -1 }, (key) => key)[0].value
+    ).toBe('Amount not recorded')
+    expect(
+      getBusinessLogDetails(2, { reward_cents: 100 }, (key) => key)
+    ).toEqual([])
+  })
   beforeAll(() => {
     i18next.addResourceBundle('en', 'translation', {
       Subscription: 'Subscription',

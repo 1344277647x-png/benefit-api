@@ -30,10 +30,11 @@ import {
 } from '@/components/ui/tooltip'
 import { formatLogQuota } from '@/lib/format'
 
-import { hasToolSurcharge } from '../lib/format'
+import { getBusinessLogDetails, hasToolSurcharge } from '../lib/format'
 import type { LogOtherData } from '../types'
 
 interface LogCostDisplayProps {
+  type?: number
   quota: number
   other: LogOtherData | null
 }
@@ -118,6 +119,24 @@ function SubscriptionBadge(props: { quota: number }) {
 }
 
 export function LogCostDisplay(props: LogCostDisplayProps) {
+  const { t } = useTranslation()
+  const businessAmount = getBusinessLogDetails(
+    props.type ?? 2,
+    props.other,
+    t
+  )[0]
+  if (businessAmount) {
+    return (
+      <div className='flex flex-col gap-0.5'>
+        <span className='text-muted-foreground text-xs'>
+          {businessAmount.label}
+        </span>
+        <span className='font-semibold tabular-nums'>
+          {businessAmount.value}
+        </span>
+      </div>
+    )
+  }
   const isSubscription = props.other?.billing_source === 'subscription'
   const showToolSurcharge = hasToolSurcharge(props.other)
 

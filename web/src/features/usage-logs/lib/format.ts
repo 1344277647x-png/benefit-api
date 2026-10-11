@@ -23,11 +23,79 @@ import {
   parseTiersFromExpr,
   type ParsedTier,
 } from '@/features/pricing/lib/billing-expr'
+import { formatLogQuota } from '@/lib/format'
 
 import type { UsageLog } from '../data/schema'
 import type { LogOtherData } from '../types'
 
 export { normalizeTierLabel }
+
+/** Business amounts are stored in `other`, not the API consumption quota column. */
+export function getBusinessLogDetails(
+  type: number,
+  other: LogOtherData | null,
+  t: (key: string) => string
+): { label: string; value: string }[] {
+  if (type !== 8 && type !== 9) return []
+  const action = other?.business_event?.action
+  const rows: { label: string; value: string }[] = []
+  const validAmount = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+
+  if (type === 9) {
+    let amount = t('Amount not recorded')
+    if (validAmount(other?.reward_cents)) {
+      amount = `¥${(other.reward_cents / 100).toFixed(2)}`
+    } else if (validAmount(other?.reward_quota)) {
+      amount = formatLogQuota(other.reward_quota)
+    }
+    rows.push({ label: t('Lottery prize amount'), value: amount })
+    if (validAmount(other?.draw_number)) {
+      rows.push({ label: t('Draw number'), value: String(other.draw_number) })
+    }
+    if (other?.tier === 'regular' || other?.tier === 'jackpot') {
+      rows.push({
+        label: t('Prize pool'),
+        value: other.tier === 'jackpot' ? t('Jackpot pool') : t('Normal pool'),
+      })
+    }
+    if (typeof other?.rule_version === 'string' && other.rule_version) {
+      rows.push({ label: t('Rule version'), value: other.rule_version })
+    }
+    return rows
+  }
+
+  let label = t('Referral reward amount')
+  let quota = other?.reward_quota
+  if (action === 'referral.transfer_to_balance') {
+    label = t('Transferred to site balance')
+    quota = other?.quota
+  } else if (action === 'referral.reward_created') {
+    label = t('Referral reward created amount')
+  } else if (action === 'referral.reward_settled') {
+    label = t('Referral reward settled amount')
+  }
+  rows.push({
+    label,
+    value: validAmount(quota)
+      ? formatLogQuota(quota)
+      : t('Amount not recorded'),
+  })
+  if (action === 'referral.transfer_to_balance') {
+    const balances = [
+      ['Referral balance before', other?.referral_balance_before],
+      ['Referral balance after', other?.referral_balance_after],
+      ['Site balance before', other?.site_balance_before],
+      ['Site balance after', other?.site_balance_after],
+    ] as const
+    for (const [key, value] of balances) {
+      if (validAmount(value)) {
+        rows.push({ label: t(key), value: formatLogQuota(value) })
+      }
+    }
+  }
+  return rows
+}
 
 const PARAM_OVERRIDE_ACTION_MAP: Record<string, string> = {
   set: 'Set',

@@ -49,6 +49,7 @@ import {
   parseLogOther,
   isViolationFeeLog,
   renderAuditContent,
+  getBusinessLogDetails,
 } from '../../lib/format'
 import {
   isDisplayableLogType,
@@ -116,6 +117,13 @@ function buildTypeDetailSegments(
   other: LogOtherData | null,
   t: (key: string, opts?: Record<string, unknown>) => string
 ): DetailSegment[] {
+  if (log.type === 8 || log.type === 9) {
+    return getBusinessLogDetails(log.type, other, t).map(
+      ({ label, value }) => ({
+        text: `${label}: ${value}`,
+      })
+    )
+  }
   // Audit (type=3) and login (type=7) logs: render localized content from the
   // structured op descriptor instead of the raw (English-fallback) content.
   if (log.type === 3 || log.type === 7) {
@@ -708,11 +716,17 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
       header: t('Cost'),
       cell: ({ row }) => {
         const log = row.original
-        if (!isDisplayableLogType(log.type)) return null
+        if (
+          !isDisplayableLogType(log.type) &&
+          log.type !== 8 &&
+          log.type !== 9
+        ) {
+          return null
+        }
 
         const quota = row.getValue('quota') as number
         const other = parseLogOther(log.other)
-        return <LogCostDisplay quota={quota} other={other} />
+        return <LogCostDisplay type={log.type} quota={quota} other={other} />
       },
     },
 

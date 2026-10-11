@@ -58,6 +58,7 @@ import {
   getResponseTimeColor,
   getReasoningEffortVariant,
   renderAuditContent,
+  getBusinessLogDetails,
 } from '../../lib/format'
 import {
   getLogTypeConfig,
@@ -654,6 +655,11 @@ export function DetailsDialog(props: DetailsDialogProps) {
       bodyClassName='pr-2 sm:pr-4'
     >
       <div className='w-full max-w-full min-w-0 space-y-2.5 overflow-x-hidden py-1 sm:space-y-3'>
+        {getBusinessLogDetails(props.log.type, other, t).map(
+          ({ label, value }) => (
+            <DetailRow key={label} label={label} value={value} />
+          )
+        )}
         {/* Overview section - key identifiers */}
         <div className='min-w-0 space-y-1'>
           {props.log.request_id && (
