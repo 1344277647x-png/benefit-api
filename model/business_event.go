@@ -10,10 +10,11 @@ import (
 )
 
 const (
-	BusinessEventReferral = "referral"
-	BusinessEventLottery  = "lottery"
-	BusinessEventTeam     = "team"
-	BusinessEventBilling  = "billing"
+	BusinessEventReferral   = "referral"
+	BusinessEventLottery    = "lottery"
+	BusinessEventTeam       = "team"
+	BusinessEventBilling    = "billing"
+	BusinessEventOperations = "operations"
 )
 
 // BusinessEvent is a transactional outbox row. Domain transactions insert it
@@ -71,6 +72,8 @@ func DeliverBusinessEvent(ctx context.Context, event BusinessEvent) error {
 		logType = LogTypeTeam
 	case BusinessEventBilling:
 		logType = LogTypeError
+	case BusinessEventOperations:
+		logType = LogTypeManage
 	default:
 		return errors.New("unsupported business event category")
 	}

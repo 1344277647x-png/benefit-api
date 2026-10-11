@@ -187,6 +187,9 @@ func createFirstTopupReferralReward(tx *gorm.DB, topUp *TopUp, creditedQuota int
 			Update("quota", gorm.Expr("quota + ?", inviteeBonusQuota)).Error; err != nil {
 			return err
 		}
+		if err := operationsCreditWalletTx(tx, invitee.Id, inviteeBonusQuota, nil, fmt.Sprintf("referral-bonus:%d", reward.Id)); err != nil {
+			return err
+		}
 	}
 	if status == ReferralRewardStatusSettled && rewardQuota > 0 {
 		if err := tx.Model(&User{}).Where("id = ?", invitee.InviterId).Updates(map[string]any{
@@ -405,7 +408,11 @@ func TransferReferralQuota(userId int, quota int) error {
 			return err
 		}
 		now := common.GetTimestamp()
-		return enqueueBusinessEventTx(tx, &BusinessEvent{EventKey: fmt.Sprintf("referral:transfer:%d:%d", userId, time.Now().UnixNano()),
+		transferKey := fmt.Sprintf("referral:transfer:%d:%d", userId, time.Now().UnixNano())
+		if err := operationsCreditWalletTx(tx, userId, quota, nil, transferKey); err != nil {
+			return err
+		}
+		return enqueueBusinessEventTx(tx, &BusinessEvent{EventKey: transferKey,
 			Category: BusinessEventReferral, Action: "referral.transfer_to_balance", UserId: userId,
 			Content: "Referral reward transferred to site balance", CreatedAt: now}, map[string]any{
 			"quota": quota, "referral_balance_before": user.AffQuota, "referral_balance_after": user.AffQuota - quota,

@@ -1246,13 +1246,23 @@ func GetUserSetting(id int, fromDB bool) (settingMap dto.UserSetting, err error)
 }
 
 func IncreaseUserQuota(id int, quota int, db bool) (err error) {
+	if operationsAvailable(DB) {
+		if err := common.ValidateWalletQuota(quota); err != nil {
+			return err
+		}
+		return AdjustOperationsWallet(id, quota, false)
+	}
+	return IncreaseUserQuotaForBilling(id, quota, db)
+}
+
+func IncreaseUserQuotaForBilling(id int, quota int, db bool) (err error) {
 	if quota < 0 {
 		return errors.New("quota 不能为负数！")
 	}
 	if err := common.ValidateWalletQuota(quota); err != nil {
 		return err
 	}
-	if !db && common.BatchUpdateEnabled {
+	if !db && common.BatchUpdateEnabled && !operationsAvailable(DB) {
 		addNewRecord(BatchUpdateTypeUserQuota, id, quota)
 		gopool.Go(func() {
 			if err := cacheIncrUserQuota(id, int64(quota)); err != nil {
@@ -1263,6 +1273,10 @@ func IncreaseUserQuota(id int, quota int, db bool) (err error) {
 	}
 	if err := increaseUserQuota(id, quota); err != nil {
 		return err
+	}
+	if operationsAvailable(DB) {
+		syncOperationsWalletCache(id, int64(quota))
+		return nil
 	}
 	gopool.Go(func() {
 		if err := cacheIncrUserQuota(id, int64(quota)); err != nil {
@@ -1293,8 +1307,25 @@ func increaseUserQuota(id int, quota int) (err error) {
 }
 
 func DecreaseUserQuota(id int, quota int, db bool) (err error) {
+	if operationsAvailable(DB) {
+		if quota < 0 || quota > common.MaxWalletQuota {
+			return errors.New("invalid wallet adjustment")
+		}
+		return AdjustOperationsWallet(id, -quota, false)
+	}
+	return DecreaseUserQuotaForBilling(id, quota, db)
+}
+
+func DecreaseUserQuotaForBilling(id int, quota int, db bool) (err error) {
 	if quota < 0 {
 		return errors.New("quota 不能为负数！")
+	}
+	if operationsAvailable(DB) {
+		if err := decreaseUserQuota(id, quota); err != nil {
+			return err
+		}
+		syncOperationsWalletCache(id, -int64(quota))
+		return nil
 	}
 	gopool.Go(func() {
 		err := cacheDecrUserQuota(id, int64(quota))
@@ -1302,7 +1333,7 @@ func DecreaseUserQuota(id int, quota int, db bool) (err error) {
 			common.SysLog("failed to decrease user quota: " + err.Error())
 		}
 	})
-	if !db && common.BatchUpdateEnabled {
+	if !db && common.BatchUpdateEnabled && !operationsAvailable(DB) {
 		addNewRecord(BatchUpdateTypeUserQuota, id, -quota)
 		return nil
 	}

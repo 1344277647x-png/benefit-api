@@ -1242,7 +1242,7 @@ func ManageUser(c *gin.Context) {
 				common.ApiError(c, err)
 				return
 			}
-			if err := model.IncreaseUserQuota(user.Id, req.Value, true); err != nil {
+			if err := model.CreditUserGiftQuota(user.Id, req.Value); err != nil {
 				common.ApiError(c, err)
 				return
 			}
@@ -1267,7 +1267,7 @@ func ManageUser(c *gin.Context) {
 				return
 			}
 			oldQuota := user.Quota
-			if err := model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("quota", req.Value).Error; err != nil {
+			if err := model.OverrideOperationsWallet(user.Id, req.Value); err != nil {
 				common.ApiError(c, err)
 				return
 			}

@@ -89,7 +89,7 @@ func TestAggregateOperationsReportKeepsCostUnknown(t *testing.T) {
 	require.Equal(t, int64(750000), report.Summary.RevenueQuota)
 	require.Equal(t, int64(100000), report.Summary.RefundQuota)
 	require.Equal(t, "partial", report.Summary.CostStatus)
-	require.Equal(t, int64(1), report.Summary.UnknownCostRequests)
+	require.Equal(t, int64(2), report.Summary.UnknownCostRequests)
 	require.Nil(t, report.Summary.ProfitUSD)
 	require.Equal(t, "gpt-test", report.Rows[0].ModelName)
 	require.Equal(t, "partial", report.Rows[0].CostStatus)
@@ -97,6 +97,9 @@ func TestAggregateOperationsReportKeepsCostUnknown(t *testing.T) {
 }
 
 func TestGetOperationsReportSQLiteFiltersReservedGroupColumn(t *testing.T) {
+	previousDB := DB
+	DB = operationsTestDB(t)
+	t.Cleanup(func() { DB = previousDB })
 	start := time.Date(2026, time.February, 2, 0, 0, 0, 0, time.UTC).Unix()
 	prefix := "operations-report-integration-"
 	logs := []Log{
@@ -158,7 +161,8 @@ func TestGetOperationsReportSQLiteFiltersReservedGroupColumn(t *testing.T) {
 	require.Equal(t, int64(1), report.Summary.ErrorCount)
 	require.InDelta(t, 50, report.Summary.ErrorRate, 0.0001)
 	require.Equal(t, int64(100000), report.Summary.RefundQuota)
-	require.Equal(t, "known", report.Summary.CostStatus)
+	require.Equal(t, "partial", report.Summary.CostStatus)
+	require.Nil(t, report.Summary.ProfitUSD)
 }
 
 func TestOperationReportCostValueRejectsInvalidValues(t *testing.T) {

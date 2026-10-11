@@ -169,6 +169,16 @@ func TryReserveUserQuota(id int, quota int) (bool, error) {
 	if quota == 0 {
 		return true, nil
 	}
+	if err := prepareOperationsWallet(id); err != nil {
+		return false, err
+	}
+	if operationsAvailable(DB) {
+		reserved, err := reserveUserQuotaDB(id, quota)
+		if err == nil && reserved {
+			syncOperationsWalletCache(id, -int64(quota))
+		}
+		return reserved, err
+	}
 	if !common.RedisEnabled {
 		return reserveUserQuotaDB(id, quota)
 	}

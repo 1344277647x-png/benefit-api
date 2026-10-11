@@ -975,6 +975,9 @@ func adjustTeamUsage(requestId string, delta int64, final bool, finalAmount *int
 			usage.Status = "settled"
 			usage.FinalAmount = usage.Reserved
 			usage.PendingFinal = false
+			if err := operationsSettleTeamTx(tx, &usage); err != nil {
+				return err
+			}
 		}
 		if err := tx.Save(&usage).Error; err != nil {
 			return err
@@ -1401,6 +1404,9 @@ func FinalizeTeamTask(task *Task, from TaskStatus, finalAmount int64, reason str
 		if task.Status == TaskStatusSuccess {
 			usage.Status = "settled"
 			usage.FinalAmount = finalAmount
+			if err := operationsSettleTeamTx(tx, &usage); err != nil {
+				return err
+			}
 		} else {
 			usage.Status = "refunded"
 		}

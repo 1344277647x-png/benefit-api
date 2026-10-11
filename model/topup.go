@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -112,7 +113,7 @@ func ValidateTopUpQuotaCapacity(userId int, creditedQuota int) error {
 // creditTopUpQuota atomically enforces the wallet ceiling while adding quota.
 // Keeping the predicate and increment in one UPDATE prevents two
 // concurrent callbacks from both passing a separate read/check.
-func creditTopUpQuota(tx *gorm.DB, userId int, creditedQuota int, updates map[string]interface{}) error {
+func creditTopUpQuota(tx *gorm.DB, userId int, creditedQuota int, updates map[string]interface{}, payment ...*TopUp) error {
 	maxCurrentQuota, err := topUpQuotaMaxCurrent(creditedQuota)
 	if err != nil {
 		return err
@@ -131,7 +132,13 @@ func creditTopUpQuota(tx *gorm.DB, userId int, creditedQuota int, updates map[st
 		return result.Error
 	}
 	if result.RowsAffected == 1 {
-		return nil
+		// Unspecified sources (for example redeemed codes) have no verified
+		// cash value. An explicit nil identifies a known promotional gift.
+		paid := &TopUp{}
+		if len(payment) > 0 {
+			paid = payment[0]
+		}
+		return operationsCreditWalletTx(tx, userId, creditedQuota, paid, fmt.Sprintf("gift:%d:%d", userId, time.Now().UnixNano()))
 	}
 
 	var count int64
@@ -246,7 +253,7 @@ func CompleteAlipayTopUp(tradeNo string, totalAmount string, callerIp string) er
 		if err := grantLotteryDrawsForTopUpTx(tx, topUp); err != nil {
 			return err
 		}
-		if err := creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil); err != nil {
+		if err := creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil, topUp); err != nil {
 			return err
 		}
 		if err := createFirstTopupReferralReward(tx, topUp, quotaToAdd); err != nil {
@@ -312,7 +319,7 @@ func RechargeEpay(tradeNo string, actualPaymentMethod string, callerIp string) (
 		if err := grantLotteryDrawsForTopUpTx(tx, topUp); err != nil {
 			return err
 		}
-		if err := creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil); err != nil {
+		if err := creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil, topUp); err != nil {
 			return err
 		}
 		return createFirstTopupReferralReward(tx, topUp, quotaToAdd)
@@ -383,7 +390,7 @@ func Recharge(referenceId string, customerId string, callerIp string) (err error
 
 		if err := creditTopUpQuota(tx, topUp.UserId, quota, map[string]interface{}{
 			"stripe_customer": customerId,
-		}); err != nil {
+		}, topUp); err != nil {
 			return err
 		}
 		if err := createFirstTopupReferralReward(tx, topUp, quota); err != nil {
@@ -617,7 +624,7 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 		}
 
 		// 增加用户额度（立即写库，保持一致性）
-		if err := creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil); err != nil {
+		if err := creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil, topUp); err != nil {
 			return err
 		}
 		if err := createFirstTopupReferralReward(tx, topUp, quotaToAdd); err != nil {
@@ -704,7 +711,7 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 			}
 		}
 
-		if err := creditTopUpQuota(tx, topUp.UserId, quota, updateFields); err != nil {
+		if err := creditTopUpQuota(tx, topUp.UserId, quota, updateFields, topUp); err != nil {
 			return err
 		}
 		if err := createFirstTopupReferralReward(tx, topUp, quota); err != nil {
@@ -769,7 +776,7 @@ func RechargeWaffo(tradeNo string, callerIp string) (err error) {
 			return err
 		}
 
-		if err := creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil); err != nil {
+		if err := creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil, topUp); err != nil {
 			return err
 		}
 		if err := createFirstTopupReferralReward(tx, topUp, quotaToAdd); err != nil {
@@ -833,7 +840,7 @@ func RechargeWaffoPancake(tradeNo string) (err error) {
 			return err
 		}
 
-		if err := creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil); err != nil {
+		if err := creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil, topUp); err != nil {
 			return err
 		}
 		if err := createFirstTopupReferralReward(tx, topUp, quotaToAdd); err != nil {

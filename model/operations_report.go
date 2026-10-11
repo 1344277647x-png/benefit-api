@@ -45,43 +45,47 @@ type OperationsReportParams struct {
 }
 
 type OperationsReportSummary struct {
-	RequestCount        int64    `json:"request_count"`
-	SuccessCount        int64    `json:"success_count"`
-	ErrorCount          int64    `json:"error_count"`
-	ErrorRate           float64  `json:"error_rate"`
-	TokenCount          int64    `json:"token_count"`
-	RevenueQuota        int64    `json:"revenue_quota"`
-	RefundQuota         int64    `json:"refund_quota"`
-	RevenueUSD          float64  `json:"revenue_usd"`
-	RefundUSD           float64  `json:"refund_usd"`
-	CostUSD             float64  `json:"cost_usd"`
-	CostStatus          string   `json:"cost_status"`
-	UnknownCostRequests int64    `json:"unknown_cost_requests"`
-	ProfitUSD           *float64 `json:"profit_usd,omitempty"`
+	UnknownRevenueRequests int64    `json:"unknown_revenue_requests"`
+	RevenueStatus          string   `json:"revenue_status"`
+	RequestCount           int64    `json:"request_count"`
+	SuccessCount           int64    `json:"success_count"`
+	ErrorCount             int64    `json:"error_count"`
+	ErrorRate              float64  `json:"error_rate"`
+	TokenCount             int64    `json:"token_count"`
+	RevenueQuota           int64    `json:"revenue_quota"`
+	RefundQuota            int64    `json:"refund_quota"`
+	RevenueUSD             float64  `json:"revenue_usd"`
+	RefundUSD              float64  `json:"refund_usd"`
+	CostUSD                float64  `json:"cost_usd"`
+	CostStatus             string   `json:"cost_status"`
+	UnknownCostRequests    int64    `json:"unknown_cost_requests"`
+	ProfitUSD              *float64 `json:"profit_usd,omitempty"`
 }
 
 type OperationsReportRow struct {
-	Key                 string   `json:"key"`
-	Label               string   `json:"label"`
-	ModelName           string   `json:"model_name,omitempty"`
-	ChannelID           int      `json:"channel_id,omitempty"`
-	ChannelName         string   `json:"channel_name,omitempty"`
-	UserID              int      `json:"user_id,omitempty"`
-	Username            string   `json:"username,omitempty"`
-	Group               string   `json:"group,omitempty"`
-	RequestCount        int64    `json:"request_count"`
-	SuccessCount        int64    `json:"success_count"`
-	ErrorCount          int64    `json:"error_count"`
-	ErrorRate           float64  `json:"error_rate"`
-	TokenCount          int64    `json:"token_count"`
-	RevenueQuota        int64    `json:"revenue_quota"`
-	RefundQuota         int64    `json:"refund_quota"`
-	RevenueUSD          float64  `json:"revenue_usd"`
-	RefundUSD           float64  `json:"refund_usd"`
-	CostUSD             float64  `json:"cost_usd"`
-	CostStatus          string   `json:"cost_status"`
-	UnknownCostRequests int64    `json:"unknown_cost_requests"`
-	ProfitUSD           *float64 `json:"profit_usd,omitempty"`
+	UnknownRevenueRequests int64    `json:"unknown_revenue_requests"`
+	RevenueStatus          string   `json:"revenue_status"`
+	Key                    string   `json:"key"`
+	Label                  string   `json:"label"`
+	ModelName              string   `json:"model_name,omitempty"`
+	ChannelID              int      `json:"channel_id,omitempty"`
+	ChannelName            string   `json:"channel_name,omitempty"`
+	UserID                 int      `json:"user_id,omitempty"`
+	Username               string   `json:"username,omitempty"`
+	Group                  string   `json:"group,omitempty"`
+	RequestCount           int64    `json:"request_count"`
+	SuccessCount           int64    `json:"success_count"`
+	ErrorCount             int64    `json:"error_count"`
+	ErrorRate              float64  `json:"error_rate"`
+	TokenCount             int64    `json:"token_count"`
+	RevenueQuota           int64    `json:"revenue_quota"`
+	RefundQuota            int64    `json:"refund_quota"`
+	RevenueUSD             float64  `json:"revenue_usd"`
+	RefundUSD              float64  `json:"refund_usd"`
+	CostUSD                float64  `json:"cost_usd"`
+	CostStatus             string   `json:"cost_status"`
+	UnknownCostRequests    int64    `json:"unknown_cost_requests"`
+	ProfitUSD              *float64 `json:"profit_usd,omitempty"`
 }
 
 type OperationsReportChannel struct {
@@ -104,24 +108,27 @@ type OperationsReportHealth struct {
 }
 
 type OperationsReport struct {
-	GeneratedAt    int64                     `json:"generated_at"`
-	StartTimestamp int64                     `json:"start_timestamp"`
-	EndTimestamp   int64                     `json:"end_timestamp"`
-	GroupBy        string                    `json:"group_by"`
-	Truncated      bool                      `json:"truncated"`
-	QuotaPerUnit   float64                   `json:"quota_per_unit"`
-	Summary        OperationsReportSummary   `json:"summary"`
-	Rows           []OperationsReportRow     `json:"rows"`
-	ChannelIDs     []int                     `json:"channel_ids"`
-	Channels       []OperationsReportChannel `json:"channels"`
-	Health         []OperationsReportHealth  `json:"health"`
-	Warnings       []string                  `json:"warnings,omitempty"`
+	AccountingStartedAt int64                     `json:"accounting_started_at"`
+	Funding             *OperationsFundingTotals  `json:"funding,omitempty"`
+	GeneratedAt         int64                     `json:"generated_at"`
+	StartTimestamp      int64                     `json:"start_timestamp"`
+	EndTimestamp        int64                     `json:"end_timestamp"`
+	GroupBy             string                    `json:"group_by"`
+	Truncated           bool                      `json:"truncated"`
+	QuotaPerUnit        float64                   `json:"quota_per_unit"`
+	Summary             OperationsReportSummary   `json:"summary"`
+	Rows                []OperationsReportRow     `json:"rows"`
+	ChannelIDs          []int                     `json:"channel_ids"`
+	Channels            []OperationsReportChannel `json:"channels"`
+	Health              []OperationsReportHealth  `json:"health"`
+	Warnings            []string                  `json:"warnings,omitempty"`
 }
 
 // operationsReportLog is the smallest log projection needed for reporting.
 // Keeping this separate from Log prevents accidental loading of large content
 // fields when an administrator opens a long time range.
 type operationsReportLog struct {
+	RequestId        string `gorm:"column:request_id"`
 	UserId           int    `gorm:"column:user_id"`
 	Username         string `gorm:"column:username"`
 	CreatedAt        int64  `gorm:"column:created_at"`
@@ -225,13 +232,13 @@ func operationReportRowKey(log operationsReportLog, groupBy string) (string, str
 		}
 		return "group:" + label, label
 	default:
-		label := time.Unix(log.CreatedAt, 0).UTC().Format("2006-01-02")
+		label := OperationsBusinessDay(log.CreatedAt)
 		return "day:" + label, label
 	}
 }
 
 func addOperationReportCost(row *operationsReportAccumulator, log operationsReportLog) {
-	if log.Type != LogTypeConsume {
+	if log.Type != LogTypeConsume && log.Type != LogTypeError {
 		return
 	}
 	cost, known := operationReportCostValue(log.Other)
@@ -254,7 +261,11 @@ func finalizeOperationsReportRow(row *operationsReportAccumulator, quotaPerUnit 
 	} else if row.knownCostRequests > 0 {
 		result.CostStatus = "partial"
 	}
-	if quotaPerUnit > 0 && result.CostStatus == "known" {
+	result.RevenueStatus = "known"
+	if result.UnknownRevenueRequests > 0 {
+		result.RevenueStatus = "partial"
+	}
+	if quotaPerUnit > 0 && result.CostStatus == "known" && result.UnknownRevenueRequests == 0 && result.RefundQuota == 0 {
 		profit := result.RevenueUSD - result.RefundUSD - result.CostUSD
 		result.ProfitUSD = &profit
 	}
@@ -304,6 +315,15 @@ func aggregateOperationsReport(logs []operationsReportLog, params OperationsRepo
 				if log.Quota > 0 {
 					target.RevenueQuota += int64(log.Quota)
 				}
+				other, _ := common.StrToMap(log.Other)
+				if income, ok := other["operations_income_usd"].(float64); ok && income >= 0 && !math.IsNaN(income) && !math.IsInf(income, 0) {
+					target.RevenueUSD += income
+					if other["operations_income_known"] != true {
+						target.UnknownRevenueRequests++
+					}
+				} else {
+					target.UnknownRevenueRequests++
+				}
 			case LogTypeRefund:
 				if log.Quota > 0 {
 					target.RefundQuota += int64(log.Quota)
@@ -317,11 +337,8 @@ func aggregateOperationsReport(logs []operationsReportLog, params OperationsRepo
 		addOperationReportCost(&summary, log)
 	}
 
-	toUSD := func(quota int64) float64 { return float64(quota) / quotaPerUnit }
 	rows := make([]OperationsReportRow, 0, len(rowsByKey))
 	for _, row := range rowsByKey {
-		row.RevenueUSD = toUSD(row.RevenueQuota)
-		row.RefundUSD = toUSD(row.RefundQuota)
 		rows = append(rows, finalizeOperationsReportRow(row, quotaPerUnit))
 	}
 	sort.Slice(rows, func(i, j int) bool {
@@ -334,23 +351,23 @@ func aggregateOperationsReport(logs []operationsReportLog, params OperationsRepo
 		return rows[i].RevenueQuota > rows[j].RevenueQuota
 	})
 
-	summary.RevenueUSD = toUSD(summary.RevenueQuota)
-	summary.RefundUSD = toUSD(summary.RefundQuota)
 	resultSummary := finalizeOperationsReportRow(&summary, quotaPerUnit)
 	summaryView := OperationsReportSummary{
-		RequestCount:        resultSummary.RequestCount,
-		SuccessCount:        resultSummary.SuccessCount,
-		ErrorCount:          resultSummary.ErrorCount,
-		ErrorRate:           resultSummary.ErrorRate,
-		TokenCount:          resultSummary.TokenCount,
-		RevenueQuota:        resultSummary.RevenueQuota,
-		RefundQuota:         resultSummary.RefundQuota,
-		RevenueUSD:          resultSummary.RevenueUSD,
-		RefundUSD:           resultSummary.RefundUSD,
-		CostUSD:             resultSummary.CostUSD,
-		CostStatus:          resultSummary.CostStatus,
-		UnknownCostRequests: resultSummary.UnknownCostRequests,
-		ProfitUSD:           resultSummary.ProfitUSD,
+		UnknownRevenueRequests: resultSummary.UnknownRevenueRequests,
+		RevenueStatus:          resultSummary.RevenueStatus,
+		RequestCount:           resultSummary.RequestCount,
+		SuccessCount:           resultSummary.SuccessCount,
+		ErrorCount:             resultSummary.ErrorCount,
+		ErrorRate:              resultSummary.ErrorRate,
+		TokenCount:             resultSummary.TokenCount,
+		RevenueQuota:           resultSummary.RevenueQuota,
+		RefundQuota:            resultSummary.RefundQuota,
+		RevenueUSD:             resultSummary.RevenueUSD,
+		RefundUSD:              resultSummary.RefundUSD,
+		CostUSD:                resultSummary.CostUSD,
+		CostStatus:             resultSummary.CostStatus,
+		UnknownCostRequests:    resultSummary.UnknownCostRequests,
+		ProfitUSD:              resultSummary.ProfitUSD,
 	}
 	ids := make([]int, 0, len(channelIDs))
 	for id := range channelIDs {
@@ -383,7 +400,19 @@ func GetOperationsReport(params OperationsReportParams) (*OperationsReport, erro
 		return nil, errors.New("report time range cannot exceed 366 days")
 	}
 	params.GroupBy = normalizeOperationsReportGroupBy(params.GroupBy)
-	query := LOG_DB.Table("logs").Select("user_id, username, created_at, type, model_name, quota, prompt_tokens, completion_tokens, channel_id, "+logGroupCol+" AS group_value, other").
+	startedAt, err := operationsStartTimestamp()
+	if err != nil {
+		return nil, err
+	}
+	if startedAt > params.StartTimestamp {
+		params.StartTimestamp = startedAt
+	}
+	if params.EndTimestamp < params.StartTimestamp {
+		report := aggregateOperationsReport(nil, params)
+		report.AccountingStartedAt = startedAt
+		return report, nil
+	}
+	query := LOG_DB.Table("logs").Select("request_id, user_id, username, created_at, type, model_name, quota, prompt_tokens, completion_tokens, channel_id, "+logGroupCol+" AS group_value, other").
 		Where("created_at >= ? AND created_at <= ?", params.StartTimestamp, params.EndTimestamp).
 		Where("type IN ?", []int{LogTypeConsume, LogTypeRefund, LogTypeError})
 	if params.ModelName != "" {
@@ -407,7 +436,17 @@ func GetOperationsReport(params OperationsReportParams) (*OperationsReport, erro
 	if truncated {
 		logs = logs[:operationsReportMaxLogRows]
 	}
+	if err := enrichOperationsAccounting(logs, params); err != nil {
+		return nil, err
+	}
 	report := aggregateOperationsReport(logs, params)
+	report.AccountingStartedAt = startedAt
 	report.Truncated = truncated
+	if err := checkOperationsReportCompleteness(report, logs, params); err != nil {
+		return nil, err
+	}
+	if err := enrichOperationsFundingTotals(report, params); err != nil {
+		return nil, err
+	}
 	return report, nil
 }

@@ -357,6 +357,8 @@ func SetApiRouter(router *gin.Engine) {
 		// Administrator-only operating report. It deliberately reads the same
 		// bounded log source as the usage page and never exposes raw log content.
 		logRoute.GET("/operations-report", middleware.AdminAuth(), controller.GetOperationsReport)
+		logRoute.GET("/operations-cost-versions", middleware.AdminAuth(), controller.ListChannelCostVersions)
+		logRoute.POST("/operations-cost-versions", middleware.RootAuth(), controller.CreateChannelCostVersion)
 		logRoute.GET("/self/stat", middleware.UserAuth(), controller.GetLogsSelfStat)
 		logRoute.GET("/channel_affinity_usage_cache", middleware.AdminAuth(), controller.GetChannelAffinityUsageCacheStats)
 		logRoute.GET("/search", middleware.AdminAuth(), controller.SearchAllLogs)

@@ -146,6 +146,9 @@ func completeTeamOrderTx(tx *gorm.DB, order *TeamOrder) error {
 	if err := tx.Create(sub).Error; err != nil {
 		return err
 	}
+	if err := operationsSnapshotTeamTx(tx, sub, order); err != nil {
+		return err
+	}
 	order.Status = common.TopUpStatusSuccess
 	order.CompleteTime = common.GetTimestamp()
 	if err := tx.Save(order).Error; err != nil {

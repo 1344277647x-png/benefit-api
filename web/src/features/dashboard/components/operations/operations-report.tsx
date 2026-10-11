@@ -44,15 +44,18 @@ import type {
   OperationsReportGroupBy,
   OperationsReportHealth,
 } from '../../types'
+import { ChannelCostSettings } from './channel-cost-settings'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
 function dateInputValue(date: Date) {
-  return date.toISOString().slice(0, 10)
+  return new Date(date.getTime() + 8 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10)
 }
 
 function dateInputTimestamp(value: string, endOfDay = false) {
-  const date = new Date(`${value}T${endOfDay ? '23:59:59' : '00:00:00'}`)
+  const date = new Date(`${value}T${endOfDay ? '23:59:59' : '00:00:00'}+08:00`)
   return Number.isNaN(date.getTime()) ? 0 : Math.floor(date.getTime() / 1000)
 }
 
@@ -310,10 +313,51 @@ export function OperationsReport() {
             </Alert>
           )}
           <SummaryGrid report={report} />
+          {!!report?.accounting_started_at && (
+            <p className='text-muted-foreground text-sm'>
+              {t(
+                'Accounting starts at the first deployment; earlier usage is excluded.'
+              )}{' '}
+              {new Date(report.accounting_started_at * 1000).toLocaleString(
+                'zh-CN',
+                { timeZone: 'Asia/Shanghai' }
+              )}
+            </p>
+          )}
+          {report?.funding && (
+            <div className='grid gap-3 text-sm sm:grid-cols-2'>
+              <div>
+                {t('Confirmed cash receipts (not consumption revenue)')}:{' '}
+                {formatCurrencyUSD(report.funding.receipts_known_usd)}
+              </div>
+              <div>
+                {t('Expiry remainder income (not allocated to channels)')}:{' '}
+                {formatCurrencyUSD(report.funding.expiry_known_usd)}
+              </div>
+              {(report.funding.unknown_entries > 0 ||
+                report.funding.truncated) && (
+                <p className='text-amber-600 sm:col-span-2'>
+                  {t(
+                    'Funding totals are incomplete; unverified entries are excluded.'
+                  )}
+                </p>
+              )}
+            </div>
+          )}
+          {!!report?.summary.unknown_revenue_requests && (
+            <Alert>
+              <AlertDescription>
+                {t(
+                  'Some income sources are unverified. Revenue shows only the confirmed portion; gross profit is unavailable.'
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
           <ReportTable report={report} />
         </CardContent>
       </Card>
       <ChannelOperationsCard report={report} />
+      <ChannelCostSettings />
     </div>
   )
 }

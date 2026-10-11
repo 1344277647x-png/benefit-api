@@ -208,7 +208,14 @@ func InitDB() (err error) {
 		if err != nil {
 			return err
 		}
-		return ensureUserQuotaColumns(DB, common.MainDatabaseType())
+		if err := ensureUserQuotaColumns(DB, common.MainDatabaseType()); err != nil {
+			return err
+		}
+		if err := EnsureOperationsStart(DB); err != nil {
+			return err
+		}
+		operationsReadyDB.Store(DB)
+		return nil
 	} else {
 		common.FatalLog(err)
 	}
@@ -335,6 +342,7 @@ func migrateDB() error {
 		&LotteryDraw{},
 		&LotteryRule{},
 		&BusinessEvent{},
+		&OperationsPool{}, &OperationsEntry{}, &ChannelCostVersion{}, &OperationsState{},
 		&BusinessEventLogReceipt{},
 		&ContentAuditRecord{},
 		&QuotaData{},
@@ -421,6 +429,10 @@ func migrateDBFast() error {
 		{&LotteryDraw{}, "LotteryDraw"},
 		{&LotteryRule{}, "LotteryRule"},
 		{&BusinessEvent{}, "BusinessEvent"},
+		{&OperationsPool{}, "OperationsPool"},
+		{&OperationsEntry{}, "OperationsEntry"},
+		{&ChannelCostVersion{}, "ChannelCostVersion"},
+		{&OperationsState{}, "OperationsState"},
 		{&BusinessEventLogReceipt{}, "BusinessEventLogReceipt"},
 		{&ContentAuditRecord{}, "ContentAuditRecord"},
 		{&QuotaData{}, "QuotaData"},

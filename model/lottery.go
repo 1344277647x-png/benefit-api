@@ -418,7 +418,7 @@ func DrawLottery(userId int, requestKey string) (*LotteryDraw, *LotteryStatus, e
 		if result.RowsAffected != 1 {
 			return ErrLotteryRequestConflict
 		}
-		if err := creditTopUpQuota(tx, userId, rewardQuota, nil); err != nil {
+		if err := creditTopUpQuota(tx, userId, rewardQuota, nil, nil); err != nil {
 			return err
 		}
 

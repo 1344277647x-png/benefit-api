@@ -163,6 +163,7 @@ func writeOperationsReportCSV(c *gin.Context, report *model.OperationsReport) {
 		"key", "label", "model", "channel_id", "channel", "user_id", "username", "group",
 		"requests", "successes", "errors", "tokens", "revenue_quota", "refund_quota",
 		"revenue_usd", "refund_usd", "cost_usd", "cost_status", "unknown_cost_requests", "profit_usd", "error_rate",
+		"revenue_status", "unknown_revenue_requests",
 	})
 	for _, row := range report.Rows {
 		profit := ""
@@ -191,6 +192,8 @@ func writeOperationsReportCSV(c *gin.Context, report *model.OperationsReport) {
 			strconv.FormatInt(row.UnknownCostRequests, 10),
 			profit,
 			strconv.FormatFloat(row.ErrorRate, 'f', 4, 64),
+			operationsCSVText(row.RevenueStatus),
+			strconv.FormatInt(row.UnknownRevenueRequests, 10),
 		})
 	}
 	writer.Flush()

@@ -347,6 +347,9 @@ type RecordConsumeLogParams struct {
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
+	if err := recordOperationsConsumption(userId, c.GetString(common.RequestIdKey), params); err != nil {
+		logger.LogError(c, "operating income requires reconciliation: "+err.Error())
+	}
 	if !common.LogConsumeEnabled {
 		return
 	}

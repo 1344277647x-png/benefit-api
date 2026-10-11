@@ -626,6 +626,9 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if err := upsertSubscriptionTopUpTx(tx, &order); err != nil {
 			return err
 		}
+		if err := operationsSnapshotSubscriptionTx(tx, subscription, &order, 0); err != nil {
+			return err
+		}
 		order.Status = common.TopUpStatusSuccess
 		order.CompleteTime = common.GetTimestamp()
 		if providerPayload != "" {
@@ -735,6 +738,9 @@ func AdminBindSubscription(userId int, planId int, sourceNote string) (string, e
 		}
 		subscription, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, "admin")
 		if err == nil {
+			err = operationsSnapshotSubscriptionTx(tx, subscription, nil, 0)
+		}
+		if err == nil {
 			groupChanged = subscription.PrevUserGroup != ""
 		}
 		return err
@@ -826,6 +832,9 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 			ProviderPayload: fmt.Sprintf("charged_quota=%d", requiredQuota),
 		}
 		if err := tx.Create(order).Error; err != nil {
+			return err
+		}
+		if err := operationsSnapshotSubscriptionTx(tx, subscription, order, requiredQuota); err != nil {
 			return err
 		}
 
@@ -1419,7 +1428,7 @@ func RefundSubscriptionPreConsume(requestId string) error {
 			Where("request_id = ?", requestId).First(&record).Error; err != nil {
 			return err
 		}
-		if record.Status == "refunded" {
+		if record.Status == "refunded" || record.Status == "settled" {
 			return nil
 		}
 		if record.PreConsumed <= 0 {

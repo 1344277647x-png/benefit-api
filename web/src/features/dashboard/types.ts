@@ -287,6 +287,8 @@ export type OperationsReportGroupBy =
   | 'group'
 
 export interface OperationsReportRow {
+  unknown_revenue_requests?: number
+  revenue_status?: 'known' | 'partial' | 'unknown'
   key: string
   label: string
   model_name?: string
@@ -332,6 +334,13 @@ export interface OperationsReportHealth {
 }
 
 export interface OperationsReport {
+  accounting_started_at?: number
+  funding?: {
+    receipts_known_usd: number
+    expiry_known_usd: number
+    unknown_entries: number
+    truncated: boolean
+  }
   generated_at: number
   start_timestamp: number
   end_timestamp: number
