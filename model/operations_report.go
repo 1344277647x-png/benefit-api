@@ -383,6 +383,8 @@ func aggregateOperationsReport(logs []operationsReportLog, params OperationsRepo
 		Summary:        summaryView,
 		Rows:           rows,
 		ChannelIDs:     ids,
+		Channels:       []OperationsReportChannel{},
+		Health:         []OperationsReportHealth{},
 	}
 }
 

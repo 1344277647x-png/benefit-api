@@ -25,6 +25,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestEmptyOperationsReportReturnsArrayContract(t *testing.T) {
+	report := aggregateOperationsReport(nil, OperationsReportParams{StartTimestamp: 1, EndTimestamp: 2})
+	require.NotNil(t, report.Rows)
+	require.NotNil(t, report.ChannelIDs)
+	require.NotNil(t, report.Channels)
+	require.NotNil(t, report.Health)
+	require.Empty(t, report.Channels)
+	require.Empty(t, report.Health)
+}
+
 func TestAggregateOperationsReportKeepsCostUnknown(t *testing.T) {
 	day := time.Date(2026, time.January, 4, 12, 0, 0, 0, time.UTC).Unix()
 	logs := []operationsReportLog{

@@ -111,6 +111,17 @@ export async function getOperationsReport(params: {
   if (!res.data.success || !res.data.data) {
     throw new Error(res.data.message || 'Unable to load operations report')
   }
+  // Older servers and empty channel/health queries may serialize nil as null.
+  // Keep the report's list contract stable before rendering length/map/forEach.
+  const report = res.data.data
+  res.data.data = {
+    ...report,
+    rows: report.rows ?? [],
+    channel_ids: report.channel_ids ?? [],
+    channels: report.channels ?? [],
+    health: report.health ?? [],
+    warnings: report.warnings ?? [],
+  }
   return res.data
 }
 
