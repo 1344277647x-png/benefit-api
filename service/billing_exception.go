@@ -41,9 +41,13 @@ func recordPartialSettlementException(c *gin.Context, info *relaycommon.RelayInf
 		"reserved_quota": reserved, "token_reserved_quota": tokenReserved,
 		"expected_quota": actualQuota, "failure_stage": stage, "usage_source": info.PartialStreamUsageSource,
 	}}
+	action := "settlement_failed"
+	if c.GetBool("partial_stream_billing_attempted") {
+		action = "partial_settlement_failed"
+	}
 	event := &model.BusinessEvent{EventKey: "billing-exception:" + requestID, Category: model.BusinessEventBilling,
-		Action: "partial_settlement_failed", UserId: info.UserId, RequestId: requestID,
-		Content: fmt.Sprintf("流式部分结算失败，待人工对账；预扣=%d，令牌预扣=%d，应结算=%d，阶段=%s（额度单位，非成功扣费）", reserved, tokenReserved, actualQuota, stage)}
+		Action: action, UserId: info.UserId, RequestId: requestID,
+		Content: fmt.Sprintf("结算失败，待人工对账；预扣=%d，令牌预扣=%d，应结算=%d，阶段=%s（额度单位，非成功扣费）", reserved, tokenReserved, actualQuota, stage)}
 	if err := model.EnqueueBillingException(event, details); err != nil {
 		event.DetailsJSON = common.MapToJsonStr(details)
 		// Main DB may be the failed dependency. Try the independent log DB

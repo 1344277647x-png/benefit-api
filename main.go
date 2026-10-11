@@ -352,6 +352,7 @@ func InitResources() error {
 	}
 	if common.IsMasterNode {
 		service.StartBusinessEventDelivery()
+		service.StartOperationsProjection()
 	}
 
 	perfmetrics.Init()

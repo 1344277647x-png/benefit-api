@@ -1,6 +1,8 @@
 package model
 
 import (
+	"context"
+	"github.com/QuantumNous/new-api/common"
 	"os"
 	"testing"
 
@@ -26,11 +28,19 @@ func TestOperationsExternalDatabaseMigration(t *testing.T) {
 			}
 			db, err := gorm.Open(dialector, &gorm.Config{})
 			require.NoError(t, err)
+			oldDB, oldType := DB, common.MainDatabaseType()
+			DB = db
+			if engine == "mysql" {
+				common.SetMainDatabaseType(common.DatabaseTypeMySQL)
+			} else {
+				common.SetMainDatabaseType(common.DatabaseTypePostgreSQL)
+			}
+			t.Cleanup(func() { DB = oldDB; common.SetMainDatabaseType(oldType) })
 			sqlDB, err := db.DB()
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = sqlDB.Close() })
 			for i := 0; i < 2; i++ {
-				require.NoError(t, db.AutoMigrate(&OperationsPool{}, &OperationsEntry{}, &ChannelCostVersion{}, &OperationsState{}))
+				require.NoError(t, db.AutoMigrate(&OperationsPool{}, &OperationsEntry{}, &ChannelCostVersion{}, &OperationsState{}, &OperationsEvent{}, &OperationsLane{}))
 				require.NoError(t, EnsureOperationsStart(db))
 			}
 			var count int64
@@ -45,6 +55,27 @@ func TestOperationsExternalDatabaseMigration(t *testing.T) {
 				require.Equal(t, "9.21875", entry.ValueUSD)
 				return nil
 			}))
+			require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+				return enqueueOperationsTx(tx, "migration:async", "migration-async", operationsFact{Action: "usage", PoolKey: "migration:pool", UserId: 1, Quota: 1000, Kind: "subscription_usage"})
+			}))
+			require.NoError(t, ProcessOperationsEvents(context.Background(), 200))
+			require.NoError(t, ProcessOperationsEvents(context.Background(), 200))
+			var receipt OperationsEvent
+			require.NoError(t, db.First(&receipt, "event_key = ?", "migration:async").Error)
+			require.True(t, receipt.Done)
+			// Exercise a real SQL failure/savepoint and subsequent recovery.
+			require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+				return enqueueOperationsTx(tx, "migration:retry", "migration-retry", operationsFact{Action: "usage", PoolKey: "migration:pool", UserId: 1, Quota: 1000, Kind: "subscription_usage"})
+			}))
+			require.NoError(t, db.Migrator().RenameTable(&OperationsEntry{}, "operations_entries_offline"))
+			require.Error(t, ProcessOperationsEvents(context.Background(), 200))
+			require.NoError(t, db.Migrator().RenameTable("operations_entries_offline", "operations_entries"))
+			require.NoError(t, db.Model(&OperationsEvent{}).Where("event_key = ?", "migration:retry").Update("next_attempt_at", 0).Error)
+			require.NoError(t, ProcessOperationsEvents(context.Background(), 200))
+			receipt = OperationsEvent{}
+			require.NoError(t, db.First(&receipt, "event_key = ?", "migration:retry").Error)
+			require.True(t, receipt.Done)
+			require.Equal(t, 1, receipt.Attempts)
 		})
 	}
 }

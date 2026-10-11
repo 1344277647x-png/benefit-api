@@ -10,8 +10,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// Economic attribution follows settlement time. Reservations change spendable
-// quota only; final settlement moves economic value and the wallet delta together.
+// Spendable quota and the immutable receipt commit together. Economic value is
+// projected later and can never roll back a successful wallet settlement.
 func SettleOperationsWallet(userId int, requestId string, actualQuota, delta int) error {
 	if !operationsAvailable(DB) || requestId == "" {
 		return adjustWalletBillingQuota(userId, delta)
@@ -25,17 +25,8 @@ func SettleOperationsWallet(userId int, requestId string, actualQuota, delta int
 		if err := lockForUpdate(tx).Select("id", "quota").First(&user, userId).Error; err != nil {
 			return err
 		}
-		var entry OperationsEntry
-		if err := tx.First(&entry, "event_key = ?", "usage:"+requestId).Error; err == nil {
-			if entry.UserId != userId || entry.Quota != int64(actualQuota) || entry.Kind != "wallet_usage" {
-				return errors.New("wallet settlement idempotency conflict")
-			}
-			return nil
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
-		// Trusted requests may settle without making a reservation first.
-		if err := operationsOpenWalletTx(tx, userId, int64(user.Quota)); err != nil {
+		exists, err := operationsSettlementExists(tx, "usage:"+requestId, userId, int64(actualQuota), int64(delta), OperationsWalletKey(userId))
+		if err != nil || exists {
 			return err
 		}
 		if delta < 0 && user.Quota > common.MaxWalletQuota+delta {
@@ -44,10 +35,7 @@ func SettleOperationsWallet(userId int, requestId string, actualQuota, delta int
 		if err := tx.Model(&User{}).Where("id = ?", userId).Update("quota", gorm.Expr("quota - ?", delta)).Error; err != nil {
 			return err
 		}
-		if err := operationsEnsureInventoryTx(tx, userId, int64(actualQuota), requestId); err != nil {
-			return err
-		}
-		if _, err := OperationsTakeTx(tx, OperationsWalletKey(userId), "usage:"+requestId, requestId, "wallet_usage", userId, int64(actualQuota), common.GetTimestamp()); err != nil {
+		if err := enqueueOperationsTx(tx, "usage:"+requestId, requestId, operationsFact{Action: "usage", PoolKey: OperationsWalletKey(userId), UserId: userId, Opening: int64(user.Quota), Quota: int64(actualQuota), Delta: int64(delta), Kind: "wallet_usage"}); err != nil {
 			return err
 		}
 		applied = true
@@ -111,28 +99,16 @@ func AdjustOperationsWallet(userId, delta int, gift bool) error {
 		if err := lockForUpdate(tx).Select("id", "quota").First(&user, userId).Error; err != nil {
 			return err
 		}
-		if err := operationsOpenWalletTx(tx, userId, int64(user.Quota)); err != nil {
-			return err
-		}
 		if delta > 0 && user.Quota > common.MaxWalletQuota-delta {
 			return ErrWalletQuotaLimitExceeded
 		}
 		key := fmt.Sprintf("adjustment:%d:%d", userId, time.Now().UnixNano())
+		f := operationsFact{Action: "adjustment", PoolKey: OperationsWalletKey(userId), UserId: userId, Opening: int64(user.Quota), Quota: -int64(delta), Kind: "adjustment"}
 		if delta > 0 {
-			unknown, kind := strconv.Itoa(delta), "unverified_credit"
-			if gift {
-				unknown, kind = "0", "gift"
-			}
-			if err := OperationsCreditTx(tx, OperationsWalletKey(userId), key, kind, userId, int64(delta), "0", unknown, common.GetTimestamp()); err != nil {
-				return err
-			}
-		} else {
-			if err := operationsEnsureInventoryTx(tx, userId, -int64(delta), key); err != nil {
-				return err
-			}
-			if _, err := OperationsTakeTx(tx, OperationsWalletKey(userId), key, "", "adjustment", userId, -int64(delta), common.GetTimestamp()); err != nil {
-				return err
-			}
+			f.Action, f.Quota, f.Gift = "credit", int64(delta), gift
+		}
+		if err := enqueueOperationsTx(tx, key, "", f); err != nil {
+			return err
 		}
 		return tx.Model(&User{}).Where("id = ?", userId).Update("quota", gorm.Expr("quota + ?", delta)).Error
 	})
@@ -156,18 +132,8 @@ func OverrideOperationsWallet(userId, quota int) error {
 		if !operationsAvailable(tx) {
 			return tx.Model(&User{}).Where("id = ?", userId).Update("quota", quota).Error
 		}
-		if err := operationsOpenWalletTx(tx, userId, int64(user.Quota)); err != nil {
-			return err
-		}
-		var pool OperationsPool
-		if err := lockForUpdate(tx).First(&pool, "pool_key = ?", OperationsWalletKey(userId)).Error; err != nil {
-			return err
-		}
 		key := fmt.Sprintf("override:%d:%d", userId, time.Now().UnixNano())
-		if _, err := OperationsTakeTx(tx, pool.PoolKey, key+":remove", "", "adjustment", userId, pool.Quota, common.GetTimestamp()); err != nil {
-			return err
-		}
-		if err := OperationsCreditTx(tx, pool.PoolKey, key+":fund", "unverified_credit", userId, int64(quota), "0", strconv.Itoa(quota), common.GetTimestamp()); err != nil {
+		if err := enqueueOperationsTx(tx, key, "", operationsFact{Action: "override", PoolKey: OperationsWalletKey(userId), UserId: userId, Opening: int64(user.Quota), Quota: int64(quota)}); err != nil {
 			return err
 		}
 		delta = int64(quota) - int64(user.Quota)

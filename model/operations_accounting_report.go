@@ -98,6 +98,13 @@ func checkOperationsReportCompleteness(report *OperationsReport, logs []operatio
 		return err
 	}
 	missing := report.Truncated || len(entries) > operationsReportMaxLogRows
+	// Pending projection is never interpreted as zero cost or verified profit,
+	// including when the independent consumption log was not written.
+	var pending int64
+	if err := DB.Model(&OperationsEvent{}).Where("created_at >= ? AND created_at <= ? AND done = ?", params.StartTimestamp, params.EndTimestamp, false).Count(&pending).Error; err != nil {
+		return err
+	}
+	missing = missing || pending > 0
 	for _, entry := range entries {
 		if !seen[entry.RequestId] {
 			missing = true

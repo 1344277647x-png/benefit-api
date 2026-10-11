@@ -7,7 +7,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
@@ -37,7 +36,7 @@ func operationsAvailable(tx *gorm.DB) bool {
 	if DB != nil && operationsReadyDB.Load() == DB {
 		return true
 	}
-	return tx.Migrator().HasTable(&OperationsPool{})
+	return tx.Migrator().HasTable(&OperationsEvent{})
 }
 
 // Initialize before the first reservation; a post-settlement balance may already
@@ -46,19 +45,12 @@ func prepareOperationsWallet(userId int) error {
 	if !operationsAvailable(DB) {
 		return nil
 	}
-	var count int64
-	if err := DB.Model(&OperationsPool{}).Where("pool_key = ?", OperationsWalletKey(userId)).Count(&count).Error; err != nil {
-		return err
-	}
-	if count != 0 {
-		return nil
-	}
 	return DB.Transaction(func(tx *gorm.DB) error {
 		var user User
 		if err := lockForUpdate(tx).Select("id", "quota").First(&user, userId).Error; err != nil {
 			return err
 		}
-		return operationsOpenWalletTx(tx, userId, int64(user.Quota))
+		return enqueueOperationsTx(tx, "opening:"+OperationsWalletKey(userId), "", operationsFact{Action: "open", UserId: userId, Opening: int64(user.Quota)})
 	})
 }
 
@@ -70,26 +62,17 @@ func operationsCreditWalletTx(tx *gorm.DB, userId, quota int, topup *TopUp, even
 	if err := lockForUpdate(tx).Select("id", "quota").First(&user, userId).Error; err != nil {
 		return err
 	}
-	// This hook executes after the actual quota credit, in the same transaction.
-	if err := operationsOpenWalletTx(tx, userId, int64(user.Quota)-int64(quota)); err != nil {
-		return err
-	}
-	value, unknown, kind := "0", "0", "gift"
+	f := operationsFact{Action: "credit", UserId: userId, PoolKey: OperationsWalletKey(userId), Opening: int64(user.Quota) - int64(quota), Quota: int64(quota), Gift: topup == nil, Rate: operation_setting.USDExchangeRate}
 	if topup != nil {
-		kind = "unverified_credit"
 		if topup.Id > 0 {
 			eventKey = "topup:" + strconv.Itoa(topup.Id)
-			kind = "receipt"
 		}
 		// These providers persist the verified local-currency payment amount.
 		// Stripe/Creem or manual credits with ambiguous amount semantics stay unknown.
-		if (topup.PaymentProvider == PaymentProviderAlipay || topup.PaymentProvider == PaymentProviderEpay) && topup.Money >= 0 && operation_setting.USDExchangeRate > 0 {
-			value = decimal.NewFromFloat(topup.Money).DivRound(decimal.NewFromFloat(operation_setting.USDExchangeRate), 24).String()
-		} else {
-			unknown = strconv.Itoa(quota)
-		}
+		f.Money = topup.Money
+		f.Verified = (topup.PaymentProvider == PaymentProviderAlipay || topup.PaymentProvider == PaymentProviderEpay) && topup.Money >= 0
 	}
-	return OperationsCreditTx(tx, OperationsWalletKey(userId), eventKey, kind, userId, int64(quota), value, unknown, common.GetTimestamp())
+	return enqueueOperationsTx(tx, eventKey, "", f)
 }
 
 func operationsSnapshotSubscriptionTx(tx *gorm.DB, sub *UserSubscription, order *SubscriptionOrder, chargedQuota int) error {
@@ -100,40 +83,23 @@ func operationsSnapshotPlanTx(tx *gorm.DB, key string, sub *UserSubscription, or
 	if !operationsAvailable(tx) {
 		return nil
 	}
-	value, unknown, kind := "0", "0", "gift"
 	if sub.AmountTotal <= 0 || sub.NextResetTime > 0 {
 		return nil
 	}
+	f := operationsFact{Action: "plan", PoolKey: key, UserId: sub.UserId, Quota: sub.AmountTotal, EndTime: sub.EndTime, Gift: order == nil, Rate: operation_setting.USDExchangeRate}
 	if order != nil {
-		kind = "receipt"
+		f.Money = order.Money
+		f.Verified = (order.PaymentProvider == PaymentProviderEpay || order.PaymentProvider == PaymentProviderAlipay) && order.Money >= 0
 		if order.PaymentMethod == PaymentMethodBalance {
-			kind = "transfer"
+			f.Balance, f.Charged = true, int64(chargedQuota)
 			var user User
 			if err := lockForUpdate(tx).Select("id", "quota").First(&user, sub.UserId).Error; err != nil {
 				return err
 			}
-			if err := operationsOpenWalletTx(tx, sub.UserId, int64(user.Quota)+int64(chargedQuota)); err != nil {
-				return err
-			}
-			entry, err := OperationsTakeTx(tx, OperationsWalletKey(sub.UserId), "purchase:"+key, "", "transfer", sub.UserId, int64(chargedQuota), common.GetTimestamp())
-			if err != nil {
-				return err
-			}
-			value = entry.ValueUSD
-			if chargedQuota > 0 {
-				u, _ := decimal.NewFromString(entry.UnknownQuota)
-				unknown = u.Mul(decimal.NewFromInt(sub.AmountTotal)).DivRound(decimal.NewFromInt(int64(chargedQuota)), 24).String()
-			}
-		} else if (order.PaymentProvider == PaymentProviderEpay || order.PaymentProvider == PaymentProviderAlipay) && order.Money >= 0 && operation_setting.USDExchangeRate > 0 {
-			value = decimal.NewFromFloat(order.Money).DivRound(decimal.NewFromFloat(operation_setting.USDExchangeRate), 24).String()
-		} else {
-			unknown = strconv.FormatInt(sub.AmountTotal, 10)
+			f.Opening = int64(user.Quota) + int64(chargedQuota)
 		}
 	}
-	if err := OperationsCreditTx(tx, key, "fund:"+key, kind, sub.UserId, sub.AmountTotal, value, unknown, common.GetTimestamp()); err != nil {
-		return err
-	}
-	return tx.Model(&OperationsPool{}).Where("pool_key = ?", key).Update("end_time", sub.EndTime).Error
+	return enqueueOperationsTx(tx, "fund:"+key, "", f)
 }
 
 func operationsSnapshotTeamTx(tx *gorm.DB, sub *TeamSubscription, order *TeamOrder) error {
@@ -158,18 +124,11 @@ func operationsSettleTeamTx(tx *gorm.DB, usage *TeamUsage) error {
 		return nil
 	}
 	key := "team:" + strconv.Itoa(usage.TeamSubscriptionId)
-	var pool OperationsPool
-	if err := lockForUpdate(tx).First(&pool, "pool_key = ?", key).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil // Historical terms lack immutable funding provenance.
-		}
+	var team Team
+	if err := tx.First(&team, usage.TeamId).Error; err != nil {
 		return err
 	}
-	entry, err := OperationsTakeTx(tx, key, "usage:"+usage.RequestId, usage.RequestId, "team_usage", pool.UserId, usage.FinalAmount, common.GetTimestamp())
-	if err != nil {
-		return err
-	}
-	return tx.Model(&OperationsEntry{}).Where("event_key = ?", entry.EventKey).Update("request_user_id", usage.MemberUserId).Error
+	return enqueueOperationsTx(tx, "usage:"+usage.RequestId, usage.RequestId, operationsFact{Action: "usage", PoolKey: key, UserId: team.OwnerId, MemberId: usage.MemberUserId, Quota: usage.FinalAmount, Kind: "team_usage"})
 }
 
 func recordOperationsConsumption(userId int, requestId string, params RecordConsumeLogParams) error {

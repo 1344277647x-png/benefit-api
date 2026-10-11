@@ -13,14 +13,96 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 type unavailablePartialFunding struct{ WalletFunding }
 
 func (f *unavailablePartialFunding) Settle(int) error {
 	return errors.New("test settlement unavailable")
+}
+
+func TestTextBillingBalancesAndTokenSurviveBrokenAccountingPool(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	oldDB, oldLogs := model.DB, model.LOG_DB
+	model.DB, model.LOG_DB = db, db
+	t.Cleanup(func() { model.DB, model.LOG_DB = oldDB, oldLogs; _ = sqlDB.Close() })
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Log{}, &model.OperationsPool{}, &model.OperationsEntry{}, &model.OperationsEvent{}, &model.OperationsLane{}, &model.BusinessEvent{}))
+	seedUser(t, 751, 1000)
+	seedToken(t, 752, 751, "accounting-failure-test", 1000)
+	require.NoError(t, db.Create(&model.OperationsPool{PoolKey: "wallet:751", UserId: 751, Quota: 1000, ValueUSD: "invalid", UnknownQuota: "0"}).Error)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("POST", "/v1/responses", nil)
+	c.Set(common.RequestIdKey, t.Name())
+	info := &relaycommon.RelayInfo{RequestId: t.Name(), UserId: 751, TokenId: 752, TokenKey: "accounting-failure-test", OriginModelName: "gpt-4", StartTime: time.Now(), ChannelMeta: &relaycommon.ChannelMeta{ChannelId: 1}, BillingSource: BillingSourceWallet, PriceData: hosttypes.PriceData{ModelRatio: 1, CompletionRatio: 2, GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: 1}}}
+	funding := &WalletFunding{userId: 751, requestId: t.Name()}
+	require.NoError(t, funding.PreConsume(100))
+	require.NoError(t, model.DecreaseTokenQuota(752, "accounting-failure-test", 100))
+	info.Billing = &BillingSession{relayInfo: info, funding: funding, preConsumedQuota: 100, tokenConsumed: 100}
+	PostTextConsumeQuota(c, info, &dto.Usage{PromptTokens: 20, CompletionTokens: 10, TotalTokens: 30}, nil)
+	require.Error(t, model.ProcessOperationsEvents(context.Background(), 200))
+	var user model.User
+	var token model.Token
+	require.NoError(t, db.First(&user, 751).Error)
+	require.NoError(t, db.First(&token, 752).Error)
+	assert.Equal(t, 960, user.Quota)
+	assert.Equal(t, 960, token.RemainQuota)
+	assert.Equal(t, 40, user.UsedQuota)
+	assert.Equal(t, 40, token.UsedQuota)
+	var logs int64
+	require.NoError(t, db.Model(&model.Log{}).Where("type = ?", model.LogTypeConsume).Count(&logs).Error)
+	assert.Equal(t, int64(1), logs)
+	require.NoError(t, db.Model(&model.OperationsPool{}).Where("pool_key = ?", "wallet:751").Update("value_usd", "10").Error)
+	require.NoError(t, db.Model(&model.OperationsEvent{}).Where("user_id = ?", 751).Update("next_attempt_at", 0).Error)
+	require.NoError(t, model.ProcessOperationsEvents(context.Background(), 200))
+	require.NoError(t, model.ProcessOperationsEvents(context.Background(), 200))
+	require.NoError(t, db.First(&user, 751).Error)
+	require.NoError(t, db.First(&token, 752).Error)
+	assert.Equal(t, 960, user.Quota)
+	assert.Equal(t, 960, token.RemainQuota)
+	var income model.OperationsEntry
+	require.NoError(t, db.First(&income, "request_id = ?", t.Name()).Error)
+	assert.Equal(t, "0.4", income.ValueUSD)
+}
+
+func TestNormalSettlementFailureRecordsExceptionWithoutSuccessfulConsumption(t *testing.T) {
+	require.NoError(t, model.DB.AutoMigrate(&model.BusinessEvent{}, &model.BusinessEventLogReceipt{}))
+	t.Cleanup(func() {
+		require.NoError(t, model.DB.Where("event_key = ?", "billing-exception:"+t.Name()).Delete(&model.BusinessEvent{}).Error)
+		require.NoError(t, model.LOG_DB.Where("request_id = ?", t.Name()).Delete(&model.Log{}).Error)
+	})
+	truncate(t)
+	seedUser(t, 741, 1000)
+	seedToken(t, 742, 741, "normal-failure-test", 1000)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("POST", "/v1/responses", nil)
+	c.Set(common.RequestIdKey, t.Name())
+	info := &relaycommon.RelayInfo{UserId: 741, TokenId: 742, TokenKey: "normal-failure-test", OriginModelName: "gpt-4", StartTime: time.Now(), ChannelMeta: &relaycommon.ChannelMeta{ChannelId: 1}, BillingSource: BillingSourceWallet, PriceData: hosttypes.PriceData{ModelRatio: 1, CompletionRatio: 2, GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: 1}}}
+	funding := &unavailablePartialFunding{WalletFunding{userId: 741}}
+	require.NoError(t, funding.PreConsume(100))
+	require.NoError(t, model.DecreaseTokenQuota(742, "normal-failure-test", 100))
+	info.Billing = &BillingSession{relayInfo: info, funding: funding, preConsumedQuota: 100, tokenConsumed: 100}
+	PostTextConsumeQuota(c, info, &dto.Usage{PromptTokens: 20, CompletionTokens: 10, TotalTokens: 30}, nil)
+	var user model.User
+	require.NoError(t, model.DB.First(&user, 741).Error)
+	assert.Equal(t, 900, user.Quota)
+	assert.Zero(t, user.UsedQuota)
+	assert.Zero(t, user.RequestCount)
+	var count int64
+	require.NoError(t, model.LOG_DB.Model(&model.Log{}).Where("user_id = ? AND type = ?", 741, model.LogTypeConsume).Count(&count).Error)
+	assert.Zero(t, count)
+	var event model.BusinessEvent
+	require.NoError(t, model.DB.First(&event, "event_key = ?", "billing-exception:"+t.Name()).Error)
+	assert.Equal(t, "settlement_failed", event.Action)
+	assert.Contains(t, event.DetailsJSON, `"expected_quota":40`)
+	assert.Contains(t, event.DetailsJSON, "funding_settlement_failed")
 }
 
 func TestFailedStreamSettlementFailureRetainsReservationWithoutConsumeLog(t *testing.T) {

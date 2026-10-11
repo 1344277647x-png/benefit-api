@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"fmt"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
@@ -18,7 +19,7 @@ func operationsTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	require.NoError(t, db.AutoMigrate(&OperationsPool{}, &OperationsEntry{}, &ChannelCostVersion{}))
+	require.NoError(t, db.AutoMigrate(&OperationsPool{}, &OperationsEntry{}, &ChannelCostVersion{}, &OperationsEvent{}, &OperationsLane{}))
 	return db
 }
 
@@ -188,6 +189,7 @@ func TestOperationsCheckinCreditsGiftAndDuplicateDoesNotCreditAgain(t *testing.T
 	var user User
 	require.NoError(t, db.First(&user, 7).Error)
 	require.Equal(t, 120, user.Quota)
+	require.NoError(t, ProcessOperationsEvents(context.Background(), 200))
 	var pool OperationsPool
 	require.NoError(t, db.First(&pool, "pool_key = ?", "wallet:7").Error)
 	require.Equal(t, int64(120), pool.Quota)
@@ -217,11 +219,17 @@ func TestOperationsExpiryWaitsForSubscriptionSettlement(t *testing.T) {
 
 func TestOperationsTeamIncomeBelongsToRequestingMember(t *testing.T) {
 	db := operationsTestDB(t)
+	old := DB
+	DB = db
+	t.Cleanup(func() { DB = old })
+	require.NoError(t, db.AutoMigrate(&Team{}))
+	require.NoError(t, db.Create(&Team{Id: 1, OwnerId: 1}).Error)
 	require.NoError(t, OperationsCreditTx(db, "team:8", "fund:team:8", "receipt", 1, 6400, "59", "0", 1))
-	usage := &TeamUsage{RequestId: "member-request", TeamSubscriptionId: 8, MemberUserId: 2, FinalAmount: 1000}
+	usage := &TeamUsage{RequestId: "member-request", TeamId: 1, TeamSubscriptionId: 8, MemberUserId: 2, FinalAmount: 1000}
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error { return operationsSettleTeamTx(tx, usage) }))
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error { return operationsSettleTeamTx(tx, usage) }))
 	var entry OperationsEntry
+	require.NoError(t, ProcessOperationsEvents(context.Background(), 200))
 	require.NoError(t, db.First(&entry, "event_key = ?", "usage:member-request").Error)
 	require.Equal(t, 1, entry.UserId)
 	require.Equal(t, 2, entry.RequestUserId)
@@ -247,18 +255,20 @@ func TestOperationsWalletSettlementCommitsDeltaAndIncomeExactlyOnce(t *testing.T
 	var user User
 	require.NoError(t, db.First(&user, 9).Error)
 	require.Equal(t, 5600, user.Quota)
+	require.NoError(t, ProcessOperationsEvents(context.Background(), 200))
 	var entry OperationsEntry
 	require.NoError(t, db.First(&entry, "event_key = ?", "usage:wallet-request").Error)
 	require.Equal(t, "7.375", entry.ValueUSD)
 	require.Equal(t, "0", entry.UnknownQuota)
 	require.NoError(t, CreditUserGiftQuota(9, 200))
+	require.NoError(t, ProcessOperationsEvents(context.Background(), 200))
 	var pool OperationsPool
 	require.NoError(t, db.First(&pool, "pool_key = ?", "wallet:9").Error)
 	require.Equal(t, int64(5800), pool.Quota)
 	require.Equal(t, "51.625", pool.ValueUSD)
 }
 
-func TestOperationsSettlementJournalFailureRollsBackWalletRefundDelta(t *testing.T) {
+func TestOperationsSettlementJournalFailureCannotRollBackWalletRefundDelta(t *testing.T) {
 	db := operationsTestDB(t)
 	require.NoError(t, db.AutoMigrate(&User{}))
 	oldDB, oldRedis := DB, common.RedisEnabled
@@ -267,10 +277,11 @@ func TestOperationsSettlementJournalFailureRollsBackWalletRefundDelta(t *testing
 	require.NoError(t, db.Create(&User{Id: 10, Username: "rollback-settlement", Quota: 5400}).Error)
 	require.NoError(t, OperationsCreditTx(db, "wallet:10", "fund:10", "receipt", 10, 6400, "59", "0", 1))
 	require.NoError(t, db.Exec(`CREATE TRIGGER reject_wallet_settlement BEFORE INSERT ON operations_entries WHEN NEW.kind = 'wallet_usage' BEGIN SELECT RAISE(ABORT, 'journal offline'); END`).Error)
-	require.Error(t, SettleOperationsWallet(10, "failed-wallet", 800, -200))
+	require.NoError(t, SettleOperationsWallet(10, "failed-wallet", 800, -200))
+	require.Error(t, ProcessOperationsEvents(context.Background(), 200))
 	var user User
 	require.NoError(t, db.First(&user, 10).Error)
-	require.Equal(t, 5400, user.Quota)
+	require.Equal(t, 5600, user.Quota)
 	var pool OperationsPool
 	require.NoError(t, db.First(&pool, "pool_key = ?", "wallet:10").Error)
 	require.Equal(t, int64(6400), pool.Quota)
@@ -291,6 +302,7 @@ func TestOperationsSubscriptionSettlementDoesNotDependOnConsumeLog(t *testing.T)
 	var sub UserSubscription
 	require.NoError(t, db.First(&sub, 9).Error)
 	require.Equal(t, int64(800), sub.AmountUsed)
+	require.NoError(t, ProcessOperationsEvents(context.Background(), 200))
 	var entry OperationsEntry
 	require.NoError(t, db.First(&entry, "event_key = ?", "usage:sub-request").Error)
 	require.Equal(t, "7.375", entry.ValueUSD)
