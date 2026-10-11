@@ -82,6 +82,13 @@ func operationsAmounts(pool OperationsPool) (decimal.Decimal, decimal.Decimal, e
 		return decimal.Zero, decimal.Zero, err
 	}
 	unknown, err := decimal.NewFromString(pool.UnknownQuota)
+	// Older proportional withdrawals divided before multiplying and could leave
+	// a sub-1e-18 excess in an entirely unknown pool. Repair only that rounding
+	// residue; materially invalid inventory must still fail closed.
+	limit := decimal.NewFromInt(pool.Quota)
+	if err == nil && unknown.GreaterThan(limit) && unknown.Sub(limit).LessThanOrEqual(decimal.New(1, -18)) {
+		unknown = limit
+	}
 	if err != nil || pool.Quota < 0 || value.IsNegative() || unknown.IsNegative() || unknown.GreaterThan(decimal.NewFromInt(pool.Quota)) {
 		return decimal.Zero, decimal.Zero, errors.New("invalid accounting pool")
 	}
@@ -130,9 +137,13 @@ func operationsTakeLocked(tx *gorm.DB, poolKey, eventKey, requestId, kind string
 	if quota == pool.Quota {
 		usedValue, usedUnknown = value, unknown
 	} else if quota > 0 {
-		fraction := decimal.NewFromInt(quota).DivRound(decimal.NewFromInt(pool.Quota), 32)
-		usedValue = value.Mul(fraction).Truncate(24)
-		usedUnknown = unknown.Mul(fraction).Truncate(24)
+		amount, total := decimal.NewFromInt(quota), decimal.NewFromInt(pool.Quota)
+		usedValue = value.Mul(amount).DivRound(total, 24)
+		usedUnknown = unknown.Mul(amount).DivRound(total, 24)
+		// Keep both the withdrawal and remaining unknown inventory within their
+		// quota bounds even for mixed pools at the rounding boundary.
+		usedUnknown = decimal.Min(unknown, decimal.Min(amount, usedUnknown))
+		usedUnknown = decimal.Max(usedUnknown, unknown.Sub(decimal.NewFromInt(pool.Quota-quota)))
 	}
 	entry := &OperationsEntry{EventKey: eventKey, PoolKey: poolKey, UserId: userId, RequestId: requestId, Kind: kind, Quota: quota, ValueUSD: usedValue.String(), UnknownQuota: usedUnknown.String(), CreatedAt: at}
 	pool.Quota -= quota

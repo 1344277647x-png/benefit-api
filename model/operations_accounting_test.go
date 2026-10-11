@@ -22,6 +22,27 @@ func operationsTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func TestOperationsUnknownInventoryRepeatedWithdrawalDoesNotPoisonPool(t *testing.T) {
+	db := operationsTestDB(t)
+	require.NoError(t, OperationsCreditTx(db, "wallet:77", "opening:77", "opening", 77, 7, "0", "7", 1))
+	for i := 1; i <= 7; i++ {
+		entry, err := OperationsTakeTx(db, "wallet:77", fmt.Sprintf("usage:%d", i), fmt.Sprint(i), "wallet_usage", 77, 1, int64(i+1))
+		require.NoError(t, err)
+		require.Equal(t, "1", entry.UnknownQuota)
+		var pool OperationsPool
+		require.NoError(t, db.First(&pool, "pool_key = ?", "wallet:77").Error)
+		require.Equal(t, fmt.Sprint(7-i), pool.UnknownQuota)
+	}
+}
+
+func TestOperationsAmountsRepairsOnlyMicroscopicLegacyRounding(t *testing.T) {
+	_, unknown, err := operationsAmounts(OperationsPool{Quota: 6567030, ValueUSD: "0", UnknownQuota: "6567030.000000000000000000000001"})
+	require.NoError(t, err)
+	require.Equal(t, "6567030", unknown.String())
+	_, _, err = operationsAmounts(OperationsPool{Quota: 10, ValueUSD: "0", UnknownQuota: "10.01"})
+	require.Error(t, err)
+}
+
 func TestOperationsProportionalGiftAndSubscriptionExpiry(t *testing.T) {
 	db := operationsTestDB(t)
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
