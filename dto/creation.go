@@ -72,6 +72,20 @@ func IsCreationImageAspectRatioSupported(value string) bool {
 	}
 }
 
+// These profiles use the site's OpenAI-compatible image gateway, not the
+// provider's native API. Expose text-to-image with one result until additional
+// capabilities have been verified for the configured upstream.
+func CreationProviderImageSizes(protocol string) []string {
+	switch protocol {
+	case "seedream-image":
+		return []string{"2048x2048", "2304x1728", "1728x2304"}
+	case "novelai-image":
+		return []string{"1024x1024", "1216x832", "832x1216"}
+	default:
+		return nil
+	}
+}
+
 type CreationImageRequest struct {
 	Model             string   `json:"model"`
 	Protocol          string   `json:"protocol"`

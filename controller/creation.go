@@ -141,7 +141,16 @@ func creationModelsForUser(user *model.UserBase) ([]creationModel, error) {
 				AspectRatios:       creationdto.CreationImageAspectRatios(),
 				Qualities:          []string{"auto", "low", "medium", "high"},
 			}
-			if strings.HasPrefix(strings.ToLower(pricing.ModelName), "imagen-") {
+			if common.IsSeedreamImageGenerationModel(pricing.ModelName) || common.IsNovelAIImageGenerationModel(pricing.ModelName) {
+				protocol = "seedream-image"
+				if common.IsNovelAIImageGenerationModel(pricing.ModelName) {
+					protocol = "novelai-image"
+				}
+				capabilities = creationModelCapabilities{
+					MaxCount: 1,
+					Sizes:    creationdto.CreationProviderImageSizes(protocol),
+				}
+			} else if strings.HasPrefix(strings.ToLower(pricing.ModelName), "imagen-") {
 				protocol = "imagen"
 				capabilities.ReferenceImage = false
 				capabilities.Sizes = nil

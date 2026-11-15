@@ -96,7 +96,11 @@ func CreationImageRequestConvert() gin.HandlerFunc {
 			abortCreationRequest(c, err)
 			return
 		}
-		if request.Protocol != "openai-image" && request.Protocol != "imagen" && request.Protocol != "gemini-image" {
+		if err := normalizeProviderCreationImageOptions(&request); err != nil {
+			abortCreationRequest(c, err)
+			return
+		}
+		if request.Protocol != "openai-image" && request.Protocol != "imagen" && request.Protocol != "gemini-image" && request.Protocol != "seedream-image" && request.Protocol != "novelai-image" {
 			abortCreationRequest(c, errors.New("unsupported image protocol"))
 			return
 		}
@@ -141,7 +145,7 @@ func CreationImageRequestConvert() gin.HandlerFunc {
 			path = "/v1beta/models/" + request.Model + ":generateContent"
 			body, err = buildGeminiCreationImageBody(request, references)
 			contentType = gin.MIMEJSON
-		case "openai-image", "imagen":
+		case "openai-image", "imagen", "seedream-image", "novelai-image":
 			if len(references) > 0 {
 				path = "/v1/images/edits"
 				body, contentType, err = buildOpenAIImageEditBody(request, references)
@@ -159,6 +163,43 @@ func CreationImageRequestConvert() gin.HandlerFunc {
 		setCreationRelayRequest(c, path, contentType, body)
 		c.Next()
 	}
+}
+
+func normalizeProviderCreationImageOptions(request *dto.CreationImageRequest) error {
+	// Accept the old OpenAI-compatible profile for callers holding a cached model
+	// list, but normalize it before permission checks and job persistence.
+	if request.Protocol == "openai-image" {
+		if common.IsSeedreamImageGenerationModel(request.Model) {
+			request.Protocol = "seedream-image"
+		} else if common.IsNovelAIImageGenerationModel(request.Model) {
+			request.Protocol = "novelai-image"
+		}
+	}
+	sizes := dto.CreationProviderImageSizes(request.Protocol)
+	if len(sizes) == 0 {
+		return nil
+	}
+	if (request.Protocol == "seedream-image" && !common.IsSeedreamImageGenerationModel(request.Model)) ||
+		(request.Protocol == "novelai-image" && !common.IsNovelAIImageGenerationModel(request.Model)) {
+		return errors.New("image protocol does not match the selected model")
+	}
+	if request.Count != 1 {
+		return errors.New("the selected image protocol supports one image per request")
+	}
+	if len(request.ReferenceAssetIDs) > 0 {
+		return errors.New("the selected image protocol does not support reference images")
+	}
+	if request.AspectRatio != "" || request.Quality != "" {
+		return errors.New("select a size instead of aspect ratio or quality for this image protocol")
+	}
+	if request.Size == "" {
+		request.Size = sizes[0]
+	}
+	if !common.StringsContains(sizes, request.Size) {
+		return errors.New("unsupported size for the selected image protocol")
+	}
+	request.ResolvedSize = request.Size
+	return nil
 }
 
 func normalizeImage2CreationOptions(request *dto.CreationImageRequest) error {

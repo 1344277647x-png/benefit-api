@@ -145,6 +145,12 @@ function statusLabel(status: GenerationJobStatus, t: (key: string) => string) {
 function capabilityLabel(model: CreationModel, t: (key: string) => string) {
   if (model.protocol === 'gemini-image') return t('Gemini native image')
   if (model.protocol === 'imagen') return t('Imagen image')
+  if (model.protocol === 'seedream-image') {
+    return t('Doubao Seedream (OpenAI-compatible images)')
+  }
+  if (model.protocol === 'novelai-image') {
+    return t('NovelAI (OpenAI-compatible images)')
+  }
   if (model.protocol === 'openai-video') return t('OpenAI video protocol')
   return t('OpenAI image protocol')
 }
@@ -1126,9 +1132,11 @@ export function CreationFormFields({
             </NativeSelect>
           </div>
           <p className='text-muted-foreground text-xs sm:col-span-2'>
-            {t(
-              'Generate multiple images in one request. The final count depends on the model response.'
-            )}
+            {capabilities?.max_count === 1
+              ? t('This model supports one image per request.')
+              : t(
+                  'Generate multiple images in one request. The final count depends on the model response.'
+                )}
           </p>
         </div>
       ) : (

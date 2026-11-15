@@ -47,3 +47,20 @@ func TestIsGPTImageGenerationModelHandlesAliases(t *testing.T) {
 	}
 	assert.False(t, IsGPTImageGenerationModel("gpt-4o"))
 }
+
+func TestGetEndpointTypesRecognizesSeedreamAndNovelAIImageAliases(t *testing.T) {
+	for _, model := range []string{
+		"doubao-seedream-4-0-250828", "无限制-Seedream-5-Pro", "无限制-Seedream-5-Pro-2K",
+		"无限制-NovelAI-V4.5", "无限制-NovelAI-V5", "nai-diffusion-4-5-full",
+	} {
+		t.Run(model, func(t *testing.T) {
+			endpoints := GetEndpointTypesByChannelType(constant.ChannelTypeOpenAI, model)
+			assert.Contains(t, endpoints, constant.EndpointTypeImageGeneration)
+		})
+	}
+	for _, model := range []string{"doubao-seed-1-6", "doubao-seedance-2-0", "novelai-text", "gpt-4o"} {
+		t.Run(model, func(t *testing.T) {
+			assert.NotContains(t, GetEndpointTypesByChannelType(constant.ChannelTypeOpenAI, model), constant.EndpointTypeImageGeneration)
+		})
+	}
+}

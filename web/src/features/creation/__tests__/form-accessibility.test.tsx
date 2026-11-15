@@ -16,10 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { CreationFormFields } from '../index'
+import type { CreationModel } from '../types'
 
 function formProps() {
   return {
@@ -50,6 +51,61 @@ function formProps() {
 }
 
 describe('Creation form labels', () => {
+  it.each([
+    [
+      'seedream-image',
+      '无限制-Seedream-5-Pro',
+      'Doubao Seedream (OpenAI-compatible images)',
+      '2048x2048',
+    ],
+    [
+      'novelai-image',
+      '无限制-NovelAI-V5',
+      'NovelAI (OpenAI-compatible images)',
+      '1024x1024',
+    ],
+  ] as const)(
+    'shows %s with compatible protocol and only supported options',
+    (protocol, id, label, size) => {
+      const model: CreationModel = {
+        id,
+        display_name: id,
+        protocol,
+        kind: 'image',
+        groups: ['default'],
+        capabilities: { reference_image: false, max_count: 1, sizes: [size] },
+      }
+      render(
+        <CreationFormFields
+          {...formProps()}
+          kind='image'
+          models={[model]}
+          modelId={id}
+          size={size}
+          capabilities={model.capabilities}
+        />
+      )
+      expect(
+        screen.getByRole('option', { name: `${id} · ${label}` })
+      ).toBeVisible()
+      expect(screen.getByRole('combobox', { name: 'Size' })).toHaveValue(size)
+      expect(
+        within(screen.getByRole('combobox', { name: 'Images' })).getAllByRole(
+          'option'
+        )
+      ).toHaveLength(1)
+      expect(
+        screen.queryByRole('combobox', { name: 'Quality' })
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('combobox', { name: 'Aspect ratio' })
+      ).not.toBeInTheDocument()
+      expect(
+        screen.getByText('This model supports one image per request.')
+      ).toBeVisible()
+    }
+  )
+
   it('associates model, group and image option labels with their controls', () => {
     const props = formProps()
     render(

@@ -37,7 +37,7 @@ func IsOpenAIResponseOnlyModel(modelName string) bool {
 
 func IsImageGenerationModel(modelName string) bool {
 	modelName = strings.ToLower(modelName)
-	if IsGPTImageGenerationModel(modelName) {
+	if IsGPTImageGenerationModel(modelName) || IsSeedreamImageGenerationModel(modelName) || IsNovelAIImageGenerationModel(modelName) {
 		return true
 	}
 	for _, m := range ImageGenerationModels {
@@ -58,6 +58,15 @@ func IsImageGenerationModel(modelName string) bool {
 // provider aliases such as "4K gpt-image-2".
 func IsGPTImageGenerationModel(modelName string) bool {
 	return strings.Contains(strings.ToLower(strings.TrimSpace(modelName)), "gpt-image-")
+}
+
+func IsSeedreamImageGenerationModel(modelName string) bool {
+	return strings.Contains(strings.ToLower(strings.TrimSpace(modelName)), "seedream-")
+}
+
+func IsNovelAIImageGenerationModel(modelName string) bool {
+	name := strings.ToLower(strings.TrimSpace(modelName))
+	return strings.Contains(name, "novelai-v") || strings.HasPrefix(name, "nai-diffusion-")
 }
 
 func IsGeminiImageGenerationModel(modelName string) bool {

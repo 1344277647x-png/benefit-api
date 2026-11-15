@@ -22,6 +22,8 @@ export type CreationProtocol =
   | 'openai-image'
   | 'imagen'
   | 'gemini-image'
+  | 'seedream-image'
+  | 'novelai-image'
   | 'openai-video'
 
 export interface CreationCapabilities {
