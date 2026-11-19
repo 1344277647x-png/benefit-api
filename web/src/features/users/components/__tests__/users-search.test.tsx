@@ -31,9 +31,15 @@ test('exact ID search shows the account before usage and retains it when usage f
     request_count: 0,
     group: 'default',
   }
-  const usage = Promise.withResolvers<{ data: { success: boolean } }>()
+  let finishUsage!: () => void
+  const usage = new Promise<void>((resolve) => {
+    finishUsage = resolve
+  })
   const get = vi.spyOn(api, 'get').mockImplementation(async (url: string) => {
-    if (url === '/api/user/usage-summary') return usage.promise
+    if (url === '/api/user/usage-summary') {
+      await usage
+      return { data: { success: false } }
+    }
     const query = new URL(url, 'http://localhost').searchParams
     if (query.get('include_usage') !== 'false') {
       throw new Error('Account request must not wait for usage')
@@ -61,7 +67,7 @@ test('exact ID search shows the account before usage and retains it when usage f
     )
     expect(await screen.findByText('lookup-account')).toBeVisible()
     expect(await screen.findByText('Loading usage summary')).toBeVisible()
-    usage.resolve({ data: { success: false } })
+    finishUsage()
     expect(
       await screen.findByText('Failed to load usage summary')
     ).toBeVisible()
