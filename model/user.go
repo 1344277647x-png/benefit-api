@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -423,12 +424,23 @@ func GetAllUsers(pageInfo *common.PageInfo, sortOptions ...UserSortOptions) (use
 }
 
 func SearchUsers(keyword string, group string, role *int, status *int, startIdx int, num int, sortOptions ...UserSortOptions) ([]*User, int64, error) {
+	return SearchUsersByField(context.Background(), keyword, "", group, role, status, startIdx, num, sortOptions...)
+}
+
+func SearchUsersByField(ctx context.Context, keyword string, field string, group string, role *int, status *int, startIdx int, num int, sortOptions ...UserSortOptions) ([]*User, int64, error) {
+	var exactID int
+	if field == "id" {
+		var err error
+		exactID, err = strconv.Atoi(strings.TrimSpace(keyword))
+		if err != nil || exactID <= 0 {
+			return []*User{}, 0, nil
+		}
+	}
 	var users []*User
 	var total int64
 	var err error
 
-	// 开始事务
-	tx := DB.Begin()
+	tx := DB.WithContext(ctx).Begin()
 	if tx.Error != nil {
 		return nil, 0, tx.Error
 	}
@@ -441,21 +453,23 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 	// 构建基础查询
 	query := tx.Unscoped().Model(&User{})
 
-	// 构建搜索条件
-	likeCondition := "username LIKE ? OR email LIKE ? OR display_name LIKE ?"
-	likeArgs := []interface{}{"%" + keyword + "%", "%" + keyword + "%", "%" + keyword + "%"}
-
-	// 尝试将关键字转换为整数ID
-	keywordInt, err := strconv.Atoi(keyword)
-	if err == nil {
-		// 如果是数字，同时搜索ID和其他字段
-		likeCondition = "id = ? OR " + likeCondition
-		likeArgs = append([]interface{}{keywordInt}, likeArgs...)
+	switch field {
+	case "id":
+		query = query.Where("id = ?", exactID)
+	case "username":
+		query = query.Where("username = ?", strings.TrimSpace(keyword))
+	case "email":
+		query = query.Where("email = ?", NormalizeEmail(keyword))
+	default:
+		pattern := "%" + keyword + "%"
+		if id, parseErr := strconv.Atoi(keyword); parseErr == nil {
+			query = query.Where("(id = ? OR username LIKE ? OR email LIKE ? OR display_name LIKE ?)", id, pattern, pattern, pattern)
+		} else {
+			query = query.Where("(username LIKE ? OR email LIKE ? OR display_name LIKE ?)", pattern, pattern, pattern)
+		}
 	}
-
-	query = query.Where("("+likeCondition+")", likeArgs...)
 	if group != "" {
-		query = query.Where(commonGroupCol+" = ?", group)
+		query = query.Where(clause.Eq{Column: clause.Column{Name: "group"}, Value: group})
 	}
 	if role != nil {
 		query = query.Where("role = ?", *role)

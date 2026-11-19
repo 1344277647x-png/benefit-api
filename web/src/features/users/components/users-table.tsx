@@ -30,18 +30,19 @@ import {
   OPERATIONAL_TABLE_CLASSNAMES,
   useDataTable,
 } from '@/components/data-table'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 
-import { getUsers, searchUsers } from '../api'
+import { getUserListUsage, getUsers, searchUsers } from '../api'
 import {
   USER_STATUS,
   getUserStatusOptions,
   getUserRoleOptions,
   isUserDeleted,
 } from '../constants'
-import type { User, UserSortBy } from '../types'
+import type { User, UserExactField, UserSortBy } from '../types'
 import { DataTableBulkActions } from './data-table-bulk-actions'
 import { useUsersColumns } from './users-columns'
 import { useUsers } from './users-provider'
@@ -66,6 +67,7 @@ export function UsersTable() {
   const columns = useUsersColumns()
   const { refreshTrigger } = useUsers()
   const isMobile = useMediaQuery('(max-width: 640px)')
+  const [exactField, setExactField] = useState<UserExactField | ''>('')
   const [usageRange, setUsageRange] = useState<UsageRange>('lifetime')
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
@@ -149,12 +151,10 @@ export function UsersTable() {
       pagination.pageIndex + 1,
       pagination.pageSize,
       globalFilter,
+      exactField,
       statusFilter,
       roleFilter,
       groupFilter,
-      usageRange,
-      usageParams.usage_start,
-      usageParams.usage_end,
       sortParams,
       refreshTrigger,
     ],
@@ -165,6 +165,7 @@ export function UsersTable() {
       const params = {
         p: pagination.pageIndex + 1,
         page_size: pagination.pageSize,
+        include_usage: false,
         ...sortParams,
       }
 
@@ -173,16 +174,19 @@ export function UsersTable() {
           ? await searchUsers({
               ...params,
               keyword: globalFilter,
+              exact_field: hasFilter && exactField ? exactField : undefined,
               status: statusFilter[0] ?? '',
               role: roleFilter[0] ?? '',
               group: groupFilter,
-              ...usageParams,
             })
-          : await getUsers({ ...params, ...usageParams })
+          : await getUsers(params)
 
       if (!result.success) {
         toast.error(
-          result.message || `Failed to ${hasFilter ? 'search' : 'load'} users`
+          result.message ||
+            (hasFilter
+              ? t('Failed to search users')
+              : t('Failed to load users'))
         )
         return { items: [], total: 0 }
       }
@@ -192,14 +196,37 @@ export function UsersTable() {
         total: result.data?.total || 0,
       }
     },
-    placeholderData: (previousData) => previousData,
   })
 
-  const users = data?.items || []
+  const userIDs = useMemo(
+    () => data?.items.map((user) => user.id) ?? [],
+    [data]
+  )
+  const usage = useQuery({
+    queryKey: ['users', 'usage', userIDs, usageParams, refreshTrigger],
+    enabled: userIDs.length > 0,
+    retry: false,
+    queryFn: async ({ signal }) => {
+      const result = await getUserListUsage(userIDs, usageParams, signal)
+      if (!result.success || !result.data) {
+        throw new Error(result.message || t('Failed to load usage summary'))
+      }
+      return result.data
+    },
+  })
+  const users = useMemo(
+    () =>
+      data?.items.map((user) => ({
+        ...user,
+        usage_summary: usage.data?.[user.id],
+      })) ?? [],
+    [data, usage.data]
+  )
 
   const { table } = useDataTable({
     data: users,
     columns,
+    getRowId: (user) => String(user.id),
     enableRowSelection: true,
     columnFilters,
     globalFilter,
@@ -243,9 +270,29 @@ export function UsersTable() {
       applyHeaderSize
       tableClassName={OPERATIONAL_TABLE_CLASSNAMES.users}
       toolbarProps={{
-        searchPlaceholder: t('Filter by username, name or email...'),
+        searchPlaceholder: exactField
+          ? t('Exact Match')
+          : t('Filter by username, name or email...'),
         additionalSearch: (
           <div className='flex flex-wrap items-center gap-1.5'>
+            <select
+              value={exactField}
+              onChange={(event) => {
+                setExactField(event.target.value as UserExactField | '')
+                if (pagination.pageIndex > 0) {
+                  onPaginationChange({ ...pagination, pageIndex: 0 })
+                }
+              }}
+              className='border-input bg-background h-8 rounded-lg border px-2 text-xs outline-none'
+              aria-label={t('Search mode')}
+            >
+              <option value=''>{t('Search')}</option>
+              <optgroup label={t('Exact Match')}>
+                <option value='id'>{t('User ID')}</option>
+                <option value='username'>{t('Username')}</option>
+                <option value='email'>{t('Email')}</option>
+              </optgroup>
+            </select>
             <select
               value={usageRange}
               onChange={(event) =>
@@ -278,11 +325,33 @@ export function UsersTable() {
                 />
               </>
             )}
+            {usage.isLoading && (
+              <span role='status' className='text-muted-foreground text-xs'>
+                {t('Loading usage summary')}
+              </span>
+            )}
+            {usage.isError && (
+              <div className='flex flex-wrap items-center gap-1.5'>
+                <span role='status' className='text-muted-foreground text-xs'>
+                  {t('Failed to load usage summary')}
+                </span>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  onClick={() => void usage.refetch()}
+                >
+                  {t('Retry')}
+                </Button>
+              </div>
+            )}
           </div>
         ),
         hasAdditionalFilters:
-          usageRange !== 'lifetime' || Boolean(customStart || customEnd),
+          Boolean(exactField) ||
+          usageRange !== 'lifetime' ||
+          Boolean(customStart || customEnd),
         onReset: () => {
+          setExactField('')
           setUsageRange('lifetime')
           setCustomStart('')
           setCustomEnd('')

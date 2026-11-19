@@ -179,7 +179,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
         const summary = row.original.usage_summary
         return (
           <span className='font-medium tabular-nums'>
-            {formatCompactNumber(summary?.token_used ?? 0)}
+            {summary ? formatCompactNumber(summary.token_used) : '—'}
           </span>
         )
       },
@@ -191,7 +191,9 @@ export function useUsersColumns(): ColumnDef<User>[] {
       header: t('Requests'),
       cell: ({ row }) => (
         <span className='font-medium tabular-nums'>
-          {formatCompactNumber(row.original.usage_summary?.request_count ?? 0)}
+          {row.original.usage_summary
+            ? formatCompactNumber(row.original.usage_summary.request_count)
+            : '—'}
         </span>
       ),
       size: 105,
@@ -202,7 +204,9 @@ export function useUsersColumns(): ColumnDef<User>[] {
       header: t('Spend'),
       cell: ({ row }) => (
         <span className='text-sm font-medium tabular-nums'>
-          {formatQuota(row.original.usage_summary?.consumed_quota ?? 0)}
+          {row.original.usage_summary
+            ? formatQuota(row.original.usage_summary.consumed_quota)
+            : '—'}
         </span>
       ),
       size: 120,

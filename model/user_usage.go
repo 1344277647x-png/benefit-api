@@ -1,6 +1,10 @@
 package model
 
-import "github.com/QuantumNous/new-api/common"
+import (
+	"context"
+
+	"github.com/QuantumNous/new-api/common"
+)
 
 type UserUsageSummary struct {
 	TokenUsed     int64 `json:"token_used"`
@@ -15,12 +19,18 @@ type userUsageAggregate struct {
 	ConsumedQuota int64 `gorm:"column:consumed_quota"`
 }
 
-func GetUsersUsageSummaries(userIDs []int, startTimestamp int64, endTimestamp int64) (map[int]UserUsageSummary, error) {
+func GetUserUsageAccounts(ctx context.Context, ids []int) ([]*User, error) {
+	var users []*User
+	err := DB.WithContext(ctx).Unscoped().Select("id", "request_count", "used_quota").Where("id IN ?", ids).Find(&users).Error
+	return users, err
+}
+
+func GetUsersUsageSummaries(ctx context.Context, userIDs []int, startTimestamp int64, endTimestamp int64) (map[int]UserUsageSummary, error) {
 	result := make(map[int]UserUsageSummary, len(userIDs))
 	if len(userIDs) == 0 {
 		return result, nil
 	}
-	query := LOG_DB.Model(&Log{}).
+	query := LOG_DB.WithContext(ctx).Model(&Log{}).
 		Select("user_id, COALESCE(SUM(prompt_tokens), 0) + COALESCE(SUM(completion_tokens), 0) AS token_used, COUNT(*) AS request_count, COALESCE(SUM(quota), 0) AS consumed_quota").
 		Where("user_id IN ? AND type = ?", userIDs, LogTypeConsume)
 	if startTimestamp > 0 {

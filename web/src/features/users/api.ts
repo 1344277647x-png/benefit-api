@@ -29,6 +29,8 @@ import type {
   ManageUserAction,
   ManageUserQuotaPayload,
   ApiResponse,
+  UserUsageSummary,
+  UserUsageRangeParams,
 } from './types'
 
 // ============================================================================
@@ -48,6 +50,7 @@ export async function getUsers(
     sort_order,
     usage_start,
     usage_end,
+    include_usage,
   } = params
   const res = await api.get('/api/user/', {
     params: {
@@ -57,6 +60,7 @@ export async function getUsers(
       sort_order,
       usage_start,
       usage_end,
+      include_usage,
     },
   })
   return res.data
@@ -70,6 +74,7 @@ export async function searchUsers(
 ): Promise<GetUsersResponse> {
   const {
     keyword = '',
+    exact_field,
     group = '',
     role = '',
     status = '',
@@ -77,11 +82,16 @@ export async function searchUsers(
     page_size = 10,
     usage_start,
     usage_end,
+    include_usage,
     sort_by,
     sort_order,
   } = params
   const queryParams = new URLSearchParams()
   queryParams.set('keyword', keyword)
+  if (exact_field) queryParams.set('exact_field', exact_field)
+  if (include_usage != null) {
+    queryParams.set('include_usage', String(include_usage))
+  }
   queryParams.set('group', group)
   if (role) queryParams.set('role', role)
   if (status) queryParams.set('status', status)
@@ -92,6 +102,18 @@ export async function searchUsers(
   if (sort_by) queryParams.set('sort_by', sort_by)
   if (sort_order) queryParams.set('sort_order', sort_order)
   const res = await api.get(`/api/user/search?${queryParams.toString()}`)
+  return res.data
+}
+
+export async function getUserListUsage(
+  ids: number[],
+  range: UserUsageRangeParams,
+  signal: AbortSignal
+): Promise<ApiResponse<Record<number, UserUsageSummary>>> {
+  const res = await api.get('/api/user/usage-summary', {
+    params: { ids: ids.join(','), ...range },
+    signal,
+  })
   return res.data
 }
 
