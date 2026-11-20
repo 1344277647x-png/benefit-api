@@ -62,6 +62,8 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.POST("/creem/webhook", anonymousRequestBodyLimit, controller.CreemWebhook)
 		apiRouter.POST("/alipay/notify", anonymousRequestBodyLimit, controller.AlipayNotify)
 		apiRouter.GET("/alipay/return", controller.AlipayReturn)
+		apiRouter.GET("/qixiang/notify", middleware.DisableCache(), controller.QixiangNotify)
+		apiRouter.GET("/qixiang/return", middleware.DisableCache(), controller.QixiangReturn)
 		apiRouter.POST("/waffo/webhook", anonymousRequestBodyLimit, controller.WaffoWebhook)
 		// :env separates test vs prod URLs so the operator can register each
 		// in Pancake's matching webhook slot; handler enforces env match.
@@ -131,6 +133,7 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.POST("/amount", controller.RequestAmount)
 				selfRoute.POST("/stripe/pay", middleware.CriticalRateLimit(), controller.RequestStripePay)
 				selfRoute.POST("/alipay/pay", middleware.CriticalRateLimit(), controller.RequestAlipayPay)
+				selfRoute.POST("/qixiang/pay", middleware.CriticalRateLimit(), controller.RequestQixiangPay)
 				selfRoute.POST("/stripe/amount", controller.RequestStripeAmount)
 				selfRoute.POST("/creem/pay", middleware.CriticalRateLimit(), controller.RequestCreemPay)
 				selfRoute.POST("/waffo/amount", controller.RequestWaffoAmount)

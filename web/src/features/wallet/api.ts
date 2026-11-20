@@ -135,6 +135,18 @@ export async function requestAlipayPayment(
 }
 
 /**
+ * Create a Qixiang WeChat payment.
+ */
+export async function requestQixiangPayment(
+  request: PaymentRequest
+): Promise<ApiResponse<{ pay_url: string }>> {
+  const res = await api.post('/api/user/qixiang/pay', request, {
+    skipBusinessError: true,
+  } as Record<string, unknown>)
+  return res.data
+}
+
+/**
  * Request Stripe payment
  */
 export async function requestStripePayment(

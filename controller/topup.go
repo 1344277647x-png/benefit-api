@@ -42,6 +42,14 @@ func GetTopUpInfo(c *gin.Context) {
 		})
 	}
 
+	enableQixiang := qixiangCheckoutGateway() != nil
+	if enableQixiang {
+		payMethods = append(payMethods, map[string]string{
+			"name": "WeChat Pay", "type": model.PaymentMethodQixiangWeChat,
+			"min_topup": strconv.FormatInt(getMinTopup(), 10),
+		})
+	}
+
 	// 如果启用了 Stripe 支付，添加到支付方法列表
 	if isStripeTopUpEnabled() {
 		// 检查是否已经包含 Stripe
@@ -110,6 +118,7 @@ func GetTopUpInfo(c *gin.Context) {
 	data := gin.H{
 		"enable_online_topup":              isEpayTopUpEnabled(),
 		"enable_alipay_topup":              isAlipayTopUpEnabled(),
+		"enable_qixiang_topup":             enableQixiang,
 		"enable_stripe_topup":              isStripeTopUpEnabled(),
 		"enable_creem_topup":               isCreemTopUpEnabled(),
 		"enable_waffo_topup":               enableWaffo,
@@ -590,6 +599,30 @@ func AdminCompleteTopUp(c *gin.Context) {
 	// 订单级互斥，防止并发补单
 	LockOrder(req.TradeNo)
 	defer UnlockOrder(req.TradeNo)
+
+	order := model.GetTopUpByTradeNo(req.TradeNo)
+	if order != nil && order.PaymentProvider == model.PaymentProviderQixiang {
+		if order.Status == common.TopUpStatusSuccess {
+			common.ApiSuccess(c, nil)
+			return
+		}
+		gateway := service.ConfiguredQixiangGateway()
+		if gateway == nil {
+			common.ApiErrorMsg(c, "七相商户配置缺失，无法查单")
+			return
+		}
+		paid, err := gateway.QueryPaidWeChatOrder(c.Request.Context(), order.TradeNo)
+		if err != nil {
+			common.ApiErrorMsg(c, "暂未查到七相支付成功记录，请在商户后台核对")
+			return
+		}
+		if err := model.CompleteQixiangTopUp(order.TradeNo, paid.Money, c.ClientIP()); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		common.ApiSuccess(c, nil)
+		return
+	}
 
 	if err := model.ManualCompleteTopUp(req.TradeNo, c.ClientIP()); err != nil {
 		common.ApiError(c, err)

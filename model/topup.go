@@ -27,16 +27,18 @@ type TopUp struct {
 }
 
 const (
-	PaymentMethodAlipayNative = "alipay_native"
-	PaymentMethodStripe       = "stripe"
-	PaymentMethodCreem        = "creem"
-	PaymentMethodWaffo        = "waffo"
-	PaymentMethodWaffoPancake = "waffo_pancake"
-	PaymentMethodBalance      = "balance"
+	PaymentMethodAlipayNative  = "alipay_native"
+	PaymentMethodQixiangWeChat = "qixiang_wxpay"
+	PaymentMethodStripe        = "stripe"
+	PaymentMethodCreem         = "creem"
+	PaymentMethodWaffo         = "waffo"
+	PaymentMethodWaffoPancake  = "waffo_pancake"
+	PaymentMethodBalance       = "balance"
 )
 
 const (
 	PaymentProviderAlipay       = "alipay_native"
+	PaymentProviderQixiang      = "qixiang"
 	PaymentProviderEpay         = "epay"
 	PaymentProviderStripe       = "stripe"
 	PaymentProviderCreem        = "creem"
@@ -205,12 +207,21 @@ func UpdatePendingTopUpStatus(tradeNo string, expectedPaymentProvider string, ta
 }
 
 func CompleteAlipayTopUp(tradeNo string, totalAmount string, callerIp string) error {
+	return completeGatewayTopUp(tradeNo, totalAmount, callerIp, PaymentProviderAlipay, PaymentMethodAlipayNative, "支付宝")
+}
+
+func CompleteQixiangTopUp(tradeNo string, totalAmount string, callerIp string) error {
+	return completeGatewayTopUp(tradeNo, totalAmount, callerIp, PaymentProviderQixiang, PaymentMethodQixiangWeChat, "微信支付")
+}
+
+func completeGatewayTopUp(tradeNo, totalAmount, callerIp, provider, method, label string) error {
 	if tradeNo == "" {
 		return errors.New("未提供支付单号")
 	}
 
 	paidAmount, err := decimal.NewFromString(totalAmount)
-	if err != nil || paidAmount.LessThanOrEqual(decimal.Zero) {
+	if err != nil || paidAmount.LessThanOrEqual(decimal.Zero) ||
+		(provider == PaymentProviderQixiang && !paidAmount.Equal(paidAmount.Round(2))) {
 		return ErrPaymentAmountMismatch
 	}
 
@@ -228,7 +239,7 @@ func CompleteAlipayTopUp(tradeNo string, totalAmount string, callerIp string) er
 		if err := lockForUpdate(tx).Where(refCol+" = ?", tradeNo).First(topUp).Error; err != nil {
 			return ErrTopUpNotFound
 		}
-		if topUp.PaymentProvider != PaymentProviderAlipay || topUp.PaymentMethod != PaymentMethodAlipayNative {
+		if topUp.PaymentProvider != provider || topUp.PaymentMethod != method {
 			return ErrPaymentMethodMismatch
 		}
 		if !paidAmount.Round(2).Equal(decimal.NewFromFloat(topUp.Money).Round(2)) {
@@ -269,8 +280,8 @@ func CompleteAlipayTopUp(tradeNo string, totalAmount string, callerIp string) er
 		return err
 	}
 	if completed {
-		syncCreditUserQuotaCache(userId, quotaToAdd, "alipay topup")
-		RecordTopupLog(userId, fmt.Sprintf("使用支付宝充值成功，充值金额: %v，支付金额：%.2f", logger.FormatQuota(quotaToAdd), payMoney), callerIp, PaymentMethodAlipayNative, PaymentProviderAlipay)
+		syncCreditUserQuotaCache(userId, quotaToAdd, provider+" topup")
+		RecordTopupLog(userId, fmt.Sprintf("使用%s充值成功，充值金额: %v，支付金额：%.2f", label, logger.FormatQuota(quotaToAdd), payMoney), callerIp, method, provider)
 	}
 	return nil
 }
@@ -601,6 +612,9 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 
 		if topUp.Status != common.TopUpStatusPending {
 			return errors.New("订单状态不是待支付，无法补单")
+		}
+		if topUp.PaymentProvider == PaymentProviderQixiang {
+			return errors.New("七相订单必须查单确认支付后入账")
 		}
 
 		// 计算应充值额度：

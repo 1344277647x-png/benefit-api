@@ -125,6 +125,7 @@ export interface TopupInfo {
   enable_online_topup: boolean
   /** Whether native Alipay website payment is enabled */
   enable_alipay_topup?: boolean
+  enable_qixiang_topup?: boolean
   /** Whether Stripe topup is enabled */
   enable_stripe_topup: boolean
   /** Available payment methods */

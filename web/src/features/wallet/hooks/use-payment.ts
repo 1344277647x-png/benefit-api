@@ -27,10 +27,11 @@ import {
   calculateWaffoPancakeAmount,
   requestPayment,
   requestAlipayPayment,
+  requestQixiangPayment,
   requestStripePayment,
   isApiSuccess,
 } from '../api'
-import { rememberPendingPayment } from '../constants'
+import { PAYMENT_TYPES, rememberPendingPayment } from '../constants'
 import {
   isStripePayment,
   isAlipayNativePayment,
@@ -122,6 +123,17 @@ export function usePayment() {
           amount,
           payment_method: paymentType,
         }
+        if (paymentType === PAYMENT_TYPES.QIXIANG_WECHAT) {
+          const response = await requestQixiangPayment(paymentRequest)
+          if (!isApiSuccess(response) || !response.data?.pay_url) {
+            toast.error(i18next.t('Payment request failed'))
+            return false
+          }
+          rememberPendingPayment()
+          window.location.assign(response.data.pay_url)
+          return true
+        }
+
         let response
         if (isStripe) {
           response = await requestStripePayment({

@@ -70,7 +70,7 @@ func operationsCreditWalletTx(tx *gorm.DB, userId, quota int, topup *TopUp, even
 		// These providers persist the verified local-currency payment amount.
 		// Stripe/Creem or manual credits with ambiguous amount semantics stay unknown.
 		f.Money = topup.Money
-		f.Verified = (topup.PaymentProvider == PaymentProviderAlipay || topup.PaymentProvider == PaymentProviderEpay) && topup.Money >= 0
+		f.Verified = (topup.PaymentProvider == PaymentProviderAlipay || topup.PaymentProvider == PaymentProviderEpay || topup.PaymentProvider == PaymentProviderQixiang) && topup.Money >= 0
 	}
 	return enqueueOperationsTx(tx, eventKey, "", f)
 }

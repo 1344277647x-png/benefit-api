@@ -257,7 +257,7 @@ func grantLotteryDrawsForTopUpTx(tx *gorm.DB, topUp *TopUp) error {
 	if tx == nil || topUp == nil || !operation_setting.IsLotteryActiveAt(common.GetTimestamp()) {
 		return nil
 	}
-	if topUp.PaymentProvider != PaymentProviderAlipay && topUp.PaymentProvider != PaymentProviderEpay {
+	if topUp.PaymentProvider != PaymentProviderAlipay && topUp.PaymentProvider != PaymentProviderEpay && topUp.PaymentProvider != PaymentProviderQixiang {
 		return nil
 	}
 

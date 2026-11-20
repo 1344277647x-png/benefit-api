@@ -33,6 +33,7 @@ export const PAYMENT_TYPES = {
   ALIPAY: 'alipay',
   ALIPAY_NATIVE: 'alipay_native',
   WECHAT: 'wxpay',
+  QIXIANG_WECHAT: 'qixiang_wxpay',
   STRIPE: 'stripe',
   CREEM: 'creem',
   WAFFO: 'waffo',
