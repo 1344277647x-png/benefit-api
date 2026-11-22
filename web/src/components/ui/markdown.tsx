@@ -21,14 +21,21 @@ import * as katex from 'katex'
 
 import 'katex/dist/katex.min.css'
 import { Marked, Renderer, type MarkedExtension, type Tokens } from 'marked'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 
+import { copyToClipboard } from '@/lib/copy-to-clipboard'
+import {
+  createMarkdownHeadingSlugger,
+  type MarkdownHeading,
+} from '@/lib/markdown-headings'
 import { cn } from '@/lib/utils'
 
 interface MarkdownProps {
   breaks?: boolean
   children: string
   className?: string
+  onHeadingsChange?: (headings: MarkdownHeading[]) => void
 }
 
 const markdownOptions = {
@@ -718,7 +725,7 @@ const markdownParser = new Marked({
 
 markdownParser.use(...markdownExtensions)
 
-function addExternalLinkAttributes(html: string): string {
+function prepareMarkdownHtml(html: string, addHeadings: boolean): string {
   if (typeof window === 'undefined') {
     return html
   }
@@ -727,31 +734,139 @@ function addExternalLinkAttributes(html: string): string {
   template.innerHTML = html
 
   template.content.querySelectorAll('a[href]').forEach((link) => {
+    if (link.getAttribute('href')?.startsWith('#')) return
     link.setAttribute('target', '_blank')
     link.setAttribute('rel', 'noopener noreferrer')
   })
 
+  if (addHeadings) {
+    template.content
+      .querySelectorAll('[data-docs-heading]')
+      .forEach((element) => {
+        element.removeAttribute('data-docs-heading')
+      })
+    const slugify = createMarkdownHeadingSlugger()
+    const used = new Set(
+      Array.from(
+        template.content.querySelectorAll('[id]'),
+        (element) => element.id
+      )
+    )
+    const seen = new Set<string>()
+    template.content.querySelectorAll('h2, h3').forEach((heading) => {
+      const text = (heading.textContent ?? '').trim()
+      if (!text) return
+      if (!heading.id || seen.has(heading.id)) {
+        let id = `docs-${slugify(text)}`
+        while (used.has(id)) id = `docs-${slugify(text)}`
+        heading.id = id
+        used.add(id)
+      }
+      seen.add(heading.id)
+      heading.setAttribute('data-docs-heading', '')
+      heading.classList.add('scroll-mt-24')
+    })
+  }
+
   return template.innerHTML
 }
 
-function renderMarkdown(markdown: string, breaks = false): string {
+function renderMarkdown(
+  markdown: string,
+  breaks = false,
+  addHeadings = false
+): string {
   const parsedHtml = markdownParser.parse(markdown, {
     ...markdownOptions,
     breaks,
   })
   const html = DOMPurify.sanitize(parsedHtml, sanitizeOptions)
 
-  return addExternalLinkAttributes(html)
+  return prepareMarkdownHtml(html, addHeadings)
 }
 
 export function Markdown(props: MarkdownProps) {
+  const { t } = useTranslation()
+  const containerRef = useRef<HTMLDivElement>(null)
+  const copyLabel = t('Copy code')
+  const copiedLabel = t('Copied')
+  const { onHeadingsChange } = props
+  const hasHeadings = Boolean(onHeadingsChange)
   const html = useMemo(
-    () => renderMarkdown(props.children, props.breaks),
-    [props.breaks, props.children]
+    () => renderMarkdown(props.children, props.breaks, hasHeadings),
+    [hasHeadings, props.breaks, props.children]
   )
+  const markup = useMemo(() => ({ __html: html }), [html])
+
+  useEffect(() => {
+    if (!onHeadingsChange || !containerRef.current) return
+    onHeadingsChange(
+      Array.from(
+        containerRef.current.querySelectorAll('[data-docs-heading]'),
+        (heading) => ({
+          id: heading.id,
+          level: heading.tagName === 'H2' ? 2 : 3,
+          text: (heading.textContent ?? '').trim(),
+        })
+      )
+    )
+  }, [html, onHeadingsChange])
+
+  useEffect(() => {
+    const root = containerRef.current
+    if (!root) return
+
+    const timers = new Map<HTMLButtonElement, number>()
+    let mounted = true
+    const createdButtons: HTMLButtonElement[] = []
+
+    root.querySelectorAll('pre').forEach((pre) => {
+      const code = pre.querySelector('code')
+      if (!code) return
+      if (pre.querySelector('[data-markdown-copy-btn="true"]')) return
+
+      pre.classList.add('relative', 'group', 'pr-16')
+
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.setAttribute('data-markdown-copy-btn', 'true')
+      button.setAttribute('aria-label', copyLabel)
+      button.textContent = copyLabel
+      button.className =
+        'bg-background/90 text-muted-foreground hover:text-foreground hover:bg-background focus-visible:ring-ring absolute top-2 right-2 rounded-md border px-2 py-1 font-sans text-xs font-medium shadow-2xs transition-colors focus-visible:ring-2 focus-visible:outline-none'
+
+      button.addEventListener('click', () => {
+        const rawText = code.textContent ?? ''
+        const finishCopy = (ok: boolean) => {
+          if (!ok || !mounted) return
+          window.clearTimeout(timers.get(button))
+          button.textContent = copiedLabel
+          button.setAttribute('data-copied', 'true')
+          const timerId = window.setTimeout(() => {
+            timers.delete(button)
+            button.textContent = copyLabel
+            button.removeAttribute('data-copied')
+          }, 1800)
+          timers.set(button, timerId)
+        }
+
+        void copyToClipboard(rawText).then(finishCopy)
+      })
+
+      pre.appendChild(button)
+      createdButtons.push(button)
+    })
+
+    return () => {
+      mounted = false
+      timers.forEach((timerId) => window.clearTimeout(timerId))
+      createdButtons.forEach((btn) => btn.remove())
+    }
+  }, [copiedLabel, copyLabel, html])
 
   return (
     <div
+      ref={containerRef}
       className={cn(
         'prose prose-sm dark:prose-invert max-w-none',
         '[&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-2xl [&_h1]:font-semibold',
@@ -783,7 +898,7 @@ export function Markdown(props: MarkdownProps) {
         '[overflow-wrap:anywhere]',
         props.className
       )}
-      dangerouslySetInnerHTML={{ __html: html }}
+      dangerouslySetInnerHTML={markup}
     />
   )
 }

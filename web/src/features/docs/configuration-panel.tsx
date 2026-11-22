@@ -278,16 +278,31 @@ export function ConfigurationPanel(props: ConfigurationPanelProps) {
             {t('Copy API URL')}
           </Button>
         </div>
-        <div className='bg-background/75 mt-2 flex min-w-0 items-center gap-2 rounded-lg border px-3 py-2'>
+        <div className='bg-background/75 mt-2 flex min-w-0 items-center gap-2 rounded-lg border px-3 py-1.5'>
           <span className='text-muted-foreground shrink-0 text-xs'>
             {t('API base URL')}
           </span>
           <code
-            className='min-w-0 truncate font-mono text-xs sm:text-sm'
+            className='min-w-0 flex-1 truncate font-mono text-xs sm:text-sm'
             title={props.apiBaseUrl}
           >
             {props.apiBaseUrl}
           </code>
+          <Button
+            type='button'
+            variant='ghost'
+            size='icon-xs'
+            className='text-muted-foreground hover:text-foreground shrink-0'
+            onClick={handleCopyApiUrl}
+            aria-label={t('Copy URL')}
+            title={t('Copy URL')}
+          >
+            {copiedText === props.apiBaseUrl ? (
+              <Check className='text-success size-3.5' />
+            ) : (
+              <Clipboard className='size-3.5' />
+            )}
+          </Button>
         </div>
       </CardHeader>
       <CardContent className='space-y-4 pt-0'>

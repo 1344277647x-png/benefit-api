@@ -20,6 +20,8 @@ import { Link } from '@tanstack/react-router'
 import { CircleDollarSign, Gauge, Layers3 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { LanguageSwitcher } from '@/components/language-switcher'
+import { ThemeSwitch } from '@/components/theme-switch'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSystemConfig } from '@/hooks/use-system-config'
 
@@ -32,7 +34,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
   const { systemName, logo, loading } = useSystemConfig()
 
   return (
-    <div className='benefit-apple-shell benefit-auth-stage relative min-h-svh overflow-hidden'>
+    <div className='benefit-auth-stage relative min-h-svh overflow-hidden'>
       <div
         aria-hidden='true'
         className='border-border/35 pointer-events-none absolute inset-y-0 left-1/2 w-full max-w-6xl -translate-x-1/2 border-x'
@@ -43,7 +45,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
       />
       <Link
         to='/'
-        className='benefit-liquid-glass absolute top-4 left-4 z-10 flex min-h-11 items-center gap-2.5 rounded-full px-3 transition-opacity hover:opacity-85 sm:top-6 sm:left-6'
+        className='benefit-liquid-glass benefit-public-nav absolute top-4 left-4 z-10 flex min-h-11 items-center gap-2.5 rounded-full px-3 transition-opacity hover:opacity-85 sm:top-6 sm:left-6'
       >
         <div className='relative size-8'>
           {loading ? (
@@ -52,7 +54,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
             <img
               src={logo}
               alt={systemName || t('Logo')}
-              className='size-8 rounded-[8px] object-contain'
+              className='size-8 rounded-lg object-contain'
             />
           )}
         </div>
@@ -62,6 +64,10 @@ export function AuthLayout({ children }: AuthLayoutProps) {
           <h1 className='text-base font-semibold'>{systemName}</h1>
         )}
       </Link>
+      <div className='benefit-liquid-glass benefit-public-nav absolute top-4 right-4 z-10 flex min-h-11 items-center gap-0.5 rounded-full px-1.5 sm:top-6 sm:right-6'>
+        <LanguageSwitcher />
+        <ThemeSwitch />
+      </div>
       <div className='relative flex min-h-svh items-center px-4 pt-24 pb-8 sm:px-6 sm:pt-20 lg:px-10'>
         <div className='mx-auto grid w-full max-w-6xl items-center gap-12 lg:grid-cols-[minmax(0,1fr)_460px] xl:gap-20'>
           <aside className='benefit-auth-story hidden min-w-0 flex-col justify-center lg:flex'>
@@ -97,7 +103,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
               })}
             </ul>
           </aside>
-          <div className='benefit-auth-panel benefit-solid-surface mx-auto flex w-full max-w-[460px] min-w-0 flex-col justify-center space-y-2 rounded-2xl px-5 py-8 sm:px-9 sm:py-10 lg:mx-0'>
+          <div className='benefit-auth-panel mx-auto flex w-full max-w-[460px] min-w-0 flex-col justify-center space-y-2 px-5 py-8 sm:px-9 sm:py-10 lg:mx-0'>
             {children}
           </div>
         </div>

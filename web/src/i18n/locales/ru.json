@@ -1,5 +1,12 @@
 {
   "translation": {
+    "Pay {{amount}}": "Оплатить {{amount}}",
+    "Save {{amount}}": "Экономия {{amount}}",
+    "Minimum {{amount}}": "Минимум {{amount}}",
+    "Client setup guide": "Руководство по подключению клиента",
+    "On this page": "На этой странице",
+    "Back to top": "Наверх",
+    "API base URL": "Базовый URL API",
     "Enter these fields in Cursor Settings → Models.": "Введите эти значения в Cursor в разделе Settings → Models.",
     "Client configuration": "Настройка клиента",
     "Copy a ready-to-use client configuration for this key.": "Скопируйте настройки клиента для этого ключа.",

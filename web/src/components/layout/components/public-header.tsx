@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
@@ -28,6 +28,7 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useNotifications } from '@/hooks/use-notifications'
+import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { useTopNavLinks } from '@/hooks/use-top-nav-links'
 import { cn } from '@/lib/utils'
@@ -77,6 +78,7 @@ export function PublicHeader(props: PublicHeaderProps) {
   const navigate = useNavigate()
   const [scrolled, setScrolled] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const mobileToggleRef = useRef<HTMLButtonElement>(null)
   const [authPromptTarget, setAuthPromptTarget] =
     useState<AuthPromptTarget | null>(null)
   const [authPromptSecondsLeft, setAuthPromptSecondsLeft] =
@@ -88,6 +90,9 @@ export function PublicHeader(props: PublicHeaderProps) {
     loading,
     logoLoaded,
   } = useSystemConfig()
+  const { status } = useStatus()
+  const canRegister =
+    !status?.self_use_mode_enabled && status?.register_enabled !== false
   const dynamicLinks = useTopNavLinks()
   const notifications = useNotifications()
   const routerState = useRouterState()
@@ -106,11 +111,31 @@ export function PublicHeader(props: PublicHeaderProps) {
   }, [])
 
   useEffect(() => {
-    document.body.style.overflow = mobileOpen ? 'hidden' : ''
+    if (!mobileOpen) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const desktop = window.matchMedia?.('(min-width: 640px)')
+    const onDesktop = () => {
+      if (desktop?.matches) setMobileOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) {
+        setMobileOpen(false)
+        mobileToggleRef.current?.focus()
+      }
+    }
+    desktop?.addEventListener('change', onDesktop)
+    window.addEventListener('keydown', onKeyDown)
     return () => {
-      document.body.style.overflow = ''
+      document.body.style.overflow = previousOverflow
+      desktop?.removeEventListener('change', onDesktop)
+      window.removeEventListener('keydown', onKeyDown)
     }
   }, [mobileOpen])
+
+  useEffect(() => {
+    setMobileOpen(false)
+  }, [pathname])
 
   useEffect(() => {
     if (!authPromptTarget) return
@@ -167,7 +192,7 @@ export function PublicHeader(props: PublicHeaderProps) {
     authControl = (
       <Button
         size='sm'
-        className='benefit-liquid-primary h-8 rounded-[8px] px-3.5 text-xs font-medium'
+        className='benefit-liquid-primary h-8 rounded-xl px-3.5 text-xs font-medium'
         render={<Link to='/sign-in' />}
       >
         {t('Sign in')}
@@ -217,7 +242,7 @@ export function PublicHeader(props: PublicHeaderProps) {
         >
           <nav
             className={cn(
-              'benefit-liquid-glass flex items-center justify-between rounded-[8px] px-3 transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]',
+              'benefit-liquid-glass benefit-public-nav flex items-center justify-between rounded-2xl px-3.5 transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]',
               scrolled ? 'h-12' : 'h-14'
             )}
             aria-label={t('Main navigation')}
@@ -250,7 +275,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                       tabIndex={link.disabled ? -1 : undefined}
                       onClick={(event) => handleNavLinkClick(event, link)}
                       className={cn(
-                        'text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground rounded-[8px] px-3 py-2 text-[13px] font-medium transition-colors duration-200',
+                        'text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground rounded-xl px-3 py-2 text-[13px] font-medium transition-colors duration-200',
                         link.disabled && 'pointer-events-none opacity-50'
                       )}
                     >
@@ -266,7 +291,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                     onClick={(event) => handleNavLinkClick(event, link)}
                     aria-current={isActive ? 'page' : undefined}
                     className={cn(
-                      'rounded-[8px] px-3 py-2 text-[13px] font-medium transition-colors duration-200',
+                      'rounded-xl px-3 py-2 text-[13px] font-medium transition-colors duration-200',
                       isActive
                         ? 'bg-foreground/[0.07] text-foreground'
                         : 'text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground',
@@ -308,7 +333,8 @@ export function PublicHeader(props: PublicHeaderProps) {
             </div>
 
             {/* Mobile: compact actions + hamburger */}
-            <div className='flex items-center gap-2 sm:hidden'>
+            <div className='flex items-center gap-1.5 sm:hidden'>
+              {showLanguageSwitcher && <LanguageSwitcher />}
               {showThemeSwitch && <ThemeSwitch />}
               {showAuthButtons && !loading && isAuthenticated && (
                 <ProfileDropdown />
@@ -317,7 +343,8 @@ export function PublicHeader(props: PublicHeaderProps) {
                 type='button'
                 variant='ghost'
                 size='icon'
-                className='size-11 rounded-[8px]'
+                className='size-11 rounded-xl'
+                ref={mobileToggleRef}
                 onClick={() => setMobileOpen((v) => !v)}
                 aria-label={t('Toggle navigation menu')}
                 aria-expanded={mobileOpen}
@@ -360,7 +387,7 @@ export function PublicHeader(props: PublicHeaderProps) {
             : 'pointer-events-none opacity-0'
         )}
       >
-        <div className='flex h-full flex-col justify-between px-8 pt-20 pb-10'>
+        <div className='flex h-full flex-col justify-between gap-6 overflow-y-auto px-8 pt-20 pb-10'>
           <nav
             className='flex flex-col gap-1'
             aria-label={t('Main navigation')}
@@ -423,15 +450,37 @@ export function PublicHeader(props: PublicHeaderProps) {
             )}
             style={{ transitionDelay: mobileOpen ? '250ms' : '0ms' }}
           >
-            {showAuthButtons && (
+            {showAuthButtons && isAuthenticated && (
               <Link
-                to={isAuthenticated ? '/dashboard' : '/sign-in'}
+                to='/dashboard'
                 onClick={() => setMobileOpen(false)}
                 tabIndex={mobileOpen ? undefined : -1}
                 className='benefit-liquid-primary inline-flex h-12 items-center justify-center rounded-[8px] text-sm font-medium transition-opacity hover:opacity-90 active:opacity-80'
               >
-                {isAuthenticated ? t('Go to Dashboard') : t('Sign in')}
+                {t('Go to Dashboard')}
               </Link>
+            )}
+            {showAuthButtons && !isAuthenticated && (
+              <div className={cn('grid gap-2.5', canRegister && 'grid-cols-2')}>
+                <Link
+                  to='/sign-in'
+                  onClick={() => setMobileOpen(false)}
+                  tabIndex={mobileOpen ? undefined : -1}
+                  className='border-border bg-background/60 text-foreground inline-flex h-12 items-center justify-center rounded-[8px] border text-sm font-medium transition-opacity hover:opacity-90 active:opacity-80'
+                >
+                  {t('Sign in')}
+                </Link>
+                {canRegister && (
+                  <Link
+                    to='/sign-up'
+                    onClick={() => setMobileOpen(false)}
+                    tabIndex={mobileOpen ? undefined : -1}
+                    className='benefit-liquid-primary inline-flex h-12 items-center justify-center rounded-[8px] text-sm font-medium transition-opacity hover:opacity-90 active:opacity-80'
+                  >
+                    {t('Sign up')}
+                  </Link>
+                )}
+              </div>
             )}
           </div>
         </div>

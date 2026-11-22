@@ -130,7 +130,7 @@ export function OpsAlertsPanel() {
   }
 
   return (
-    <section className='bg-card overflow-hidden rounded-2xl border shadow-xs'>
+    <section className='bg-card benefit-cinema-panel overflow-hidden rounded-2xl border shadow-xs'>
       <div className='flex flex-wrap items-center gap-2 border-b px-4 py-3 sm:px-5'>
         <IconBadge tone={headerTone} size='sm'>
           {alertLevel === 'ok' ? <ShieldCheck /> : <ShieldAlert />}

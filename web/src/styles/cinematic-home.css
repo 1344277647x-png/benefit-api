@@ -187,6 +187,11 @@ For commercial licensing, please contact support@quantumnous.com
   letter-spacing: -0.065em;
 }
 
+.benefit-cinema-title:lang(zh) {
+  letter-spacing: -0.02em;
+  line-height: 1.12;
+}
+
 .benefit-cinema-title span {
   display: block;
   color: var(--cinema-gold);
@@ -228,6 +233,17 @@ For commercial licensing, please contact support@quantumnous.com
 
 .benefit-cinema-home .benefit-cinema-primary:hover {
   background: #f5dba9;
+}
+
+.light .benefit-cinema-home .benefit-cinema-primary {
+  background: #806026;
+  color: #ffffff;
+  border-color: #806026;
+  box-shadow: 0 8px 26px -14px rgb(128 96 38 / 0.52);
+}
+
+.light .benefit-cinema-home .benefit-cinema-primary:hover {
+  background: #6b4f1f;
 }
 
 .benefit-cinema-home .benefit-cinema-secondary {
@@ -418,7 +434,8 @@ For commercial licensing, please contact support@quantumnous.com
 
 .benefit-cinema-node-protocol {
   color: var(--cinema-muted);
-  font-size: 8px;
+  font-size: 10px;
+  line-height: 1.35;
   font-family: monospace;
   overflow-wrap: anywhere;
 }
@@ -594,6 +611,11 @@ For commercial licensing, please contact support@quantumnous.com
   color: var(--cinema-muted);
 }
 
+.benefit-cinema-stat-value {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
 .benefit-cinema-product {
   background: radial-gradient(
     ellipse at 0% 50%,
@@ -614,10 +636,104 @@ For commercial licensing, please contact support@quantumnous.com
   text-wrap: balance;
 }
 
+.benefit-cinema-home h2:lang(zh) {
+  letter-spacing: -0.012em;
+  line-height: 1.3;
+}
+
+.benefit-cinema-banner {
+  position: relative;
+  overflow: hidden;
+  color: #e7efea;
+  border-block: 1px solid #26483e;
+  background:
+    radial-gradient(
+      ellipse at 86% 18%,
+      rgb(235 203 145 / 0.14),
+      transparent 48%
+    ),
+    radial-gradient(ellipse at 12% 90%, rgb(49 118 91 / 0.34), transparent 55%),
+    linear-gradient(145deg, #0d241e, #081815 68%);
+}
+
+.benefit-cinema-banner::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 16%;
+  right: 16%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(235 203 145 / 0.65),
+    transparent
+  );
+  pointer-events: none;
+}
+
+.benefit-cinema-banner .benefit-cinema-banner-eyebrow {
+  color: #ebcb91;
+  letter-spacing: 0.12em;
+}
+
+.benefit-cinema-banner .benefit-cinema-banner-desc {
+  color: #b4c8be;
+}
+
+.benefit-cinema-banner .benefit-cinema-banner-cta {
+  background: #ebcb91;
+  color: #16261f;
+  border: 1px solid #ebcb91;
+  box-shadow: 0 10px 30px -16px rgb(235 203 145 / 0.6);
+}
+
+.benefit-cinema-banner .benefit-cinema-banner-cta:hover {
+  background: #f5dba9;
+}
+
+.benefit-cinema-step-card {
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--card) 94%, var(--chart-1)),
+    var(--card) 62%
+  );
+  box-shadow:
+    0 14px 36px -26px var(--cinema-site-shadow),
+    inset 0 1px var(--cinema-site-glint);
+  transition: border-color 180ms ease-out;
+}
+
+.benefit-cinema-step-card:hover {
+  border-color: color-mix(in srgb, var(--border) 55%, var(--cinema-gold));
+}
+
+.benefit-cinema-step-line {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--cinema-gold) 45%, var(--border)) 20%,
+    color-mix(in srgb, var(--cinema-gold) 45%, var(--border)) 80%,
+    transparent
+  );
+}
+
 .benefit-cinema-home .benefit-cinema-finale {
   color: var(--cinema-ink);
   background:
     radial-gradient(ellipse at 50% 110%, #22605280, transparent 65%),
+    var(--cinema-base);
+}
+
+.light .benefit-cinema-home .benefit-cinema-finale {
+  background:
+    radial-gradient(
+      ellipse at 50% 108%,
+      rgb(128 96 38 / 0.14),
+      transparent 62%
+    ),
+    radial-gradient(ellipse at 20% 0%, rgb(49 118 91 / 0.12), transparent 55%),
     var(--cinema-base);
 }
 
@@ -700,7 +816,7 @@ For commercial licensing, please contact support@quantumnous.com
   }
 
   .benefit-cinema-node-protocol {
-    font-size: 7px;
+    font-size: 9px;
   }
 
   .benefit-cinema-actions > * {

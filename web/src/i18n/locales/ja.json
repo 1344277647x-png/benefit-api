@@ -1,5 +1,12 @@
 {
   "translation": {
+    "Pay {{amount}}": "{{amount}} を支払う",
+    "Save {{amount}}": "{{amount}} お得",
+    "Minimum {{amount}}": "最小金額 {{amount}}",
+    "Client setup guide": "クライアント接続ガイド",
+    "On this page": "このページの目次",
+    "Back to top": "トップへ戻る",
+    "API base URL": "API ベース URL",
     "Enter these fields in Cursor Settings → Models.": "Cursor の「Settings → Models」で各項目を入力してください。",
     "Client configuration": "クライアント設定",
     "Copy a ready-to-use client configuration for this key.": "このキー用のクライアント設定をコピーできます。",

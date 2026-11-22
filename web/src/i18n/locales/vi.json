@@ -1,5 +1,12 @@
 {
   "translation": {
+    "Pay {{amount}}": "Thanh toán {{amount}}",
+    "Save {{amount}}": "Tiết kiệm {{amount}}",
+    "Minimum {{amount}}": "Tối thiểu {{amount}}",
+    "Client setup guide": "Hướng dẫn kết nối ứng dụng",
+    "On this page": "Trên trang này",
+    "Back to top": "Lên đầu trang",
+    "API base URL": "URL cơ sở API",
     "Enter these fields in Cursor Settings → Models.": "Nhập các trường này trong Cursor tại Settings → Models.",
     "Client configuration": "Cấu hình ứng dụng",
     "Copy a ready-to-use client configuration for this key.": "Sao chép cấu hình ứng dụng cho khóa này.",

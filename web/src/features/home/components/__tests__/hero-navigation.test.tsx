@@ -151,6 +151,13 @@ it('retains configured internal documentation navigation', async () => {
   expect(docs).not.toHaveAttribute('target', '_blank')
 })
 
+it('defaults to internal /docs navigation when docs_link is unset', async () => {
+  await showHero(true, '')
+  const docs = screen.getByRole('link', { name: 'Docs' })
+  expect(docs).toHaveAttribute('href', '/docs')
+  expect(docs).not.toHaveAttribute('target', '_blank')
+})
+
 it('tilts and highlights a model card on mouse movement and resets it when the pointer leaves', async () => {
   await showHero()
   const card = screen

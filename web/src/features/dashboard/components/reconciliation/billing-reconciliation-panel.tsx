@@ -56,6 +56,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { formatCurrencyUSD } from '@/lib/format'
 import { getApiErrorMessage } from '@/lib/http-client'
 import { cn } from '@/lib/utils'
@@ -122,6 +123,7 @@ function formatSignedUSD(value?: number): string {
 
 export function BillingReconciliationPanel() {
   const { t } = useTranslation()
+  const isMobile = useIsMobile()
   const now = useMemo(() => new Date(), [])
   const defaultStart = useMemo(() => {
     const start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
@@ -237,7 +239,7 @@ export function BillingReconciliationPanel() {
         </AlertDescription>
       </Alert>
 
-      <Card>
+      <Card className='benefit-cinema-panel'>
         <CardHeader className='pb-3'>
           <div className='flex flex-wrap items-center justify-between gap-2'>
             <div>
@@ -397,7 +399,7 @@ export function BillingReconciliationPanel() {
           )}
 
           <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4'>
-            <Card>
+            <Card className='benefit-cinema-panel'>
               <CardHeader className='pb-1'>
                 <CardDescription>{t('Total anomalies')}</CardDescription>
                 <CardTitle className='text-2xl tabular-nums'>
@@ -416,7 +418,7 @@ export function BillingReconciliationPanel() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className='benefit-cinema-panel'>
               <CardHeader className='pb-1'>
                 <CardDescription>{t('Known pre-consumed')}</CardDescription>
                 <CardTitle className='text-2xl tabular-nums'>
@@ -431,7 +433,7 @@ export function BillingReconciliationPanel() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className='benefit-cinema-panel'>
               <CardHeader className='pb-1'>
                 <CardDescription>
                   {t('Known funding difference')}
@@ -456,7 +458,7 @@ export function BillingReconciliationPanel() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className='benefit-cinema-panel'>
               <CardHeader className='pb-1'>
                 <CardDescription>
                   {t('Unknown-actual pre-consumed')}
@@ -476,7 +478,7 @@ export function BillingReconciliationPanel() {
             </Card>
           </div>
 
-          <Card>
+          <Card className='benefit-cinema-panel'>
             <CardHeader className='pb-3'>
               <CardTitle className='text-base'>
                 {t('Anomaly records')}
@@ -488,11 +490,185 @@ export function BillingReconciliationPanel() {
               </CardDescription>
             </CardHeader>
             <CardContent className='p-0'>
-              {report.items.length === 0 ? (
+              {report.items.length === 0 && (
                 <div className='text-muted-foreground px-6 py-10 text-center text-sm'>
                   {t('No settlement anomalies found in the selected range.')}
                 </div>
-              ) : (
+              )}
+              {report.items.length > 0 && isMobile && (
+                <div className='divide-y'>
+                  {report.items.map((item) => {
+                    const rowKey = `${item.source}:${item.event_key || item.request_id}:${item.created_at}`
+                    let kindBadgeClass =
+                      'border-amber-500/40 text-amber-600 dark:text-amber-400'
+                    if (item.kind === 'accounting_projection_failed') {
+                      kindBadgeClass =
+                        'border-sky-500/40 text-sky-600 dark:text-sky-400'
+                    } else if (item.dead_letter_at) {
+                      kindBadgeClass = 'border-destructive/50 text-destructive'
+                    }
+                    let actualMobileNode = (
+                      <span className='text-muted-foreground'>
+                        {t('Unknown')}
+                      </span>
+                    )
+                    if (
+                      item.actual_quota !== undefined &&
+                      item.actual_usd !== undefined
+                    ) {
+                      actualMobileNode = (
+                        <div>
+                          <div className='font-medium'>
+                            {formatCurrencyUSD(item.actual_usd)}
+                          </div>
+                          <div className='text-muted-foreground text-[11px]'>
+                            {item.actual_quota.toLocaleString()}
+                          </div>
+                        </div>
+                      )
+                    } else if (item.projected_quota !== undefined) {
+                      actualMobileNode = (
+                        <span className='text-muted-foreground text-[11px]'>
+                          {t('Projected: {{quota}}', {
+                            quota: item.projected_quota.toLocaleString(),
+                          })}
+                        </span>
+                      )
+                    }
+
+                    let fundingDiffMobileNode = (
+                      <span className='text-muted-foreground'>
+                        {t('Unknown')}
+                      </span>
+                    )
+                    if (
+                      item.diff_quota !== undefined &&
+                      item.diff_usd !== undefined
+                    ) {
+                      fundingDiffMobileNode = (
+                        <div
+                          className={cn(
+                            'font-medium',
+                            item.diff_quota > 0 &&
+                              'text-amber-600 dark:text-amber-400',
+                            item.diff_quota < 0 &&
+                              'text-sky-600 dark:text-sky-400'
+                          )}
+                        >
+                          <div>{formatSignedUSD(item.diff_usd)}</div>
+                          <div className='text-[11px] opacity-80'>
+                            {formatSignedQuota(item.diff_quota)}
+                          </div>
+                        </div>
+                      )
+                    }
+
+                    const timeRangeQuery =
+                      item.created_at > 0
+                        ? `&startTime=${Math.max(1, item.created_at - 3600) * 1000}&endTime=${(item.created_at + 3600) * 1000}`
+                        : ''
+
+                    return (
+                      <div key={rowKey} className='space-y-2.5 p-4 text-xs'>
+                        <div className='flex flex-wrap items-center justify-between gap-2'>
+                          <Badge variant='outline' className={kindBadgeClass}>
+                            {kindLabel(item.kind, t)}
+                          </Badge>
+                          <span className='text-muted-foreground font-mono text-[11px]'>
+                            {formatDateTimeUTC8(item.created_at)}
+                          </span>
+                        </div>
+
+                        <div className='flex flex-wrap items-baseline justify-between gap-2'>
+                          <div>
+                            <span className='font-medium'>
+                              {item.username || `#${item.user_id}`}
+                            </span>
+                            <span className='text-muted-foreground ml-1.5 text-[11px]'>
+                              ID {item.user_id}
+                              {item.subscription_id
+                                ? ` · Sub #${item.subscription_id}`
+                                : ''}
+                            </span>
+                          </div>
+                          {item.model_name && (
+                            <span className='text-muted-foreground truncate font-mono text-[11px]'>
+                              {item.model_name}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className='font-mono'>
+                          <span className='text-muted-foreground mr-1.5 font-sans'>
+                            {t('Request ID')}:
+                          </span>
+                          {item.request_id ? (
+                            <a
+                              href={`/usage-logs/common?requestId=${encodeURIComponent(item.request_id)}${timeRangeQuery}`}
+                              className='text-primary inline-flex max-w-full items-center gap-1 truncate align-bottom hover:underline'
+                            >
+                              <span className='truncate'>
+                                {item.request_id}
+                              </span>
+                              <ExternalLink className='size-3 shrink-0' />
+                            </a>
+                          ) : (
+                            '—'
+                          )}
+                        </div>
+
+                        <div className='bg-muted/40 grid grid-cols-2 gap-2 rounded-lg p-2.5 font-mono tabular-nums'>
+                          <div>
+                            <div className='text-muted-foreground font-sans text-[11px]'>
+                              {t('Pre-consumed')}
+                            </div>
+                            <div className='font-medium'>
+                              {formatCurrencyUSD(item.pre_consumed_usd)}
+                            </div>
+                            <div className='text-muted-foreground text-[11px]'>
+                              {item.pre_consumed_quota.toLocaleString()}
+                            </div>
+                          </div>
+                          <div>
+                            <div className='text-muted-foreground font-sans text-[11px]'>
+                              {t('Actual')}
+                            </div>
+                            {actualMobileNode}
+                          </div>
+                          <div>
+                            <div className='text-muted-foreground font-sans text-[11px]'>
+                              {t('Funding difference')}
+                            </div>
+                            {fundingDiffMobileNode}
+                          </div>
+                          <div>
+                            <div className='text-muted-foreground font-sans text-[11px]'>
+                              {t('Token difference (quota)')}
+                            </div>
+                            <div>
+                              {item.token_diff_quota == null
+                                ? t('Unknown')
+                                : formatSignedQuota(item.token_diff_quota)}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className='font-medium'>
+                            {item.failure_stage || item.status}
+                          </div>
+                          {item.summary && (
+                            <div className='text-muted-foreground line-clamp-2 text-[11px]'>
+                              {item.summary}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              {report.items.length > 0 && !isMobile && (
                 <div className='overflow-x-auto'>
                   <Table>
                     <TableHeader>

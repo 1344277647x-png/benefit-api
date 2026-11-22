@@ -51,9 +51,13 @@ export function Stats(_props: StatsProps) {
           {highlights.map((highlight) => (
             <div
               key={highlight.value}
-              className='border-border/50 flex min-h-32 flex-col items-center justify-center border-b px-3 py-6 text-center even:border-l md:border-b-0 md:border-l md:first:border-l-0'
+              className='border-border/50 flex min-h-32 flex-col items-center justify-center border-b px-4 py-7 text-center even:border-l md:border-b-0 md:border-l md:first:border-l-0'
             >
-              <p className='text-base leading-tight font-semibold md:text-lg'>
+              <span
+                aria-hidden='true'
+                className='mb-2.5 h-1 w-1 rounded-full bg-[var(--cinema-gold)] opacity-80'
+              />
+              <p className='benefit-cinema-stat-value text-lg leading-tight font-semibold md:text-xl'>
                 {highlight.value}
               </p>
               <p className='text-muted-foreground mt-2 text-xs leading-relaxed'>

@@ -44,7 +44,7 @@ export function ProductPreview() {
             )}
           </p>
 
-          <div className='benefit-liquid-glass-clear mt-7 flex flex-wrap items-center gap-3 rounded-[8px] p-3'>
+          <div className='benefit-liquid-glass-clear mt-7 flex flex-wrap items-center gap-3 rounded-xl p-3'>
             <span className='text-muted-foreground text-xs'>
               {t('Works with')}
             </span>
@@ -52,7 +52,7 @@ export function ProductPreview() {
               href='https://cherry-ai.com'
               target='_blank'
               rel='noopener noreferrer'
-              className='hover:bg-foreground/[0.06] flex min-h-9 items-center gap-1.5 rounded-[8px] px-2 text-xs font-medium transition-colors'
+              className='hover:bg-foreground/[0.06] flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition-colors'
             >
               <CherryStudio.Color size={18} className='shrink-0' />
               <span>Cherry Studio</span>

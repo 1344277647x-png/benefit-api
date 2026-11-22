@@ -77,4 +77,19 @@ i18n
     },
   })
 
+function toDocumentLang(language?: string): string {
+  if (!language) return 'en'
+  if (language === 'zhCN') return 'zh-CN'
+  if (language === 'zhTW') return 'zh-TW'
+  return language
+}
+
+function syncDocumentLang(language?: string) {
+  if (typeof document === 'undefined') return
+  document.documentElement.lang = toDocumentLang(language)
+}
+
+syncDocumentLang(i18n.resolvedLanguage ?? i18n.language)
+i18n.on('languageChanged', syncDocumentLang)
+
 export default i18n

@@ -19,6 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 import { lazy, Suspense } from 'react'
 
 import { HtmlContent, type HtmlContentVariant } from '@/components/html-content'
+import { Skeleton } from '@/components/ui/skeleton'
+import type { MarkdownHeading } from '@/lib/markdown-headings'
 
 const Markdown = lazy(() =>
   import('@/components/ui/markdown').then((module) => ({
@@ -34,6 +36,7 @@ interface RichContentProps {
   breaks?: boolean
   className?: string
   htmlVariant?: HtmlContentVariant
+  onHeadingsChange?: (headings: MarkdownHeading[]) => void
 }
 
 export function RichContent(props: RichContentProps) {
@@ -48,8 +51,23 @@ export function RichContent(props: RichContentProps) {
   }
 
   return (
-    <Suspense fallback={<div aria-busy='true' className={props.className} />}>
-      <Markdown breaks={props.breaks} className={props.className}>
+    <Suspense
+      fallback={
+        <div aria-busy='true' className={props.className}>
+          <div className='space-y-3 py-2'>
+            <Skeleton className='h-6 w-48' />
+            <Skeleton className='h-4 w-full' />
+            <Skeleton className='h-4 w-5/6' />
+            <Skeleton className='h-24 w-full rounded-lg' />
+          </div>
+        </div>
+      }
+    >
+      <Markdown
+        breaks={props.breaks}
+        className={props.className}
+        onHeadingsChange={props.onHeadingsChange}
+      >
         {props.content}
       </Markdown>
     </Suspense>

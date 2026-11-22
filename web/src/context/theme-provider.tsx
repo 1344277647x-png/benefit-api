@@ -103,7 +103,7 @@ export function ThemeProvider({
       )
       themeColor?.setAttribute(
         'content',
-        nextResolvedTheme === 'dark' ? '#0b0d10' : '#ffffff'
+        nextResolvedTheme === 'dark' ? '#081815' : '#edf3ee'
       )
       setResolvedTheme(nextResolvedTheme)
     }

@@ -1,5 +1,11 @@
 {
   "translation": {
+    "Pay {{amount}}": "Pay {{amount}}",
+    "Save {{amount}}": "Save {{amount}}",
+    "Minimum {{amount}}": "Minimum {{amount}}",
+    "Client setup guide": "Client setup guide",
+    "On this page": "On this page",
+    "Back to top": "Back to top",
     "Enter these fields in Cursor Settings → Models.": "Enter these fields in Cursor Settings → Models.",
     "Client configuration": "Client configuration",
     "Copy a ready-to-use client configuration for this key.": "Copy a ready-to-use client configuration for this key.",

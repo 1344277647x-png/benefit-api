@@ -163,4 +163,27 @@ describe('cinematic homepage layout contracts', () => {
       expect(rule.params).toMatch(/^benefit-cinema-/)
     })
   })
+
+  it('refines light mode contrast, zh display tracking, and protocol badge legibility', () => {
+    expect(
+      declarations('.light .benefit-cinema-home .benefit-cinema-primary')
+        .background
+    ).toBe('#806026')
+    expect(
+      declarations('.light .benefit-cinema-home .benefit-cinema-finale')
+        .background
+    ).toContain('radial-gradient')
+    expect(
+      declarations('.benefit-cinema-title:lang(zh)')['letter-spacing']
+    ).toBe('-0.02em')
+    expect(declarations('.benefit-cinema-node-protocol')['font-size']).toBe(
+      '10px'
+    )
+    expect(
+      declarations('.benefit-cinema-node-protocol', '(max-width: 767px)')[
+        'font-size'
+      ]
+    ).toBe('9px')
+    expect(declarations('.benefit-cinema-banner').color).toBe('#e7efea')
+  })
 })

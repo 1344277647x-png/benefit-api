@@ -1,5 +1,12 @@
 {
   "translation": {
+    "Pay {{amount}}": "Payer {{amount}}",
+    "Save {{amount}}": "Économisez {{amount}}",
+    "Minimum {{amount}}": "Minimum {{amount}}",
+    "Client setup guide": "Guide de configuration client",
+    "On this page": "Sur cette page",
+    "Back to top": "Haut de page",
+    "API base URL": "URL de base de l’API",
     "Enter these fields in Cursor Settings → Models.": "Saisissez ces champs dans Cursor, sous Settings → Models.",
     "Client configuration": "Configuration du client",
     "Copy a ready-to-use client configuration for this key.": "Copiez la configuration du client pour cette clé.",

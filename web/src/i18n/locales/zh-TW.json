@@ -1,5 +1,12 @@
 {
   "translation": {
+    "Pay {{amount}}": "支付 {{amount}}",
+    "Save {{amount}}": "立省 {{amount}}",
+    "Minimum {{amount}}": "最低儲值 {{amount}}",
+    "Client setup guide": "用戶端接入指南",
+    "On this page": "本頁目錄",
+    "Back to top": "回到頂部",
+    "API base URL": "API 基礎網址",
     "Enter these fields in Cursor Settings → Models.": "在 Cursor 的「Settings → Models」中逐項填入以下欄位。",
     "Client configuration": "用戶端設定",
     "Copy a ready-to-use client configuration for this key.": "為這個權杖產生並複製用戶端設定。",

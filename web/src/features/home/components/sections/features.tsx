@@ -17,24 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Link } from '@tanstack/react-router'
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import {
   ArrowRight,
   CreditCard,
@@ -65,8 +47,8 @@ export function Features(_props: FeaturesProps) {
         'Use a single base URL across OpenAI-compatible tools and supported native routes.'
       ),
       icon: Route,
-      className: 'text-teal-600 dark:text-teal-400',
-      dotClassName: 'bg-teal-600 dark:bg-teal-400',
+      className: 'text-[var(--chart-1)]',
+      dotClassName: 'bg-[var(--chart-1)]',
       detail: ['/v1/chat/completions', '/v1/responses', '/v1/messages'],
     },
     {
@@ -76,8 +58,8 @@ export function Features(_props: FeaturesProps) {
         'Channel health, rate limits and request logs keep production traffic observable.'
       ),
       icon: ShieldCheck,
-      className: 'text-sky-600 dark:text-sky-400',
-      dotClassName: 'bg-sky-600 dark:bg-sky-400',
+      className: 'text-[var(--chart-2)]',
+      dotClassName: 'bg-[var(--chart-2)]',
       detail: [t('Health checks'), t('Rate limits'), t('Usage logs')],
     },
     {
@@ -87,8 +69,8 @@ export function Features(_props: FeaturesProps) {
         'Recharge through the configured Epay channel and review every charge from the console.'
       ),
       icon: ReceiptText,
-      className: 'text-amber-600 dark:text-amber-400',
-      dotClassName: 'bg-amber-600 dark:bg-amber-400',
+      className: 'text-[var(--cinema-site-gold)]',
+      dotClassName: 'bg-[var(--cinema-site-gold)]',
       detail: [t('Epay recharge'), t('Live balance'), t('Billing history')],
     },
   ]
@@ -117,10 +99,10 @@ export function Features(_props: FeaturesProps) {
   ]
 
   return (
-    <section className='benefit-apple-shell relative z-10 pt-20 md:pt-24'>
+    <section className='relative z-10 pt-20 md:pt-24'>
       <div className='mx-auto max-w-6xl px-5'>
         <AnimateInView className='mx-auto max-w-2xl text-center'>
-          <p className='text-muted-foreground mb-3 text-xs font-medium uppercase'>
+          <p className='mb-3 text-xs font-medium tracking-[0.12em] text-[var(--cinema-site-gold)] uppercase'>
             {t('Why Benefit API')}
           </p>
           <h2 className='text-2xl leading-tight font-bold md:text-3xl'>
@@ -138,7 +120,7 @@ export function Features(_props: FeaturesProps) {
                 animation='fade-up'
                 className='border-border/60 border-b px-1 py-8 last:border-b-0 md:border-b-0 md:px-8'
               >
-                <div className='bg-muted/70 mb-5 flex size-11 items-center justify-center rounded-[8px] border'>
+                <div className='bg-card/80 border-border/80 mb-5 flex size-11 items-center justify-center rounded-xl border shadow-xs'>
                   <Icon className={`size-5 ${f.className}`} />
                 </div>
                 <h3 className='text-base font-semibold'>{f.title}</h3>
@@ -164,27 +146,27 @@ export function Features(_props: FeaturesProps) {
         </div>
       </div>
 
-      <div className='bg-foreground text-background mt-20'>
+      <div className='benefit-cinema-banner mt-20'>
         <div className='mx-auto grid max-w-6xl gap-8 px-5 py-14 md:grid-cols-[minmax(0,1fr)_auto] md:items-end md:py-16'>
           <AnimateInView className='max-w-3xl'>
-            <p className='text-background/65 text-xs font-medium uppercase'>
+            <p className='benefit-cinema-banner-eyebrow text-xs font-medium uppercase'>
               {t('Pay only for usage')}
             </p>
             <h2 className='mt-3 text-3xl leading-tight font-semibold md:text-5xl'>
               {t('Spend less on access. Build more.')}
             </h2>
-            <p className='text-background/70 mt-5 max-w-2xl text-sm leading-relaxed md:text-base'>
+            <p className='benefit-cinema-banner-desc mt-5 max-w-2xl text-sm leading-relaxed md:text-base'>
               {t(
                 'Recharge online, choose the model you need, and review every charge in the console.'
               )}
             </p>
           </AnimateInView>
           <Button
-            className='benefit-liquid-inverse hover:bg-background/30 h-12 w-fit rounded-full px-6 font-semibold'
+            className='benefit-cinema-banner-cta group h-12 w-fit rounded-full px-6 font-semibold'
             render={<Link to='/pricing' />}
           >
             {t('View Pricing')}
-            <ArrowRight className='ml-1.5 size-4' />
+            <ArrowRight className='ml-1.5 size-4 transition-transform duration-200 group-hover:translate-x-0.5' />
           </Button>
         </div>
       </div>
@@ -198,7 +180,7 @@ export function Features(_props: FeaturesProps) {
               animation='fade-up'
               className='flex items-start gap-3'
             >
-              <div className='text-muted-foreground mt-0.5 shrink-0'>
+              <div className='mt-0.5 shrink-0 text-[var(--cinema-site-gold)]'>
                 {f.icon}
               </div>
               <div>

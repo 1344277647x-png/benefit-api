@@ -380,19 +380,17 @@ For commercial licensing, please contact support@quantumnous.com
 [data-slot='hover-card-content'][data-open],
 [data-slot='menubar-content'][data-open],
 [data-slot='menubar-sub-content'][data-open] {
-  animation: benefit-surface-3d-in 260ms cubic-bezier(0.2, 0.75, 0.2, 1);
+  animation: benefit-surface-3d-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 @keyframes benefit-surface-3d-in {
   from {
     opacity: 0;
-    filter: blur(5px);
-    translate: 0 12px -40px;
+    transform: translateY(4px) scale(0.985);
   }
   to {
     opacity: 1;
-    filter: blur(0);
-    translate: 0 0 0;
+    transform: translateY(0) scale(1);
   }
 }
 

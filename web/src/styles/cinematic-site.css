@@ -95,6 +95,11 @@ body.benefit-cinematic-site {
   background: var(--background);
 }
 
+/* Follow user-selected non-default theme presets instead of locking accent bars to gold. */
+body.benefit-cinematic-site[data-theme-preset] {
+  --cinema-site-gold: var(--primary);
+}
+
 .benefit-cinematic-site #root {
   isolation: isolate;
   min-height: 100svh;
@@ -116,6 +121,17 @@ body.benefit-cinematic-site {
 
 body:has(.benefit-cinema-hero) .benefit-site-atmosphere {
   display: none;
+}
+
+/* Keep administrative workspaces quiet and data-first: retain only a soft ambient glow. */
+body:has(.benefit-workspace) .benefit-site-stars,
+body:has(.benefit-workspace) .benefit-site-orbit,
+body:has(.benefit-workspace) .benefit-site-planet {
+  display: none;
+}
+
+body:has(.benefit-workspace) .benefit-site-nebula {
+  opacity: 0.45;
 }
 
 .benefit-site-nebula {
@@ -227,25 +243,32 @@ body.benefit-cinematic-site .benefit-workspace-header {
   background: color-mix(in srgb, var(--background) 92%, transparent);
   box-shadow: 0 4px 24px -15px var(--cinema-site-shadow);
 }
+body.benefit-cinematic-site .benefit-public-nav {
+  border-color: color-mix(in srgb, var(--border) 78%, var(--cinema-site-gold));
+  box-shadow:
+    0 16px 40px -26px var(--cinema-site-shadow),
+    inset 0 1px 0 var(--cinema-site-glint);
+}
 
 body.benefit-cinematic-site [data-slot='card'],
 body.benefit-cinematic-site .benefit-cinema-panel {
   min-width: 0;
   background: linear-gradient(
     145deg,
-    color-mix(in srgb, var(--card) 95%, var(--chart-1)),
-    var(--card) 55%
+    color-mix(in srgb, var(--card) 96%, var(--chart-1)),
+    var(--card) 58%
   );
-  border-color: var(--border);
+  border: 1px solid var(--border);
+  --tw-ring-shadow: 0 0 #0000;
   box-shadow:
-    0 14px 38px -24px var(--cinema-site-shadow),
+    0 12px 32px -24px var(--cinema-site-shadow),
     inset 0 1px var(--cinema-site-glint);
 }
 /* Operational cards never move under the pointer or create containing blocks for menus. */
 body.benefit-cinematic-site [data-slot='card']:hover {
   transform: none;
   box-shadow:
-    0 14px 38px -24px var(--cinema-site-shadow),
+    0 12px 32px -24px var(--cinema-site-shadow),
     inset 0 1px var(--cinema-site-glint);
 }
 
@@ -303,9 +326,10 @@ body.benefit-cinematic-site .benefit-metric-band > :first-child {
 
 body.benefit-cinematic-site .benefit-auth-panel {
   position: relative;
+  border: 1px solid
+    color-mix(in srgb, var(--border) 72%, var(--cinema-site-gold));
   border-radius: 24px;
   background: color-mix(in srgb, var(--card) 97%, transparent);
-  border-color: color-mix(in srgb, var(--border) 70%, var(--cinema-site-gold));
   box-shadow:
     0 32px 100px -40px var(--cinema-site-shadow),
     inset 0 1px var(--cinema-site-glint);
@@ -329,6 +353,10 @@ body.benefit-cinematic-site .benefit-auth-panel {
   letter-spacing: -0.045em;
   line-height: 1.18;
   text-wrap: balance;
+}
+.benefit-auth-story h2:lang(zh) {
+  letter-spacing: -0.015em;
+  line-height: 1.28;
 }
 .benefit-auth-story > p:first-child {
   color: var(--cinema-site-gold);
@@ -402,11 +430,19 @@ body.benefit-cinematic-site [data-slot='table-container'] {
   min-width: 0;
   max-width: 100%;
 }
+body.benefit-cinematic-site [data-slot='table'] td,
+body.benefit-cinematic-site [data-slot='table'] th {
+  font-variant-numeric: tabular-nums;
+}
 body.benefit-cinematic-site [data-slot='table-header'] {
-  background: var(--table-header);
+  background: color-mix(in srgb, var(--table-header) 85%, var(--card));
 }
 body.benefit-cinematic-site [data-slot='table'] tbody tr {
   animation: none;
+  transition: background-color 150ms ease-out;
+}
+body.benefit-cinematic-site [data-slot='table'] tbody tr:hover {
+  background-color: color-mix(in srgb, var(--accent) 42%, transparent);
 }
 
 @keyframes benefit-site-starlight {

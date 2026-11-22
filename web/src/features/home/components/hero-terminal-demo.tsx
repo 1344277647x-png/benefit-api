@@ -45,28 +45,24 @@ const ACCENT_CLASSES: Record<
   }
 > = {
   emerald: {
-    activeText: 'text-emerald-600 dark:text-emerald-400',
-    activeBorder: 'border-emerald-500 dark:border-emerald-400',
-    badge:
-      'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-400',
+    activeText: 'text-[var(--chart-1)]',
+    activeBorder: 'border-[var(--chart-1)]',
+    badge: 'bg-[var(--chart-1)]/15 text-[var(--chart-1)]',
   },
   amber: {
-    activeText: 'text-amber-600 dark:text-amber-400',
-    activeBorder: 'border-amber-500 dark:border-amber-400',
-    badge:
-      'bg-amber-500/10 text-amber-600 dark:bg-amber-400/10 dark:text-amber-400',
+    activeText: 'text-[var(--cinema-site-gold)]',
+    activeBorder: 'border-[var(--cinema-site-gold)]',
+    badge: 'bg-[var(--cinema-site-gold)]/15 text-[var(--cinema-site-gold)]',
   },
   blue: {
-    activeText: 'text-blue-600 dark:text-blue-400',
-    activeBorder: 'border-blue-500 dark:border-blue-400',
-    badge:
-      'bg-blue-500/10 text-blue-600 dark:bg-blue-400/10 dark:text-blue-400',
+    activeText: 'text-[var(--chart-2)]',
+    activeBorder: 'border-[var(--chart-2)]',
+    badge: 'bg-[var(--chart-2)]/15 text-[var(--chart-2)]',
   },
   violet: {
-    activeText: 'text-violet-600 dark:text-violet-400',
-    activeBorder: 'border-violet-500 dark:border-violet-400',
-    badge:
-      'bg-violet-500/10 text-violet-600 dark:bg-violet-400/10 dark:text-violet-400',
+    activeText: 'text-[var(--chart-3)]',
+    activeBorder: 'border-[var(--chart-3)]',
+    badge: 'bg-[var(--chart-3)]/15 text-[var(--chart-3)]',
   },
 }
 
@@ -208,9 +204,7 @@ export function HeroTerminalDemo(props: HeroTerminalDemoProps) {
 
   return (
     <div className={cn('mx-auto w-full max-w-2xl', props.className)}>
-      <div
-        className={cn('benefit-product-frame overflow-hidden rounded-[8px]')}
-      >
+      <div className={cn('benefit-product-frame overflow-hidden rounded-2xl')}>
         {/* Tab strip */}
         <div
           className={cn(

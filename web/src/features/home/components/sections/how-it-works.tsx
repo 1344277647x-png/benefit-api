@@ -46,10 +46,10 @@ export function HowItWorks() {
   ]
 
   return (
-    <section className='benefit-apple-shell border-border/40 bg-muted/10 relative z-10 border-y px-6 py-20 md:py-24'>
+    <section className='border-border/50 bg-muted/15 relative z-10 border-y px-6 py-20 md:py-24'>
       <div className='mx-auto max-w-6xl'>
-        <AnimateInView className='mb-16 text-center md:mb-20'>
-          <p className='text-muted-foreground mb-3 text-xs font-medium uppercase'>
+        <AnimateInView className='mb-14 text-center md:mb-16'>
+          <p className='mb-3 text-xs font-medium tracking-[0.12em] text-[var(--cinema-site-gold)] uppercase'>
             {t('How It Works')}
           </p>
           <h2 className='text-2xl font-bold md:text-3xl'>
@@ -57,24 +57,28 @@ export function HowItWorks() {
           </h2>
         </AnimateInView>
 
-        <div className='grid gap-8 md:grid-cols-3 md:gap-12'>
+        <div className='relative grid gap-6 md:grid-cols-3 md:gap-8'>
+          <div
+            aria-hidden='true'
+            className='benefit-cinema-step-line pointer-events-none absolute top-14 right-16 left-16 hidden h-px md:block'
+          />
           {steps.map((step, i) => (
             <AnimateInView
               key={step.num}
               delay={i * 150}
               animation='fade-up'
-              className='relative flex flex-col items-center text-center'
+              className='benefit-cinema-step-card relative flex flex-col items-center rounded-2xl px-6 py-8 text-center'
             >
               <div className='relative mb-6'>
-                <div className='text-muted-foreground border-border/50 bg-background flex size-16 items-center justify-center rounded-[8px] border shadow-sm transition-colors'>
+                <div className='border-border/70 bg-background/90 flex size-14 items-center justify-center rounded-xl border text-[var(--cinema-site-gold)] shadow-xs transition-colors'>
                   {step.icon}
                 </div>
-                <div className='bg-foreground text-background absolute -top-2 -right-2 flex size-6 items-center justify-center rounded-full text-xs font-bold'>
+                <div className='absolute -top-2 -right-2 flex size-6 items-center justify-center rounded-full bg-[var(--cinema-site-gold)] text-xs font-bold text-[var(--primary-foreground)] shadow-xs'>
                   {step.num}
                 </div>
               </div>
               <h3 className='mb-2 text-base font-semibold'>{step.title}</h3>
-              <p className='text-muted-foreground max-w-[240px] text-sm leading-relaxed'>
+              <p className='text-muted-foreground max-w-[260px] text-sm leading-relaxed'>
                 {step.desc}
               </p>
             </AnimateInView>
