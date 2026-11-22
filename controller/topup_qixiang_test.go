@@ -23,6 +23,22 @@ type fakeQixiangConfirmation struct {
 	calls int
 }
 
+func TestQixiangReturnKeepsOnlyLocalOrderReference(t *testing.T) {
+	const order = "QX1234567890abcdef1234567890abcdef"
+	for _, tc := range []struct{ query, suffix string }{
+		{"?order=" + order + "&trade_status=success", "&order=" + order},
+		{"?trade_status=success", ""},
+		{"?order=invalid", ""},
+	} {
+		w := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(w)
+		ctx.Request = httptest.NewRequest(http.MethodGet, "/api/qixiang/return"+tc.query, nil)
+		QixiangReturn(ctx)
+		require.Equal(t, http.StatusSeeOther, w.Code)
+		require.Equal(t, paymentReturnPath("/wallet?pay=pending&show_history=true"+tc.suffix), w.Header().Get("Location"))
+	}
+}
+
 func (f *fakeQixiangConfirmation) ConfirmWeChatPayment(context.Context, service.QixiangPaymentNotice) (string, error) {
 	f.calls++
 	return f.money, f.err

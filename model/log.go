@@ -103,6 +103,14 @@ func ensureLogRequestId(log *Log) {
 
 func createLog(log *Log) error {
 	ensureLogRequestId(log)
+	if hour := lateOperationsLogHour(log); hour > 0 && !common.UsingLogDatabase(common.DatabaseTypeClickHouse) && LOG_DB.Migrator().HasTable(&OperationsRollupDirtyHour{}) {
+		return LOG_DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(log).Error; err != nil {
+				return err
+			}
+			return markLateOperationsHour(tx, hour)
+		})
+	}
 	return LOG_DB.Create(log).Error
 }
 

@@ -15,6 +15,7 @@ export type ClientPreset =
   | 'claude'
   | 'gemini'
   | 'cherry'
+  | 'cursor'
   | 'image'
   | 'video'
   | 'embeddings'
@@ -34,6 +35,7 @@ export type ClientTemplate = {
 
 export type ClientTemplateOptions = {
   protocol?: 'chat' | 'responses'
+  apiKey?: string
 }
 
 const hasProtocol = (
@@ -52,6 +54,7 @@ export function compatiblePresets(
       'claude',
       'gemini',
       'cherry',
+      'cursor',
       'image',
       'video',
       'embeddings',
@@ -60,7 +63,7 @@ export function compatiblePresets(
   }
   const presets: ClientPreset[] = []
   if (hasProtocol(model, 'openai-chat')) {
-    presets.push('curl', 'openai', 'cherry')
+    presets.push('curl', 'openai', 'cherry', 'cursor')
   }
   if (hasProtocol(model, 'openai-responses')) {
     presets.push('codex')
@@ -90,6 +93,7 @@ export function buildClientTemplate(
   options?: ClientTemplateOptions
 ): ClientTemplate {
   const selectedModel = modelName.trim() || 'YOUR_MODEL'
+  const apiKey = options?.apiKey || 'YOUR_API_KEY'
   const chatEndpoint = `${apiBaseUrl}/chat/completions`
   const responsesEndpoint = `${apiBaseUrl}/responses`
   const anthropicEndpoint = `${apiBaseUrl}/messages`
@@ -222,8 +226,8 @@ base_url = ${jsonString(apiBaseUrl)}
 wire_api = "responses"
 env_key = "BENEFIT_API_KEY"
 
-# PowerShell: $env:BENEFIT_API_KEY = "YOUR_API_KEY"
-# macOS/Linux: export BENEFIT_API_KEY="YOUR_API_KEY"`,
+# PowerShell: $env:BENEFIT_API_KEY = "${apiKey}"
+# macOS/Linux: export BENEFIT_API_KEY="${apiKey}"`,
     }
   }
 
@@ -233,20 +237,22 @@ env_key = "BENEFIT_API_KEY"
       title: 'Claude Code',
       description:
         'Anthropic-compatible Messages configuration for Claude Code.',
-      language: 'bash',
+      language: 'json',
       endpoint: anthropicEndpoint,
-      fileName: 'benefit-api-claude.env',
+      fileName: 'settings.json',
       install: 'npm install -g @anthropic-ai/claude-code',
-      path: 'Shell environment',
-      content: `# Set these variables in the shell that starts Claude Code
-ANTHROPIC_BASE_URL=${apiBaseUrl}
-ANTHROPIC_AUTH_TOKEN=YOUR_API_KEY
-ANTHROPIC_MODEL=${selectedModel}
-
-# PowerShell
-$env:ANTHROPIC_BASE_URL = "${apiBaseUrl}"
-$env:ANTHROPIC_AUTH_TOKEN = "YOUR_API_KEY"
-$env:ANTHROPIC_MODEL = "${selectedModel}"`,
+      path: '~/.claude/settings.json',
+      content: JSON.stringify(
+        {
+          env: {
+            ANTHROPIC_BASE_URL: origin,
+            ANTHROPIC_AUTH_TOKEN: apiKey,
+            ANTHROPIC_MODEL: selectedModel,
+          },
+        },
+        null,
+        2
+      ),
     }
   }
 
@@ -289,6 +295,19 @@ print(response.choices[0].message.content)`
     }
   }
 
+  if (preset === 'cursor') {
+    return {
+      preset,
+      title: 'Cursor',
+      description: 'Enter these fields in Cursor Settings → Models.',
+      language: 'text',
+      endpoint: chatEndpoint,
+      fileName: 'cursor-provider-fields.txt',
+      path: 'Cursor Settings → Models',
+      content: `OpenAI API Key: ${apiKey}\nOverride OpenAI Base URL: ${apiBaseUrl}\nModel: ${selectedModel}`,
+    }
+  }
+
   if (preset === 'cherry') {
     return {
       preset,
@@ -299,7 +318,7 @@ print(response.choices[0].message.content)`
       fileName: 'benefit-api-cherry.json',
       content: `{
   "apiType": "openai",
-  "apiKey": "YOUR_API_KEY",
+  "apiKey": ${jsonString(apiKey)},
   "baseURL": ${jsonString(apiBaseUrl)},
   "models": [${jsonString(selectedModel)}]
 }`,

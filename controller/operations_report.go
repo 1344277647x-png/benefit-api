@@ -61,14 +61,22 @@ func parseOperationsReportParams(c *gin.Context) (model.OperationsReportParams, 
 			return model.OperationsReportParams{}, &operationsReportInputError{message: "invalid channel_id"}
 		}
 	}
+	afterCost := false
+	if value := c.Query("after_cost_effective"); value != "" {
+		afterCost, err = strconv.ParseBool(value)
+		if err != nil {
+			return model.OperationsReportParams{}, &operationsReportInputError{message: "invalid after_cost_effective"}
+		}
+	}
 	return model.OperationsReportParams{
-		StartTimestamp: start,
-		EndTimestamp:   end,
-		ModelName:      strings.TrimSpace(c.Query("model_name")),
-		Username:       strings.TrimSpace(c.Query("username")),
-		Group:          strings.TrimSpace(c.Query("group")),
-		ChannelID:      channelID,
-		GroupBy:        c.DefaultQuery("group_by", "day"),
+		AfterCostEffective: afterCost,
+		StartTimestamp:     start,
+		EndTimestamp:       end,
+		ModelName:          strings.TrimSpace(c.Query("model_name")),
+		Username:           strings.TrimSpace(c.Query("username")),
+		Group:              strings.TrimSpace(c.Query("group")),
+		ChannelID:          channelID,
+		GroupBy:            c.DefaultQuery("group_by", "day"),
 	}, nil
 }
 
@@ -164,9 +172,21 @@ func writeOperationsReportCSV(c *gin.Context, report *model.OperationsReport) {
 		"requests", "successes", "errors", "tokens", "revenue_quota", "refund_quota",
 		"revenue_usd", "refund_usd", "cost_usd", "cost_status", "unknown_cost_requests", "profit_usd", "error_rate",
 		"revenue_status", "unknown_revenue_requests",
+		"matched_requests", "pending_requests", "matched_quota", "partial_profit_usd", "request_coverage_percent", "quota_coverage_percent", "errors_without_quota", "verification_reasons", "after_cost_effective", "excluded_requests",
 	})
 	for _, row := range report.Rows {
+		reasonsJSON, _ := common.Marshal(row.Reasons)
 		profit := ""
+		partialProfit, requestCoverage, quotaCoverage := "", "", ""
+		if row.PartialProfitUSD != nil {
+			partialProfit = strconv.FormatFloat(*row.PartialProfitUSD, 'f', 6, 64)
+		}
+		if row.RequestCount > 0 {
+			requestCoverage = strconv.FormatFloat(float64(row.MatchedRequests)*100/float64(row.RequestCount), 'f', 4, 64)
+		}
+		if row.RevenueQuota > 0 {
+			quotaCoverage = strconv.FormatFloat(float64(row.MatchedQuota)*100/float64(row.RevenueQuota), 'f', 4, 64)
+		}
 		if row.ProfitUSD != nil {
 			profit = strconv.FormatFloat(*row.ProfitUSD, 'f', 6, 64)
 		}
@@ -194,6 +214,14 @@ func writeOperationsReportCSV(c *gin.Context, report *model.OperationsReport) {
 			strconv.FormatFloat(row.ErrorRate, 'f', 4, 64),
 			operationsCSVText(row.RevenueStatus),
 			strconv.FormatInt(row.UnknownRevenueRequests, 10),
+			strconv.FormatInt(row.MatchedRequests, 10),
+			strconv.FormatInt(row.PendingRequests, 10),
+			strconv.FormatInt(row.MatchedQuota, 10),
+			partialProfit, requestCoverage, quotaCoverage,
+			strconv.FormatInt(row.ErrorsWithoutQuota, 10),
+			operationsCSVText(string(reasonsJSON)),
+			strconv.FormatBool(report.AfterCostEffective),
+			strconv.FormatInt(report.ExcludedRequests, 10),
 		})
 	}
 	writer.Flush()

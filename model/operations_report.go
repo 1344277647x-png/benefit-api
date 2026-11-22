@@ -35,16 +35,18 @@ const operationsReportMaxLogRows = 200000
 // OperationsReportParams is intentionally limited to dimensions that can be
 // filtered without exposing the raw log table to the administrator UI.
 type OperationsReportParams struct {
-	StartTimestamp int64
-	EndTimestamp   int64
-	ModelName      string
-	Username       string
-	Group          string
-	ChannelID      int
-	GroupBy        string
+	AfterCostEffective bool
+	StartTimestamp     int64
+	EndTimestamp       int64
+	ModelName          string
+	Username           string
+	Group              string
+	ChannelID          int
+	GroupBy            string
 }
 
 type OperationsReportSummary struct {
+	OperationsCoverage
 	UnknownRevenueRequests int64    `json:"unknown_revenue_requests"`
 	RevenueStatus          string   `json:"revenue_status"`
 	RequestCount           int64    `json:"request_count"`
@@ -63,6 +65,7 @@ type OperationsReportSummary struct {
 }
 
 type OperationsReportRow struct {
+	OperationsCoverage
 	UnknownRevenueRequests int64    `json:"unknown_revenue_requests"`
 	RevenueStatus          string   `json:"revenue_status"`
 	Key                    string   `json:"key"`
@@ -108,6 +111,8 @@ type OperationsReportHealth struct {
 }
 
 type OperationsReport struct {
+	AfterCostEffective  bool                      `json:"after_cost_effective"`
+	ExcludedRequests    int64                     `json:"excluded_requests"`
 	AccountingStartedAt int64                     `json:"accounting_started_at"`
 	Funding             *OperationsFundingTotals  `json:"funding,omitempty"`
 	GeneratedAt         int64                     `json:"generated_at"`
@@ -115,6 +120,8 @@ type OperationsReport struct {
 	EndTimestamp        int64                     `json:"end_timestamp"`
 	GroupBy             string                    `json:"group_by"`
 	Truncated           bool                      `json:"truncated"`
+	PreAggregated       bool                      `json:"pre_aggregated,omitempty"`
+	RollupHoursUsed     int                       `json:"rollup_hours_used,omitempty"`
 	QuotaPerUnit        float64                   `json:"quota_per_unit"`
 	Summary             OperationsReportSummary   `json:"summary"`
 	Rows                []OperationsReportRow     `json:"rows"`
@@ -128,18 +135,22 @@ type OperationsReport struct {
 // Keeping this separate from Log prevents accidental loading of large content
 // fields when an administrator opens a long time range.
 type operationsReportLog struct {
-	RequestId        string `gorm:"column:request_id"`
-	UserId           int    `gorm:"column:user_id"`
-	Username         string `gorm:"column:username"`
-	CreatedAt        int64  `gorm:"column:created_at"`
-	Type             int    `gorm:"column:type"`
-	ModelName        string `gorm:"column:model_name"`
-	Quota            int    `gorm:"column:quota"`
-	PromptTokens     int    `gorm:"column:prompt_tokens"`
-	CompletionTokens int    `gorm:"column:completion_tokens"`
-	ChannelId        int    `gorm:"column:channel_id"`
-	Group            string `gorm:"column:group_value"`
-	Other            string `gorm:"column:other"`
+	ID                 int    `gorm:"column:id"`
+	AfterCostEffective bool   `gorm:"-"`
+	CostReason         string `gorm:"-"`
+	IncomeReason       string `gorm:"-"`
+	RequestId          string `gorm:"column:request_id"`
+	UserId             int    `gorm:"column:user_id"`
+	Username           string `gorm:"column:username"`
+	CreatedAt          int64  `gorm:"column:created_at"`
+	Type               int    `gorm:"column:type"`
+	ModelName          string `gorm:"column:model_name"`
+	Quota              int    `gorm:"column:quota"`
+	PromptTokens       int    `gorm:"column:prompt_tokens"`
+	CompletionTokens   int    `gorm:"column:completion_tokens"`
+	ChannelId          int    `gorm:"column:channel_id"`
+	Group              string `gorm:"column:group_value"`
+	Other              string `gorm:"column:other"`
 }
 
 type operationsReportAccumulator struct {
@@ -272,6 +283,17 @@ func finalizeOperationsReportRow(row *operationsReportAccumulator, quotaPerUnit 
 	return result
 }
 
+// Projection alerts describe background accounting, not a second AI request.
+// Match the structured event identity, never error text or an empty channel.
+func isOperationsProjectionAlert(log operationsReportLog) bool {
+	if log.Type != LogTypeError {
+		return false
+	}
+	other, _ := common.StrToMap(log.Other)
+	event, ok := other["business_event"].(map[string]interface{})
+	return ok && event["category"] == BusinessEventBilling && event["action"] == "accounting_projection_failed"
+}
+
 func aggregateOperationsReport(logs []operationsReportLog, params OperationsReportParams) *OperationsReport {
 	groupBy := normalizeOperationsReportGroupBy(params.GroupBy)
 	quotaPerUnit := common.QuotaPerUnit
@@ -283,6 +305,12 @@ func aggregateOperationsReport(logs []operationsReportLog, params OperationsRepo
 	channelIDs := make(map[int]struct{})
 
 	for _, log := range logs {
+		if isOperationsProjectionAlert(log) {
+			continue
+		}
+		if params.AfterCostEffective && !log.AfterCostEffective {
+			continue
+		}
 		if log.ChannelId > 0 {
 			channelIDs[log.ChannelId] = struct{}{}
 		}
@@ -335,6 +363,8 @@ func aggregateOperationsReport(logs []operationsReportLog, params OperationsRepo
 		}
 		addOperationReportCost(row, log)
 		addOperationReportCost(&summary, log)
+		addOperationsCoverage(&row.OperationsCoverage, log)
+		addOperationsCoverage(&summary.OperationsCoverage, log)
 	}
 
 	rows := make([]OperationsReportRow, 0, len(rowsByKey))
@@ -353,6 +383,7 @@ func aggregateOperationsReport(logs []operationsReportLog, params OperationsRepo
 
 	resultSummary := finalizeOperationsReportRow(&summary, quotaPerUnit)
 	summaryView := OperationsReportSummary{
+		OperationsCoverage:     resultSummary.OperationsCoverage,
 		UnknownRevenueRequests: resultSummary.UnknownRevenueRequests,
 		RevenueStatus:          resultSummary.RevenueStatus,
 		RequestCount:           resultSummary.RequestCount,
@@ -375,16 +406,17 @@ func aggregateOperationsReport(logs []operationsReportLog, params OperationsRepo
 	}
 	sort.Ints(ids)
 	return &OperationsReport{
-		GeneratedAt:    time.Now().Unix(),
-		StartTimestamp: params.StartTimestamp,
-		EndTimestamp:   params.EndTimestamp,
-		GroupBy:        groupBy,
-		QuotaPerUnit:   quotaPerUnit,
-		Summary:        summaryView,
-		Rows:           rows,
-		ChannelIDs:     ids,
-		Channels:       []OperationsReportChannel{},
-		Health:         []OperationsReportHealth{},
+		AfterCostEffective: params.AfterCostEffective,
+		GeneratedAt:        time.Now().Unix(),
+		StartTimestamp:     params.StartTimestamp,
+		EndTimestamp:       params.EndTimestamp,
+		GroupBy:            groupBy,
+		QuotaPerUnit:       quotaPerUnit,
+		Summary:            summaryView,
+		Rows:               rows,
+		ChannelIDs:         ids,
+		Channels:           []OperationsReportChannel{},
+		Health:             []OperationsReportHealth{},
 	}
 }
 
@@ -414,7 +446,12 @@ func GetOperationsReport(params OperationsReportParams) (*OperationsReport, erro
 		report.AccountingStartedAt = startedAt
 		return report, nil
 	}
-	query := LOG_DB.Table("logs").Select("request_id, user_id, username, created_at, type, model_name, quota, prompt_tokens, completion_tokens, channel_id, "+logGroupCol+" AS group_value, other").
+	if rollupReport, used, err := getOperationsReportWithRollups(params, startedAt); err != nil {
+		return nil, err
+	} else if used {
+		return rollupReport, nil
+	}
+	query := LOG_DB.Table("logs").Select("id, request_id, user_id, username, created_at, type, model_name, quota, prompt_tokens, completion_tokens, channel_id, "+logGroupCol+" AS group_value, other").
 		Where("created_at >= ? AND created_at <= ?", params.StartTimestamp, params.EndTimestamp).
 		Where("type IN ?", []int{LogTypeConsume, LogTypeRefund, LogTypeError})
 	if params.ModelName != "" {
@@ -442,8 +479,21 @@ func GetOperationsReport(params OperationsReportParams) (*OperationsReport, erro
 		return nil, err
 	}
 	report := aggregateOperationsReport(logs, params)
+	if params.AfterCostEffective {
+		for _, log := range logs {
+			if !isOperationsProjectionAlert(log) && !log.AfterCostEffective && (log.Type == LogTypeConsume || log.Type == LogTypeError) {
+				report.ExcludedRequests++
+			}
+		}
+	}
 	report.AccountingStartedAt = startedAt
 	report.Truncated = truncated
+	if truncated {
+		report.Summary.ProfitUSD = nil
+		for i := range report.Rows {
+			report.Rows[i].ProfitUSD = nil
+		}
+	}
 	if err := checkOperationsReportCompleteness(report, logs, params); err != nil {
 		return nil, err
 	}

@@ -93,8 +93,15 @@ func DeliverBusinessEvent(ctx context.Context, event BusinessEvent) error {
 		if result.Error != nil || result.RowsAffected == 0 {
 			return result.Error
 		}
-		return tx.Create(&Log{UserId: event.UserId, Username: username, CreatedAt: event.CreatedAt,
-			Type: logType, Content: event.Content, RequestId: event.RequestId, Other: common.MapToJsonStr(other)}).Error
+		log := Log{UserId: event.UserId, Username: username, CreatedAt: event.CreatedAt,
+			Type: logType, Content: event.Content, RequestId: event.RequestId, Other: common.MapToJsonStr(other)}
+		if err := tx.Create(&log).Error; err != nil {
+			return err
+		}
+		if hour := lateOperationsLogHour(&log); hour > 0 && event.Action != ReconciliationKindAccountingProjectionFailed && tx.Migrator().HasTable(&OperationsRollupDirtyHour{}) {
+			return markLateOperationsHour(tx, hour)
+		}
+		return nil
 	})
 }
 

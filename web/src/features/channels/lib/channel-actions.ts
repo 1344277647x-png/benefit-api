@@ -38,7 +38,12 @@ import {
   updateAllChannelsBalance,
 } from '../api'
 import { CHANNEL_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
-import type { ChannelTestResponse, CopyChannelParams } from '../types'
+import type {
+  ChannelProtocolCheckMode,
+  ChannelProtocolCheckReport,
+  ChannelTestResponse,
+  CopyChannelParams,
+} from '../types'
 
 // ============================================================================
 // Query Keys
@@ -273,13 +278,15 @@ export async function handleTestChannel(
     endpointType?: string
     stream?: boolean
     group?: string
+    protocolCheck?: ChannelProtocolCheckMode
     silent?: boolean
   },
   onTestComplete?: (
     success: boolean,
     responseTime?: number,
     error?: string,
-    errorCode?: string
+    errorCode?: string,
+    protocolCheck?: ChannelProtocolCheckReport
   ) => void
 ): Promise<void> {
   const payload =
@@ -287,7 +294,8 @@ export async function handleTestChannel(
     (options.testModel ||
       options.endpointType ||
       options.stream ||
-      options.group)
+      options.group ||
+      options.protocolCheck)
       ? {
           ...(options.testModel ? { model: options.testModel } : {}),
           ...(options.endpointType
@@ -295,6 +303,9 @@ export async function handleTestChannel(
             : {}),
           ...(options.stream ? { stream: true } : {}),
           ...(options.group ? { group: options.group } : {}),
+          ...(options.protocolCheck
+            ? { protocol_check: options.protocolCheck }
+            : {}),
         }
       : undefined
 
@@ -316,7 +327,13 @@ export async function handleTestChannel(
             : undefined
         )
       }
-      onTestComplete?.(true, responseTime)
+      onTestComplete?.(
+        true,
+        responseTime,
+        undefined,
+        undefined,
+        response.protocol_check
+      )
     } else {
       const errorMsg = response.message || i18next.t(ERROR_MESSAGES.TEST_FAILED)
       if (!options?.silent) {
@@ -326,7 +343,13 @@ export async function handleTestChannel(
             : errorMsg,
         })
       }
-      onTestComplete?.(false, responseTime, errorMsg, response.error_code)
+      onTestComplete?.(
+        false,
+        responseTime,
+        errorMsg,
+        response.error_code,
+        response.protocol_check
+      )
     }
   } catch (_error: unknown) {
     const err = _error as { response?: { data?: { message?: string } } }

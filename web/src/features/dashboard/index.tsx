@@ -114,6 +114,14 @@ const LazyFlowCharts = lazy(() =>
   }))
 )
 
+const LazyBillingReconciliationPanel = lazy(() =>
+  import('./components/reconciliation/billing-reconciliation-panel').then(
+    (m) => ({
+      default: m.BillingReconciliationPanel,
+    })
+  )
+)
+
 function LogStatCardsFallback() {
   return (
     <div className='overflow-hidden rounded-lg border'>
@@ -193,6 +201,9 @@ const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
   operations: {
     titleKey: 'Operations report',
   },
+  reconciliation: {
+    titleKey: 'Settlement reconciliation',
+  },
 }
 
 export function Dashboard() {
@@ -255,7 +266,8 @@ export function Dashboard() {
         (section) =>
           section !== 'overview' &&
           (section !== 'users' || isAdmin) &&
-          (section !== 'operations' || isAdmin)
+          (section !== 'operations' || isAdmin) &&
+          (section !== 'reconciliation' || isAdmin)
       ),
     [isAdmin]
   )
@@ -420,6 +432,13 @@ export function Dashboard() {
           {activeSection === 'operations' && isAdmin && (
             <FadeIn>
               <OperationsReport />
+            </FadeIn>
+          )}
+          {activeSection === 'reconciliation' && isAdmin && (
+            <FadeIn>
+              <Suspense fallback={<ModelChartsFallback />}>
+                <LazyBillingReconciliationPanel />
+              </Suspense>
             </FadeIn>
           )}
         </div>

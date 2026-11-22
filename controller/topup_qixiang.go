@@ -98,13 +98,14 @@ func RequestQixiangPay(c *gin.Context) {
 		common.ApiErrorMsg(c, "Payment request failed")
 		return
 	}
+	returnURL += "?order=" + url.QueryEscape(topUp.TradeNo)
 	payURL, err := gateway.CreateWeChatOrder(c.Request.Context(), topUp.TradeNo, payAmount.StringFixed(2), notifyURL, returnURL)
 	if err != nil {
 		logger.LogWarn(c.Request.Context(), fmt.Sprintf("qixiang checkout failed order=%s: %v", topUp.TradeNo, err))
 		common.ApiErrorMsg(c, "Payment request failed")
 		return
 	}
-	common.ApiSuccess(c, gin.H{"pay_url": payURL})
+	common.ApiSuccess(c, gin.H{"pay_url": payURL, "trade_no": topUp.TradeNo})
 }
 
 func QixiangNotify(c *gin.Context) {
@@ -135,7 +136,13 @@ func QixiangNotify(c *gin.Context) {
 
 func QixiangReturn(c *gin.Context) {
 	c.Header("Referrer-Policy", "no-referrer")
-	c.Redirect(http.StatusSeeOther, paymentReturnPath("/wallet?pay=pending&show_history=true"))
+	target := "/wallet?pay=pending&show_history=true"
+	if order := c.Query("order"); len(order) == 34 && strings.HasPrefix(order, "QX") {
+		if _, err := uuid.Parse(order[2:]); err == nil {
+			target += "&order=" + url.QueryEscape(order)
+		}
+	}
+	c.Redirect(http.StatusSeeOther, paymentReturnPath(target))
 }
 
 type qixiangPaymentConfirmer interface {

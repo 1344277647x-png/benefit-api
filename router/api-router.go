@@ -105,6 +105,7 @@ func SetApiRouter(router *gin.Engine) {
 			//userRoute.POST("/tokenlog", middleware.CriticalRateLimit(), controller.TokenLog)
 			userRoute.POST("/epay/notify", anonymousRequestBodyLimit, controller.EpayNotify)
 			userRoute.GET("/epay/notify", controller.EpayNotify)
+			userRoute.GET("/epay/return", middleware.DisableCache(), controller.EpayReturn)
 			userRoute.GET("/groups", controller.GetUserGroups)
 
 			selfRoute := userRoute.Group("/")
@@ -363,6 +364,8 @@ func SetApiRouter(router *gin.Engine) {
 		logRoute.GET("/operations-report", middleware.AdminAuth(), controller.GetOperationsReport)
 		logRoute.GET("/operations-cost-versions", middleware.AdminAuth(), controller.ListChannelCostVersions)
 		logRoute.POST("/operations-cost-versions", middleware.RootAuth(), controller.CreateChannelCostVersion)
+		logRoute.GET("/ops-alerts", middleware.AdminAuth(), controller.GetOpsAlerts)
+		logRoute.GET("/billing-reconciliation", middleware.AdminAuth(), controller.GetBillingReconciliation)
 		logRoute.GET("/self/stat", middleware.UserAuth(), controller.GetLogsSelfStat)
 		logRoute.GET("/channel_affinity_usage_cache", middleware.AdminAuth(), controller.GetChannelAffinityUsageCacheStats)
 		logRoute.GET("/search", middleware.AdminAuth(), controller.SearchAllLogs)

@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-
 /* Default brand palette; explicit user-selected presets still override on body. */
 :root {
   --background: #edf3ee;

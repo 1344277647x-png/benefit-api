@@ -69,6 +69,7 @@ import {
 import { AnnouncementsPanel } from './announcements-panel'
 import { ApiInfoPanel } from './api-info-panel'
 import { FAQPanel } from './faq-panel'
+import { OpsAlertsPanel } from './ops-alerts-panel'
 import { PerformanceHealthPanel } from './performance-health-panel'
 import { SummaryCards } from './summary-cards'
 import { UptimePanel } from './uptime-panel'
@@ -836,9 +837,14 @@ export function OverviewDashboard() {
               )}
             >
               {isAdmin && (
-                <CardStaggerItem className='lg:col-span-2'>
-                  <PerformanceHealthPanel />
-                </CardStaggerItem>
+                <>
+                  <CardStaggerItem className='lg:col-span-2'>
+                    <OpsAlertsPanel />
+                  </CardStaggerItem>
+                  <CardStaggerItem className='lg:col-span-2'>
+                    <PerformanceHealthPanel />
+                  </CardStaggerItem>
+                </>
               )}
               {showApiInfoPanel && (
                 <CardStaggerItem>

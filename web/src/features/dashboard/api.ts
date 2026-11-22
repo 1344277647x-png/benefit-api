@@ -19,9 +19,12 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 
 import type {
+  BillingReconciliationKind,
+  BillingReconciliationReport,
   FlowQuotaDataItem,
   OperationsReport,
   OperationsReportGroupBy,
+  OpsAlertsSnapshot,
   QuotaDataItem,
   UptimeGroupResult,
 } from './types'
@@ -95,6 +98,7 @@ export async function getUptimeStatus() {
 }
 
 export async function getOperationsReport(params: {
+  after_cost_effective?: boolean
   start_timestamp: number
   end_timestamp: number
   group_by: OperationsReportGroupBy
@@ -126,6 +130,7 @@ export async function getOperationsReport(params: {
 }
 
 export async function downloadOperationsReport(params: {
+  after_cost_effective?: boolean
   start_timestamp: number
   end_timestamp: number
   group_by: OperationsReportGroupBy
@@ -149,6 +154,83 @@ export async function downloadOperationsReport(params: {
       // Keep malformed error bodies from leaking parser details into the UI.
     }
     throw new Error(message || 'Unable to load operations report')
+  }
+  return res.data
+}
+
+export async function getOpsAlerts(refresh = false) {
+  const res = await api.get<{
+    success: boolean
+    message?: string
+    data?: OpsAlertsSnapshot
+  }>('/api/log/ops-alerts', {
+    params: refresh ? { refresh: 'true' } : undefined,
+  })
+  if (!res.data.success || !res.data.data) {
+    throw new Error(res.data.message || 'Unable to load operations alerts')
+  }
+  const snapshot = res.data.data
+  res.data.data = {
+    ...snapshot,
+    alerts: snapshot.alerts ?? [],
+  }
+  return res.data
+}
+
+export interface BillingReconciliationQueryParams {
+  start_timestamp: number
+  end_timestamp: number
+  kind?: BillingReconciliationKind
+  user_id?: number
+  request_id?: string
+  limit?: number
+}
+
+export async function getBillingReconciliation(
+  params: BillingReconciliationQueryParams
+) {
+  const res = await api.get<{
+    success: boolean
+    message?: string
+    data?: BillingReconciliationReport
+  }>('/api/log/billing-reconciliation', { params })
+  if (!res.data.success || !res.data.data) {
+    throw new Error(
+      res.data.message || 'Unable to load billing reconciliation report'
+    )
+  }
+  const report = res.data.data
+  res.data.data = {
+    ...report,
+    items: report.items ?? [],
+  }
+  return res.data
+}
+
+export async function downloadBillingReconciliation(
+  params: BillingReconciliationQueryParams,
+  format: 'csv' | 'json'
+) {
+  const queryParams =
+    format === 'csv'
+      ? { ...params, format: 'csv' }
+      : { ...params, format: 'json', download: 'true' }
+  const res = await api.get<Blob>('/api/log/billing-reconciliation', {
+    params: queryParams,
+    responseType: 'blob',
+  })
+  const contentType = String(res.headers['content-type'] ?? '').toLowerCase()
+  const expected = format === 'csv' ? 'text/csv' : 'application/json'
+  if (!contentType.includes(expected)) {
+    const payload = await res.data.text()
+    let message: string | undefined
+    try {
+      const parsed = JSON.parse(payload) as { message?: string }
+      message = parsed.message
+    } catch {
+      // Avoid surfacing malformed error body details in UI toasts.
+    }
+    throw new Error(message || 'Unable to export billing reconciliation report')
   }
   return res.data
 }

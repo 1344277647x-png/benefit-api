@@ -55,7 +55,6 @@
     "marked": "^18.0.5",
     "motion": "^12.42.2",
     "nanoid": "^5.1.16",
-    "next-themes": "^0.4.6",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.7",
     "react-day-picker": "^10.0.1",
@@ -102,6 +101,7 @@
     "knip": "^6.24.0",
     "oxfmt": "^0.57.0",
     "oxlint": "^1.72.0",
+    "postcss": "8.5.15",
     "shadcn": "^4.12.0",
     "vitest": "^4.1.10"
   },

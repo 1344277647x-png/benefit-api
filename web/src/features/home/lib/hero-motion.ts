@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-
 /** Gate CSS animations without adding an animation frame loop. */
 export function observeHeroMotion(host: HTMLElement): () => void {
   const media = window.matchMedia('(prefers-reduced-motion: reduce)')

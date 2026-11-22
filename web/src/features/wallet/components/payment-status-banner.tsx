@@ -1,3 +1,21 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
 import { Link } from '@tanstack/react-router'
 /*
 Copyright (C) 2023-2026 QuantumNous
@@ -15,18 +33,56 @@ GNU Affero General Public License for more details.
 You should have received a copy of the GNU Affero General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
-import { ArrowRight, CheckCircle2, Clock3, X, XCircle } from 'lucide-react'
+import {
+  ArrowRight,
+  CheckCircle2,
+  Clock3,
+  Loader2,
+  RefreshCw,
+  X,
+  XCircle,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 
 import type { PaymentReturnStatus } from '../constants'
+import type { PaymentConfirmationState } from '../hooks/use-payment-confirmation'
 
 interface PaymentStatusBannerProps {
   status: PaymentReturnStatus
   onDismiss: () => void
   onOpenHistory: () => void
+  /** Automatic confirmation progress, only meaningful while pending. */
+  confirmationState?: PaymentConfirmationState
+  onRetryConfirmation?: () => void
+}
+
+function PendingConfirmationHint(props: { state?: PaymentConfirmationState }) {
+  const { t } = useTranslation()
+
+  if (props.state === 'checking') {
+    return (
+      <p
+        className='text-muted-foreground mt-2 flex items-center gap-1.5 text-xs'
+        role='status'
+      >
+        <Loader2 className='size-3.5 animate-spin' aria-hidden='true' />
+        {t('Checking the payment status automatically...')}
+      </p>
+    )
+  }
+  if (props.state === 'timeout') {
+    return (
+      <p className='text-muted-foreground mt-2 text-xs' role='status'>
+        {t(
+          'The payment confirmation has not arrived yet. It can take a few minutes; check the order history or check again later.'
+        )}
+      </p>
+    )
+  }
+  return null
 }
 
 export function PaymentStatusBanner(props: PaymentStatusBannerProps) {
@@ -80,6 +136,9 @@ export function PaymentStatusBanner(props: PaymentStatusBannerProps) {
           </Button>
         </div>
         <AlertDescription className='mt-1'>{description}</AlertDescription>
+        {props.status === 'pending' && (
+          <PendingConfirmationHint state={props.confirmationState} />
+        )}
         <div className='mt-3 flex flex-wrap gap-2'>
           <Button
             type='button'
@@ -89,6 +148,19 @@ export function PaymentStatusBanner(props: PaymentStatusBannerProps) {
           >
             {t('View Order History')}
           </Button>
+          {props.status === 'pending' &&
+            props.confirmationState === 'timeout' &&
+            props.onRetryConfirmation && (
+              <Button
+                type='button'
+                size='sm'
+                variant='outline'
+                onClick={props.onRetryConfirmation}
+              >
+                <RefreshCw data-icon='inline-start' aria-hidden='true' />
+                {t('Check again')}
+              </Button>
+            )}
           {(props.status === 'success' || props.status === 'pending') && (
             <Button
               type='button'

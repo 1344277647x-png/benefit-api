@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -21,6 +22,19 @@ import (
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
+
+var epayWalletOrder = regexp.MustCompile(`^USR[0-9]{1,20}NO[0-9A-Za-z]{6}[0-9]{10}$`)
+
+// EpayReturn drops provider query parameters before showing the wallet.
+// Only the asynchronous notification can credit an order.
+func EpayReturn(c *gin.Context) {
+	target := "/wallet?pay=pending&show_history=true"
+	if order := c.Query("order"); epayWalletOrder.MatchString(order) {
+		target += "&order=" + url.QueryEscape(order)
+	}
+	c.Header("Referrer-Policy", "no-referrer")
+	c.Redirect(http.StatusSeeOther, paymentReturnPath(target))
+}
 
 func GetTopUpInfo(c *gin.Context) {
 	complianceConfirmed := operation_setting.IsPaymentComplianceConfirmed()
@@ -322,10 +336,10 @@ func RequestEpay(c *gin.Context) {
 	}
 
 	callBackAddress := service.GetCallbackAddress()
-	returnUrl, _ := url.Parse(paymentReturnPath("/usage-logs"))
 	notifyUrl, _ := url.Parse(callBackAddress + "/api/user/epay/notify")
 	tradeNo := fmt.Sprintf("%s%d", common.GetRandomString(6), time.Now().Unix())
 	tradeNo = fmt.Sprintf("USR%dNO%s", id, tradeNo)
+	returnUrl, _ := url.Parse(paymentReturnPath("/api/user/epay/return?order=" + url.QueryEscape(tradeNo)))
 	client := GetEpayClient()
 	if client == nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "当前管理员未配置支付信息"})

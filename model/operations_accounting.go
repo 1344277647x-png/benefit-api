@@ -56,7 +56,7 @@ func SaveChannelCostVersion(channelId, operatorId int, multiplier string, effect
 	}
 	ratio, err := decimal.NewFromString(multiplier)
 	now := common.GetTimestamp()
-	if err != nil || len(multiplier) > 32 || ratio.IsNegative() || ratio.GreaterThan(decimal.NewFromInt(1000)) || ratio.Exponent() < -8 {
+	if err != nil || ratio.IsNegative() || ratio.GreaterThan(decimal.NewFromInt(1000)) || ratio.Exponent() < -8 {
 		return nil, errors.New("cost multiplier must be between 0 and 1000 with at most 8 decimals")
 	}
 	if channelId <= 0 || operatorId <= 0 || effectiveAt < now || effectiveAt > now+366*86400 {
@@ -69,6 +69,9 @@ func SaveChannelCostVersion(channelId, operatorId int, multiplier string, effect
 			return err
 		}
 		if err := tx.Create(v).Error; err != nil {
+			return err
+		}
+		if err := invalidateOperationsRollupsFromTx(tx, effectiveAt); err != nil {
 			return err
 		}
 		return enqueueBusinessEventTx(tx, &BusinessEvent{EventKey: fmt.Sprintf("operations:cost:%d", v.Id), Category: BusinessEventOperations, Action: "operations.cost_version", UserId: operatorId, Content: "Channel cost multiplier version created", CreatedAt: now}, map[string]any{"channel_id": channelId, "multiplier": v.Multiplier, "effective_at": effectiveAt, "version_id": v.Id})

@@ -95,6 +95,8 @@ import {
 } from '../../lib'
 import type {
   Channel,
+  ChannelProtocolCheckMode,
+  ChannelProtocolCheckReport,
   GetChannelsResponse,
   SearchChannelsResponse,
 } from '../../types'
@@ -121,6 +123,28 @@ type TestResult = {
   completedAt?: number
   error?: string
   errorCode?: string
+  protocolCheck?: ChannelProtocolCheckReport
+}
+
+type ProtocolCheckSelectValue = 'none' | ChannelProtocolCheckMode
+
+function formatProtocolCheckDetails(
+  report: ChannelProtocolCheckReport
+): string {
+  const lines = [
+    `Mode: ${report.mode}`,
+    `Result: ${report.passed ? 'PASS' : 'FAIL'}`,
+    ...(report.image_format ? [`Image format: ${report.image_format}`] : []),
+    ...(report.events_seen && report.events_seen.length > 0
+      ? [`Events seen: ${report.events_seen.join(', ')}`]
+      : []),
+    '',
+    ...report.checks.map(
+      (item) =>
+        `[${item.passed ? 'PASS' : 'FAIL'}] ${item.name}: ${item.detail}`
+    ),
+  ]
+  return lines.join('\n')
 }
 
 type BatchProgress = {
@@ -333,6 +357,8 @@ function ChannelTestDialogContent({
     typeof toast.loading
   > | null>(null)
   const [endpointType, setEndpointType] = useState('auto')
+  const [protocolCheckMode, setProtocolCheckMode] =
+    useState<ProtocolCheckSelectValue>('none')
   const channelGroups = useMemo(() => {
     const seen = new Set<string>()
     const groups = currentRow.group
@@ -368,6 +394,20 @@ function ChannelTestDialogContent({
     pageIndex: 0,
     pageSize: 30,
   })
+  const protocolCheckSelectItems = useMemo(
+    () => [
+      { value: 'none', label: t('Standard test') },
+      {
+        value: 'responses_stream',
+        label: t('Responses stream lifecycle self-check'),
+      },
+      {
+        value: 'image_endpoint',
+        label: t('Image endpoint compatibility self-check'),
+      },
+    ],
+    [t]
+  )
   const endpointSelectItems = useMemo(
     () =>
       endpointTypeOptions.map((option) => ({
@@ -413,6 +453,7 @@ function ChannelTestDialogContent({
   const resetState = useCallback(() => {
     batchStopRequestedRef.current = true
     setEndpointType('auto')
+    setProtocolCheckMode('none')
     setTestGroup(channelGroups[0])
     setIsStreamTest(false)
     setSearchTerm('')
@@ -429,8 +470,28 @@ function ChannelTestDialogContent({
     setPagination({ pageIndex: 0, pageSize: 30 })
   }, [channelGroups])
 
-  const streamDisabled = STREAM_INCOMPATIBLE_ENDPOINTS.has(endpointType)
-  const effectiveStreamTest = !streamDisabled && isStreamTest
+  const protocolCheckLocked = protocolCheckMode !== 'none'
+  const streamDisabled =
+    protocolCheckLocked || STREAM_INCOMPATIBLE_ENDPOINTS.has(endpointType)
+  let effectiveStreamTest = !streamDisabled && isStreamTest
+  if (protocolCheckMode === 'responses_stream') {
+    effectiveStreamTest = true
+  } else if (protocolCheckMode === 'image_endpoint') {
+    effectiveStreamTest = false
+  }
+
+  const handleProtocolCheckModeChange = useCallback((value: string | null) => {
+    if (value === null) return
+    const next = value as ProtocolCheckSelectValue
+    setProtocolCheckMode(next)
+    if (next === 'responses_stream') {
+      setEndpointType('openai-response')
+      setIsStreamTest(true)
+    } else if (next === 'image_endpoint') {
+      setEndpointType('image-generation')
+      setIsStreamTest(false)
+    }
+  }, [])
 
   const handleEndpointTypeChange = useCallback((value: string | null) => {
     if (value === null) return
@@ -577,9 +638,11 @@ function ChannelTestDialogContent({
             endpointType: endpointType === 'auto' ? undefined : endpointType,
             stream: effectiveStreamTest || undefined,
             group: testGroup,
+            protocolCheck:
+              protocolCheckMode === 'none' ? undefined : protocolCheckMode,
             silent,
           },
-          (success, responseTime, error, errorCode) => {
+          (success, responseTime, error, errorCode, protocolCheck) => {
             const completedAt = Date.now()
             finalResult = {
               status: success ? 'success' : 'error',
@@ -587,6 +650,7 @@ function ChannelTestDialogContent({
               completedAt,
               error,
               errorCode,
+              protocolCheck,
             }
             updateTestResult(model, finalResult)
           }
@@ -616,6 +680,7 @@ function ChannelTestDialogContent({
       endpointType,
       effectiveStreamTest,
       markModelTesting,
+      protocolCheckMode,
       refreshChannelLists,
       t,
       testGroup,
@@ -1046,11 +1111,55 @@ function ChannelTestDialogContent({
               </p>
             </div>
             <div className='grid gap-2'>
+              <Label htmlFor='protocol-check-mode'>
+                {t('Protocol self-check')}
+              </Label>
+              <Select
+                items={protocolCheckSelectItems}
+                value={protocolCheckMode}
+                onValueChange={handleProtocolCheckModeChange}
+              >
+                <SelectTrigger
+                  id='protocol-check-mode'
+                  className='w-full min-w-0'
+                >
+                  <SelectValue
+                    className='min-w-0 truncate'
+                    placeholder={t('Standard test')}
+                  />
+                </SelectTrigger>
+                <SelectContent
+                  alignItemWithTrigger={false}
+                  className={endpointSelectContentClass}
+                >
+                  <SelectGroup>
+                    {protocolCheckSelectItems.map((option) => (
+                      <SelectItem
+                        key={option.value}
+                        value={option.value}
+                        className={endpointSelectItemClass}
+                      >
+                        <span className='min-w-0 leading-snug break-words whitespace-normal'>
+                          {option.label}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <p className='text-muted-foreground text-xs'>
+                {t(
+                  'Validate Responses SSE lifecycle completeness or image endpoint payload compatibility.'
+                )}
+              </p>
+            </div>
+            <div className='grid gap-2'>
               <Label htmlFor='endpoint-type'>{t('Endpoint Type')}</Label>
               <Select
                 items={endpointSelectItems}
                 value={endpointType}
                 onValueChange={handleEndpointTypeChange}
+                disabled={protocolCheckLocked}
               >
                 <SelectTrigger id='endpoint-type' className='w-full min-w-0'>
                   <SelectValue
@@ -1291,12 +1400,42 @@ function TestResultCell({
   }
 
   if (result.status === 'success') {
-    return typeof result.responseTime === 'number' ? (
-      <span className='text-muted-foreground text-sm'>
-        {formatResponseTime(result.responseTime, t)}
-      </span>
-    ) : (
-      <span className='text-muted-foreground text-sm'>-</span>
+    const timeLabel =
+      typeof result.responseTime === 'number'
+        ? formatResponseTime(result.responseTime, t)
+        : '-'
+    if (!result.protocolCheck) {
+      return <span className='text-muted-foreground text-sm'>{timeLabel}</span>
+    }
+    const report = result.protocolCheck
+    return (
+      <div className='flex min-w-0 items-center gap-2 text-xs'>
+        <span className='text-muted-foreground shrink-0 text-sm'>
+          {timeLabel}
+        </span>
+        <StatusBadge
+          label={t('Protocol verified')}
+          variant='success'
+          size='sm'
+          copyable={false}
+        />
+        <Button
+          variant='ghost'
+          size='sm'
+          className='h-7 w-fit px-2 text-xs'
+          aria-haspopup='dialog'
+          onClick={() =>
+            onOpenDetails({
+              model,
+              summary: report.summary,
+              details: formatProtocolCheckDetails(report),
+            })
+          }
+        >
+          <Info className='mr-1 h-3 w-3 shrink-0' />
+          {t('Details')}
+        </Button>
+      </div>
     )
   }
 
@@ -1324,12 +1463,18 @@ function FailureResultContent({
   const modelPriceSummary = t(
     'Model price is not configured. Please complete model pricing in settings.'
   )
-  const { summary, details } = getFailureStatusDisplay({
+  const { summary, details: baseDetails } = getFailureStatusDisplay({
     errorText,
     fallbackSummary: t('Test failed'),
     isModelPriceError,
     modelPriceSummary,
   })
+  const details = result.protocolCheck
+    ? [
+        formatProtocolCheckDetails(result.protocolCheck),
+        ...(baseDetails ? ['', baseDetails] : []),
+      ].join('\n')
+    : baseDetails
 
   return (
     <div className='flex min-w-0 items-center gap-2 text-xs whitespace-normal'>

@@ -287,6 +287,21 @@ export type OperationsReportGroupBy =
   | 'group'
 
 export interface OperationsReportRow {
+  matched_requests?: number
+  pending_requests?: number
+  matched_quota?: number
+  partial_profit_usd?: number | null
+  errors_without_quota?: number
+  reasons?: Record<string, number> | null
+  pending_samples?:
+    | {
+        request_id: string
+        log_id?: number
+        channel_id: number
+        created_at: number
+        reasons: string[]
+      }[]
+    | null
   unknown_revenue_requests?: number
   revenue_status?: 'known' | 'partial' | 'unknown'
   key: string
@@ -334,6 +349,8 @@ export interface OperationsReportHealth {
 }
 
 export interface OperationsReport {
+  after_cost_effective?: boolean
+  excluded_requests?: number
   accounting_started_at?: number
   funding?: {
     receipts_known_usd: number
@@ -346,6 +363,8 @@ export interface OperationsReport {
   end_timestamp: number
   group_by: OperationsReportGroupBy
   truncated: boolean
+  pre_aggregated?: boolean
+  rollup_hours_used?: number
   quota_per_unit: number
   summary: OperationsReportSummary
   rows: OperationsReportRow[]
@@ -353,4 +372,111 @@ export interface OperationsReport {
   channels: OperationsReportChannel[]
   health: OperationsReportHealth[]
   warnings?: string[]
+}
+
+// ============================================================================
+// Administrator operations health alerts & read-only billing reconciliation
+// ============================================================================
+
+export type OpsAlertSeverity = 'ok' | 'warning' | 'critical'
+
+export interface OpsAlertTLSCertStatus {
+  status: 'ok' | 'warning' | 'critical' | 'not_configured' | 'error'
+  domain: string
+  issuer?: string
+  not_after?: number
+  days_remaining: number
+  warning_threshold_days: number
+  checked_at: number
+  error?: string
+}
+
+export interface OpsQueueSummary {
+  operations_pending: number
+  operations_retrying: number
+  operations_oldest_pending_at: number
+  business_pending: number
+  business_retrying: number
+  business_dead_letter: number
+  billing_exceptions_count: number
+  unsettled_pre_consume_count: number
+}
+
+export interface OpsAlertItem {
+  code: string
+  severity: 'warning' | 'critical'
+  title: string
+  detail: string
+  count?: number
+  action_path?: string
+}
+
+export interface OpsAlertsSnapshot {
+  generated_at: number
+  alert_level: OpsAlertSeverity
+  tls: OpsAlertTLSCertStatus
+  queues: OpsQueueSummary
+  alerts: OpsAlertItem[]
+}
+
+export type BillingReconciliationKind =
+  | 'all'
+  | 'settlement_failed'
+  | 'partial_settlement_failed'
+  | 'accounting_projection_failed'
+  | 'unsettled_pre_consume'
+
+export interface BillingReconciliationItem {
+  source: 'business_event' | 'subscription_pre_consume'
+  kind: Exclude<BillingReconciliationKind, 'all'>
+  event_key?: string
+  request_id: string
+  user_id: number
+  username?: string
+  subscription_id?: number
+  funding_source?: string
+  model_name?: string
+  failure_stage?: string
+  status: string
+  pre_consumed_quota: number
+  actual_quota?: number
+  diff_quota?: number
+  token_diff_quota?: number
+  projected_quota?: number
+  pre_consumed_usd: number
+  actual_usd?: number
+  diff_usd?: number
+  has_consume_log: boolean
+  delivered_at?: number
+  dead_letter_at?: number
+  created_at: number
+  summary: string
+}
+
+export interface BillingReconciliationSummary {
+  total_items: number
+  settlement_exception_count: number
+  projection_failure_count: number
+  unsettled_pre_consume_count: number
+  unknown_actual_count: number
+  known_pre_consumed_quota: number
+  known_actual_quota: number
+  known_net_diff_quota: number
+  unknown_pre_consumed_quota: number
+  known_pre_consumed_usd: number
+  known_actual_usd: number
+  known_net_diff_usd: number
+  unknown_pre_consumed_usd: number
+}
+
+export interface BillingReconciliationReport {
+  read_only: boolean
+  generated_at: number
+  start_timestamp: number
+  end_timestamp: number
+  kind: BillingReconciliationKind
+  quota_per_unit: number
+  truncated: boolean
+  summary: BillingReconciliationSummary
+  items: BillingReconciliationItem[]
 }

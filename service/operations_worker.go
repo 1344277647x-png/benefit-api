@@ -17,6 +17,27 @@ func StartOperationsProjection() {
 			runOperationsProjection()
 		}
 	}()
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		runOperationsHourlyRollup()
+		for range ticker.C {
+			runOperationsHourlyRollup()
+		}
+	}()
+}
+
+func runOperationsHourlyRollup() {
+	defer func() {
+		if recover() != nil {
+			common.SysError("operations hourly rollup panic; raw log reporting remains available")
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := model.ProcessOperationsHourlyRollups(ctx, 4); err != nil {
+		common.SysError("operations hourly rollup deferred; raw log reporting remains available")
+	}
 }
 
 func runOperationsProjection() {

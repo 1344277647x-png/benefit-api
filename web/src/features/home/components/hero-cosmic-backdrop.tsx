@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-
 // Scenery spans the hero. CSS motion is gated by the hero's visibility and
 // reduced-motion state; no extra RAF loops, textures or network requests.
 export function HeroCosmicBackdrop() {

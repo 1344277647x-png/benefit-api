@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-
 /** Decorative WebGL runs at most 30 FPS, and only while it can be seen. */
 export function startSceneMotion(
   host: HTMLElement,

@@ -59,6 +59,7 @@ type ConfigurationKey =
   | 'claude'
   | 'gemini'
   | 'cherry'
+  | 'cursor'
   | 'image'
   | 'video'
   | 'embeddings'
@@ -93,6 +94,7 @@ function buildTemplates(
     'claude',
     'gemini',
     'cherry',
+    'cursor',
   ]
   const protocol = mode === 'responses' ? 'responses' : 'chat'
   const allowed = new Set(compatiblePresets(selectedModel))

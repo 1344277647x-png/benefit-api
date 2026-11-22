@@ -216,10 +216,8 @@ export function ExtendDeploymentDialog({
                   <Loader2 className='h-4 w-4 animate-spin' />
                   {t('Calculating...')}
                 </span>
-              ) : priceParams ? (
-                priceSummary || t('Not available')
               ) : (
-                t('Not available')
+                (priceParams && priceSummary) || t('Not available')
               )}
             </div>
             {!priceParams ? (

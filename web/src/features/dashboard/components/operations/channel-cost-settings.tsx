@@ -1,5 +1,23 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -18,11 +36,22 @@ type Version = {
   operator_id: number
 }
 
-export function ChannelCostSettings() {
+export function ChannelCostSettings(props: { selectedChannelId?: number }) {
   const { t } = useTranslation()
-  const [channel, setChannel] = useState('')
+  const [channel, setChannel] = useState(() =>
+    props.selectedChannelId && props.selectedChannelId > 0
+      ? String(props.selectedChannelId)
+      : ''
+  )
   const [multiplier, setMultiplier] = useState('')
   const [effective, setEffective] = useState('')
+
+  useEffect(() => {
+    if (props.selectedChannelId && props.selectedChannelId > 0) {
+      setChannel(String(props.selectedChannelId))
+    }
+  }, [props.selectedChannelId])
+
   const queryClient = useQueryClient()
   const isRoot = useAuthStore(
     (state) => state.auth.user?.role === ROLE.SUPER_ADMIN
@@ -36,14 +65,14 @@ export function ChannelCostSettings() {
       const result = await api.get<{
         success: boolean
         message?: string
-        data: Version[]
+        data: Version[] | null
       }>('/api/log/operations-cost-versions', {
         params: { channel_id: channelId },
       })
       if (!result.data.success) {
         throw new Error(result.data.message || t('Request failed'))
       }
-      return result.data.data
+      return Array.isArray(result.data.data) ? result.data.data : []
     },
   })
   const mutation = useMutation({
@@ -52,19 +81,29 @@ export function ChannelCostSettings() {
       multiplier: string
       effective_at: number
     }) => {
-      const result = await api.post<{ success: boolean; message?: string }>(
-        '/api/log/operations-cost-versions',
-        input
-      )
+      const result = await api.post<{
+        success: boolean
+        message?: string
+        data?: Version
+      }>('/api/log/operations-cost-versions', input)
       if (!result.data.success) {
         throw new Error(result.data.message || t('Request failed'))
       }
+      return result.data.data
     },
-    onSuccess: async (_, input) => {
+    onSuccess: async (version, input) => {
       toast.success(t('Cost version saved'))
+      if (version) {
+        toast.info(
+          t('Effective from {{time}}; earlier requests are not recalculated.', {
+            time: new Date(version.effective_at * 1000).toLocaleString(),
+          })
+        )
+      }
       await queryClient.invalidateQueries({
         queryKey: ['operations-cost-versions', input.channel_id],
       })
+      await queryClient.invalidateQueries({ queryKey: ['operations-report'] })
     },
     onError: (error) =>
       toast.error(getApiErrorMessage(error, t('Request failed'))),
@@ -92,6 +131,11 @@ export function ChannelCostSettings() {
         <CardTitle>{t('Upstream cost multipliers')}</CardTitle>
       </CardHeader>
       <CardContent className='space-y-3'>
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'New multipliers apply only to requests started after their effective time. Earlier requests are not recalculated.'
+          )}
+        </p>
         <p className='text-muted-foreground text-sm'>
           {t(
             'Cost equals base usage price times the upstream multiplier. Versions preserve historical costs. Root can save changes.'

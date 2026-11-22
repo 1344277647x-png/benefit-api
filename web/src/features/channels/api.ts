@@ -217,6 +217,7 @@ export async function testChannel(
     endpoint_type?: string
     stream?: boolean
     group?: string
+    protocol_check?: 'responses_stream' | 'image_endpoint'
   }
 ): Promise<ChannelTestResponse> {
   const res = await api.get(

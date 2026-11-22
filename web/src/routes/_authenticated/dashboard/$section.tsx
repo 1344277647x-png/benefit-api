@@ -26,7 +26,11 @@ import {
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
-const ADMIN_ONLY_DASHBOARD_SECTIONS = new Set(['users', 'operations'])
+const ADMIN_ONLY_DASHBOARD_SECTIONS = new Set([
+  'users',
+  'operations',
+  'reconciliation',
+])
 
 export const Route = createFileRoute('/_authenticated/dashboard/$section')({
   beforeLoad: ({ params }) => {

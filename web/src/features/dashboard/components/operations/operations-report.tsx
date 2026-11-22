@@ -1,3 +1,21 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Download, RefreshCw, RotateCcw } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -30,11 +48,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  formatCompactNumber,
-  formatCurrencyUSD,
-  formatQuota,
-} from '@/lib/format'
+import { formatCompactNumber, formatCurrencyUSD } from '@/lib/format'
 import { getApiErrorMessage } from '@/lib/http-client'
 import { cn } from '@/lib/utils'
 
@@ -44,9 +58,8 @@ import type {
   OperationsReportGroupBy,
   OperationsReportHealth,
 } from '../../types'
+import { AccountingCoverage } from './accounting-coverage'
 import { ChannelCostSettings } from './channel-cost-settings'
-
-const DAY_MS = 24 * 60 * 60 * 1000
 
 function dateInputValue(date: Date) {
   return new Date(date.getTime() + 8 * 60 * 60 * 1000)
@@ -110,27 +123,43 @@ function HealthBadge({ status }: { status: OperationsReportHealth['status'] }) {
 export function OperationsReport() {
   const { t } = useTranslation()
   const today = new Date()
-  const [startDate, setStartDate] = useState(
-    dateInputValue(new Date(today.getTime() - 30 * DAY_MS))
-  )
+  const [startDate, setStartDate] = useState(dateInputValue(today))
   const [endDate, setEndDate] = useState(dateInputValue(today))
   const [groupBy, setGroupBy] = useState<OperationsReportGroupBy>('day')
   const [modelName, setModelName] = useState('')
   const [username, setUsername] = useState('')
   const [group, setGroup] = useState('')
   const [channelId, setChannelId] = useState('')
+  const [costChannelId, setCostChannelId] = useState<number | undefined>()
+  const [afterCostEffective, setAfterCostEffective] = useState(false)
+
+  const handleSelectChannel = (nextChannelId: number) => {
+    if (nextChannelId > 0) {
+      setCostChannelId(nextChannelId)
+    }
+  }
 
   const params = useMemo(
     () => ({
       start_timestamp: dateInputTimestamp(startDate),
       end_timestamp: dateInputTimestamp(endDate, true),
       group_by: groupBy,
+      after_cost_effective: afterCostEffective,
       ...(modelName.trim() ? { model_name: modelName.trim() } : {}),
       ...(username.trim() ? { username: username.trim() } : {}),
       ...(group.trim() ? { group: group.trim() } : {}),
       ...(channelId.trim() ? { channel_id: Number(channelId) } : {}),
     }),
-    [channelId, endDate, group, groupBy, modelName, startDate, username]
+    [
+      afterCostEffective,
+      channelId,
+      endDate,
+      group,
+      groupBy,
+      modelName,
+      startDate,
+      username,
+    ]
   )
 
   const reportQuery = useQuery({
@@ -145,13 +174,14 @@ export function OperationsReport() {
 
   const clearFilters = () => {
     const now = new Date()
-    setStartDate(dateInputValue(new Date(now.getTime() - 30 * DAY_MS)))
+    setStartDate(dateInputValue(now))
     setEndDate(dateInputValue(now))
     setGroupBy('day')
     setModelName('')
     setUsername('')
     setGroup('')
     setChannelId('')
+    setAfterCostEffective(false)
   }
 
   const download = async () => {
@@ -174,7 +204,19 @@ export function OperationsReport() {
         <CardHeader className='gap-3 border-b'>
           <div className='flex flex-wrap items-start justify-between gap-3'>
             <div>
-              <CardTitle>{t('Operations report')}</CardTitle>
+              <div className='flex flex-wrap items-center gap-2'>
+                <CardTitle>{t('Operations report')}</CardTitle>
+                {report?.pre_aggregated && (
+                  <Badge
+                    variant='outline'
+                    className='border-emerald-500/40 text-emerald-600 dark:text-emerald-400'
+                  >
+                    {t('Hourly rollups ({{hours}}h)', {
+                      hours: report.rollup_hours_used ?? 0,
+                    })}
+                  </Badge>
+                )}
+              </div>
               <CardDescription>
                 {t('Revenue and usage by model, channel and user.')}
               </CardDescription>
@@ -282,6 +324,14 @@ export function OperationsReport() {
               inputMode='numeric'
             />
           </div>
+          <label className='flex items-center gap-2 text-sm'>
+            <input
+              type='checkbox'
+              checked={afterCostEffective}
+              onChange={(event) => setAfterCostEffective(event.target.checked)}
+            />
+            {t('Only requests after each channel first cost version')}
+          </label>
         </CardHeader>
         <CardContent className='space-y-4 pt-4'>
           {report?.truncated && (
@@ -313,6 +363,25 @@ export function OperationsReport() {
             </Alert>
           )}
           <SummaryGrid report={report} />
+          {report && (
+            <AccountingCoverage
+              data={report.summary}
+              onSelectChannel={handleSelectChannel}
+            />
+          )}
+          <p className='text-muted-foreground text-sm'>
+            {t(
+              'Partial profit uses only requests with both verified income and cost; it is not an estimate of total profit.'
+            )}
+          </p>
+          {report?.after_cost_effective && (
+            <p className='text-muted-foreground text-sm'>
+              {t(
+                'Filtered by each channel first effective time; requests without a matching version or start time are excluded.'
+              )}{' '}
+              {t('Excluded requests')}: {report.excluded_requests ?? 0}
+            </p>
+          )}
           {!!report?.accounting_started_at && (
             <p className='text-muted-foreground text-sm'>
               {t(
@@ -353,11 +422,14 @@ export function OperationsReport() {
               </AlertDescription>
             </Alert>
           )}
-          <ReportTable report={report} />
+          <ReportTable report={report} onSelectChannel={handleSelectChannel} />
         </CardContent>
       </Card>
-      <ChannelOperationsCard report={report} />
-      <ChannelCostSettings />
+      <ChannelOperationsCard
+        report={report}
+        onSelectChannel={handleSelectChannel}
+      />
+      <ChannelCostSettings selectedChannelId={costChannelId} />
     </div>
   )
 }
@@ -377,16 +449,16 @@ function SummaryGrid({ report }: { report?: OperationsReport }) {
     [t('Error rate'), summary ? `${summary.error_rate.toFixed(2)}%` : '-'],
     [t('Tokens'), summary ? formatCompactNumber(summary.token_count) : '-'],
     [
-      t('Net revenue'),
+      t('Confirmed income'),
       summary
         ? formatCurrencyUSD(summary.revenue_usd - summary.refund_usd)
         : '-',
     ],
-    [t('Cost'), costValue],
+    [t('Known cost'), costValue],
     [
       t('Gross profit'),
       summary?.profit_usd == null
-        ? t('Unable to calculate')
+        ? t('Pending verification')
         : formatCurrencyUSD(summary.profit_usd),
     ],
   ]
@@ -402,7 +474,13 @@ function SummaryGrid({ report }: { report?: OperationsReport }) {
   )
 }
 
-function ReportTable({ report }: { report?: OperationsReport }) {
+function ReportTable({
+  report,
+  onSelectChannel,
+}: {
+  report?: OperationsReport
+  onSelectChannel?: (channelId: number) => void
+}) {
   const { t } = useTranslation()
   if (!report) return null
   return (
@@ -421,9 +499,16 @@ function ReportTable({ report }: { report?: OperationsReport }) {
               <TableHead className='text-right'>{t('Requests')}</TableHead>
               <TableHead className='text-right'>{t('Error rate')}</TableHead>
               <TableHead className='text-right'>{t('Tokens')}</TableHead>
-              <TableHead className='text-right'>{t('Revenue')}</TableHead>
+              <TableHead className='text-right'>
+                {t('Consumed quota value')}
+              </TableHead>
+              <TableHead className='text-right'>
+                {t('Confirmed income')}
+              </TableHead>
               <TableHead className='text-right'>{t('Refunds')}</TableHead>
               <TableHead>{t('Cost status')}</TableHead>
+              <TableHead>{t('Known cost')}</TableHead>
+              <TableHead>{t('Accounting coverage')}</TableHead>
               <TableHead className='text-right'>{t('Profit')}</TableHead>
             </TableRow>
           </TableHeader>
@@ -431,48 +516,77 @@ function ReportTable({ report }: { report?: OperationsReport }) {
             {report.rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={8}
+                  colSpan={11}
                   className='text-muted-foreground h-24 text-center'
                 >
                   {t('No report data for this range')}
                 </TableCell>
               </TableRow>
             ) : (
-              report.rows.map((row) => (
-                <TableRow key={row.key}>
-                  <TableCell>
-                    <div className='font-medium'>{row.label}</div>
-                    {row.model_name && report.group_by !== 'model' && (
-                      <div className='text-muted-foreground text-xs'>
-                        {row.model_name}
-                      </div>
-                    )}
-                  </TableCell>
-                  <TableCell className='text-right'>
-                    {formatCompactNumber(row.request_count)}
-                  </TableCell>
-                  <TableCell className='text-right'>
-                    {row.error_rate.toFixed(2)}%
-                  </TableCell>
-                  <TableCell className='text-right'>
-                    {formatCompactNumber(row.token_count)}
-                  </TableCell>
-                  <TableCell className='text-right'>
-                    {formatQuota(row.revenue_quota)}
-                  </TableCell>
-                  <TableCell className='text-right'>
-                    {formatQuota(row.refund_quota)}
-                  </TableCell>
-                  <TableCell>
-                    <CostBadge status={row.cost_status} />
-                  </TableCell>
-                  <TableCell className='text-right'>
-                    {row.profit_usd == null
-                      ? '-'
-                      : formatCurrencyUSD(row.profit_usd)}
-                  </TableCell>
-                </TableRow>
-              ))
+              report.rows.map((row) => {
+                const rowChannelId = row.channel_id
+                return (
+                  <TableRow key={row.key}>
+                    <TableCell>
+                      {rowChannelId && rowChannelId > 0 && onSelectChannel ? (
+                        <button
+                          type='button'
+                          onClick={() => onSelectChannel(rowChannelId)}
+                          className='text-left font-medium underline underline-offset-2'
+                        >
+                          {row.label}
+                        </button>
+                      ) : (
+                        <div className='font-medium'>{row.label}</div>
+                      )}
+                      {row.model_name && report.group_by !== 'model' && (
+                        <div className='text-muted-foreground text-xs'>
+                          {row.model_name}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className='text-right'>
+                      {formatCompactNumber(row.request_count)}
+                    </TableCell>
+                    <TableCell className='text-right'>
+                      {row.error_rate.toFixed(2)}%
+                    </TableCell>
+                    <TableCell className='text-right'>
+                      {formatCompactNumber(row.token_count)}
+                    </TableCell>
+                    <TableCell className='text-right'>
+                      {formatCurrencyUSD(
+                        row.revenue_quota / report.quota_per_unit
+                      )}
+                    </TableCell>
+                    <TableCell className='text-right'>
+                      {formatCurrencyUSD(row.revenue_usd)}
+                    </TableCell>
+                    <TableCell className='text-right'>
+                      {formatCurrencyUSD(row.refund_usd)}
+                    </TableCell>
+                    <TableCell>
+                      <CostBadge status={row.cost_status} />
+                    </TableCell>
+                    <TableCell>
+                      {row.cost_status === 'unknown'
+                        ? t('Pending verification')
+                        : formatCurrencyUSD(row.cost_usd)}
+                    </TableCell>
+                    <TableCell className='min-w-64'>
+                      <AccountingCoverage
+                        data={row}
+                        onSelectChannel={onSelectChannel}
+                      />
+                    </TableCell>
+                    <TableCell className='text-right'>
+                      {row.profit_usd == null
+                        ? t('Pending verification')
+                        : formatCurrencyUSD(row.profit_usd)}
+                    </TableCell>
+                  </TableRow>
+                )
+              })
             )}
           </TableBody>
         </Table>
@@ -481,7 +595,13 @@ function ReportTable({ report }: { report?: OperationsReport }) {
   )
 }
 
-function ChannelOperationsCard({ report }: { report?: OperationsReport }) {
+function ChannelOperationsCard({
+  report,
+  onSelectChannel,
+}: {
+  report?: OperationsReport
+  onSelectChannel?: (channelId: number) => void
+}) {
   const { t } = useTranslation()
   if (!report || (report.channels.length === 0 && report.health.length === 0)) {
     return null
@@ -518,7 +638,17 @@ function ChannelOperationsCard({ report }: { report?: OperationsReport }) {
                   <TableRow key={channel.channel_id}>
                     <TableCell>
                       <div className='font-medium'>
-                        {channel.name || `#${channel.channel_id}`}
+                        {onSelectChannel ? (
+                          <button
+                            type='button'
+                            onClick={() => onSelectChannel(channel.channel_id)}
+                            className='text-left underline underline-offset-2'
+                          >
+                            {channel.name || `#${channel.channel_id}`}
+                          </button>
+                        ) : (
+                          channel.name || `#${channel.channel_id}`
+                        )}
                       </div>
                       <div className='text-muted-foreground text-xs'>
                         #{channel.channel_id}

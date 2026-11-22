@@ -7,8 +7,10 @@ import (
 )
 
 type OperationsState struct {
-	Id        int   `gorm:"primaryKey"`
-	StartedAt int64 `gorm:"type:bigint;not null"`
+	Id             int   `gorm:"primaryKey"`
+	StartedAt      int64 `gorm:"type:bigint;not null"`
+	RollupCursor   int64 `gorm:"type:bigint;not null;default:0"`
+	RollupRevision int64 `gorm:"type:bigint;not null;default:0"`
 }
 
 // Insert once on the first upgraded startup; deployments and restarts preserve

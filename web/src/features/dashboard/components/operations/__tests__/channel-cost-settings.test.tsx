@@ -1,5 +1,24 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { toast } from 'sonner'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
@@ -11,7 +30,9 @@ import { ChannelCostSettings } from '../channel-cost-settings'
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+}))
 
 function renderSettings() {
   const client = new QueryClient({
@@ -38,9 +59,17 @@ afterEach(() => {
 
 describe('Channel cost version settings', () => {
   it('shows unknown cost when a channel has no versions and saves an explicit multiplier', async () => {
-    const post = vi
-      .spyOn(api, 'post')
-      .mockResolvedValue({ data: { success: true } })
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          id: 1,
+          effective_at: 1791728071,
+          multiplier: '0.125',
+          operator_id: 1,
+        },
+      },
+    })
     renderSettings()
     fireEvent.change(screen.getByLabelText('Channel ID'), {
       target: { value: '8' },
@@ -60,6 +89,11 @@ describe('Channel cost version settings', () => {
         multiplier: '0.125',
         effective_at: 0,
       })
+    )
+    await waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith(
+        'Effective from {{time}}; earlier requests are not recalculated.'
+      )
     )
   })
 

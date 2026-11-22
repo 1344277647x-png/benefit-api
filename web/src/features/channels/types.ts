@@ -183,12 +183,30 @@ export interface ChannelOpsResponse {
   }
 }
 
+export type ChannelProtocolCheckMode = 'responses_stream' | 'image_endpoint'
+
+export interface ChannelProtocolCheckItem {
+  name: string
+  passed: boolean
+  detail: string
+}
+
+export interface ChannelProtocolCheckReport {
+  mode: ChannelProtocolCheckMode
+  passed: boolean
+  image_format?: string
+  events_seen?: string[]
+  checks: ChannelProtocolCheckItem[]
+  summary: string
+}
+
 export interface ChannelTestResponse {
   success: boolean
   message?: string
   error_code?: string
   time?: number
   group?: string
+  protocol_check?: ChannelProtocolCheckReport
   data?: {
     response_time?: number
     error?: string

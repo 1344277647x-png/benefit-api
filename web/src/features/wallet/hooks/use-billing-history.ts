@@ -36,6 +36,7 @@ import type { TopupRecord } from '../types'
 // ============================================================================
 
 interface UseBillingHistoryOptions {
+  refreshVersion?: number
   /** Initial page number */
   initialPage?: number
   /** Initial page size */
@@ -157,7 +158,7 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
     if (keyword !== debouncedKeyword) return
 
     fetchBillingHistory()
-  }, [debouncedKeyword, fetchBillingHistory, keyword])
+  }, [debouncedKeyword, fetchBillingHistory, keyword, options.refreshVersion])
 
   return {
     records,

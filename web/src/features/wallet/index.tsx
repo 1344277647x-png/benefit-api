@@ -1,3 +1,22 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import { useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Share2 } from 'lucide-react'
 /*
@@ -20,6 +39,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { SectionPageLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
@@ -48,6 +68,7 @@ import {
   useCreemPayment,
   useWaffoPayment,
   useWaffoPancakePayment,
+  usePaymentConfirmation,
 } from './hooks'
 import {
   getDefaultPaymentType,
@@ -63,11 +84,14 @@ import type {
 } from './types'
 
 interface WalletProps {
+  initialTradeNo?: string
   initialShowHistory?: boolean
   initialPaymentStatus?: PaymentReturnStatus
 }
 
 export function Wallet(props: WalletProps) {
+  const queryClient = useQueryClient()
+  const [historyRevision, setHistoryRevision] = useState(0)
   const { t } = useTranslation()
   const [user, setUser] = useState<UserWalletData | null>(null)
   const [userLoading, setUserLoading] = useState(true)
@@ -142,19 +166,39 @@ export function Wallet(props: WalletProps) {
 
     if (props.initialShowHistory) {
       setBillingDialogOpen(true)
-      window.history.replaceState({}, '', window.location.pathname)
-    } else if (props.initialPaymentStatus) {
+    }
+    if (
+      !props.initialTradeNo &&
+      (props.initialShowHistory || props.initialPaymentStatus)
+    ) {
       // Keep the result banner visible first; the user can open the full
       // history from the banner without losing the outcome message.
       window.history.replaceState({}, '', window.location.pathname)
     }
-  }, [props.initialPaymentStatus, props.initialShowHistory])
+  }, [
+    props.initialPaymentStatus,
+    props.initialShowHistory,
+    props.initialTradeNo,
+  ])
 
   useEffect(() => {
     if (props.initialPaymentStatus === 'success') {
       fetchUser()
     }
   }, [fetchUser, props.initialPaymentStatus])
+
+  const handlePaymentConfirmed = useCallback(() => {
+    setPaymentStatus('success')
+    void fetchUser()
+    setHistoryRevision((revision) => revision + 1)
+    void queryClient.invalidateQueries({ queryKey: ['lottery', 'status'] })
+    toast.success(t('Payment completed'))
+  }, [fetchUser, queryClient, t])
+
+  const paymentConfirmation = usePaymentConfirmation({
+    tradeNo: paymentStatus === 'pending' ? props.initialTradeNo : undefined,
+    onConfirmed: handlePaymentConfirmed,
+  })
 
   // Initialize topup amount when topup info is loaded
   const topupAmountInitializedRef = useRef(false)
@@ -309,6 +353,8 @@ export function Wallet(props: WalletProps) {
                 status={paymentStatus}
                 onDismiss={() => setPaymentStatus(null)}
                 onOpenHistory={() => setBillingDialogOpen(true)}
+                confirmationState={paymentConfirmation.state}
+                onRetryConfirmation={paymentConfirmation.retry}
               />
             )}
             <WalletStatsCard user={user} loading={userLoading} />
@@ -389,6 +435,7 @@ export function Wallet(props: WalletProps) {
       />
 
       <BillingHistoryDialog
+        refreshVersion={historyRevision}
         open={billingDialogOpen}
         onOpenChange={setBillingDialogOpen}
       />

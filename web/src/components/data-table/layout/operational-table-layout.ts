@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-
 export const OPERATIONAL_TABLE_CLASSNAMES = {
   channels: '[&_[data-slot=table]]:min-w-[1180px]',
   usageLogs: '[&_[data-slot=table]]:min-w-[1280px]',

@@ -139,7 +139,7 @@ export async function requestAlipayPayment(
  */
 export async function requestQixiangPayment(
   request: PaymentRequest
-): Promise<ApiResponse<{ pay_url: string }>> {
+): Promise<ApiResponse<{ pay_url: string; trade_no?: string }>> {
   const res = await api.post('/api/user/qixiang/pay', request, {
     skipBusinessError: true,
   } as Record<string, unknown>)
@@ -240,6 +240,29 @@ export async function getUserBillingHistory(
     params.append('keyword', keyword)
   }
   const res = await api.get(`/api/user/topup/self?${params.toString()}`)
+  return res.data
+}
+
+/**
+ * Read the newest own top-up records for background payment confirmation.
+ * Errors are left to the caller so periodic polling does not raise toasts.
+ */
+export async function getOwnOrderQuietly(
+  tradeNo: string,
+  signal: AbortSignal
+): Promise<ApiResponse<BillingHistoryResponse>> {
+  const params = new URLSearchParams({
+    p: '1',
+    page_size: '10',
+    keyword: tradeNo,
+  })
+  const res = await api.get(`/api/user/topup/self?${params.toString()}`, {
+    skipErrorHandler: true,
+    skipBusinessError: true,
+    timeout: 8000,
+    signal,
+    disableDuplicate: true,
+  })
   return res.data
 }
 

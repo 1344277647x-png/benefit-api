@@ -12,7 +12,7 @@ type OperationsFundingTotals struct {
 }
 
 func enrichOperationsFundingTotals(report *OperationsReport, params OperationsReportParams) error {
-	if DB == nil || params.ChannelID != 0 || params.ModelName != "" || params.Group != "" || params.Username != "" {
+	if DB == nil || params.AfterCostEffective || params.ChannelID != 0 || params.ModelName != "" || params.Group != "" || params.Username != "" {
 		return nil
 	}
 	var entries []OperationsEntry

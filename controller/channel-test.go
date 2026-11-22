@@ -38,9 +38,10 @@ import (
 )
 
 type testResult struct {
-	context     *gin.Context
-	localErr    error
-	newAPIError *types.NewAPIError
+	context        *gin.Context
+	localErr       error
+	newAPIError    *types.NewAPIError
+	protocolReport *ChannelProtocolCheckReport
 }
 
 const (
@@ -119,6 +120,11 @@ func applyChannelTestGroupContext(c *gin.Context, group string) {
 }
 
 func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testGroup string, testMethod string, testModel string, endpointType string, isStream bool) testResult {
+	return testChannelWithProtocolCheck(ctx, channel, testUserID, testGroup, testMethod, testModel, endpointType, isStream, channelProtocolCheckNone)
+}
+
+func testChannelWithProtocolCheck(ctx context.Context, channel *model.Channel, testUserID int, testGroup string, testMethod string, testModel string, endpointType string, isStream bool, protocolCheck string) testResult {
+	endpointType, isStream = applyProtocolCheckOverrides(protocolCheck, endpointType, isStream)
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -527,7 +533,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		}
 	}
 	result := w.Result()
-	respBody, err := readTestResponseBody(result.Body, isStream)
+	respBody, err := readTestResponseBodyForProtocol(result.Body, isStream, protocolCheck)
 	if err != nil {
 		return testResult{
 			context:     c,
@@ -535,7 +541,19 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 			newAPIError: types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError),
 		}
 	}
-	if bodyErr := validateTestResponseBody(respBody, isStream); bodyErr != nil {
+	var protocolReport *ChannelProtocolCheckReport
+	if protocolCheck != channelProtocolCheckNone {
+		var checkErr error
+		protocolReport, checkErr = evaluateChannelProtocolCheck(protocolCheck, respBody)
+		if checkErr != nil {
+			return testResult{
+				context:        c,
+				localErr:       checkErr,
+				newAPIError:    types.NewOpenAIError(checkErr, types.ErrorCodeBadResponseBody, http.StatusInternalServerError),
+				protocolReport: protocolReport,
+			}
+		}
+	} else if bodyErr := validateTestResponseBody(respBody, isStream); bodyErr != nil {
 		return testResult{
 			context:     c,
 			localErr:    bodyErr,
@@ -562,11 +580,16 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		Group:            info.UsingGroup,
 		Other:            other,
 	})
-	common.SysLog(fmt.Sprintf("testing channel #%d, response: \n%s", channel.Id, string(respBody)))
+	logBody := string(respBody)
+	if len(logBody) > 4096 {
+		logBody = logBody[:4096] + "...(truncated)"
+	}
+	common.SysLog(fmt.Sprintf("testing channel #%d, response: \n%s", channel.Id, logBody))
 	return testResult{
-		context:     c,
-		localErr:    nil,
-		newAPIError: nil,
+		context:        c,
+		localErr:       nil,
+		newAPIError:    nil,
+		protocolReport: protocolReport,
 	}
 }
 
@@ -646,8 +669,15 @@ func coerceTestUsage(usageAny any, isStream bool, estimatePromptTokens int) (*dt
 }
 
 func readTestResponseBody(body io.ReadCloser, isStream bool) ([]byte, error) {
+	return readTestResponseBodyForProtocol(body, isStream, channelProtocolCheckNone)
+}
+
+func readTestResponseBodyForProtocol(body io.ReadCloser, isStream bool, protocolCheck string) ([]byte, error) {
 	defer func() { _ = body.Close() }()
 	const maxStreamLogBytes = 8 << 10
+	if protocolCheck == channelProtocolCheckResponsesStream {
+		return io.ReadAll(io.LimitReader(body, maxProtocolCheckStreamBytes))
+	}
 	if isStream {
 		return io.ReadAll(io.LimitReader(body, maxStreamLogBytes))
 	}
@@ -932,6 +962,14 @@ func TestChannel(c *gin.Context) {
 	testModel := c.Query("model")
 	endpointType := c.Query("endpoint_type")
 	isStream, _ := strconv.ParseBool(c.Query("stream"))
+	protocolCheck, err := normalizeChannelProtocolCheck(c.Query("protocol_check"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
 	testGroup, err := resolveChannelTestGroup(channel, c.Query("group"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -950,7 +988,7 @@ func TestChannel(c *gin.Context) {
 	if c.Request != nil {
 		requestCtx = c.Request.Context()
 	}
-	result := testChannel(requestCtx, channel, testUserID, testGroup, channelTestMethodManual, testModel, endpointType, isStream)
+	result := testChannelWithProtocolCheck(requestCtx, channel, testUserID, testGroup, channelTestMethodManual, testModel, endpointType, isStream, protocolCheck)
 	milliseconds := time.Since(tik).Milliseconds()
 	recordChannelTestHealth(channel, result, milliseconds)
 	if result.localErr != nil {
@@ -963,27 +1001,38 @@ func TestChannel(c *gin.Context) {
 		if result.newAPIError != nil {
 			resp["error_code"] = result.newAPIError.GetErrorCode()
 		}
+		if result.protocolReport != nil {
+			resp["protocol_check"] = result.protocolReport
+		}
 		c.JSON(http.StatusOK, resp)
 		return
 	}
 	go channel.UpdateResponseTime(milliseconds)
 	consumedTime := float64(milliseconds) / 1000.0
 	if result.newAPIError != nil {
-		c.JSON(http.StatusOK, gin.H{
+		resp := gin.H{
 			"success":    false,
 			"message":    result.newAPIError.Error(),
 			"time":       consumedTime,
 			"error_code": result.newAPIError.GetErrorCode(),
 			"group":      testGroup,
-		})
+		}
+		if result.protocolReport != nil {
+			resp["protocol_check"] = result.protocolReport
+		}
+		c.JSON(http.StatusOK, resp)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
+	resp := gin.H{
 		"success": true,
 		"message": "",
 		"time":    consumedTime,
 		"group":   testGroup,
-	})
+	}
+	if result.protocolReport != nil {
+		resp["protocol_check"] = result.protocolReport
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // channelTestSummary records the outcome of one channel test cycle so the

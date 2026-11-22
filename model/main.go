@@ -333,7 +333,7 @@ func migrateDB() error {
 		&Option{},
 		&Redemption{},
 		&Ability{},
-		&Log{},
+		&Log{}, &OperationsRollupDirtyHour{},
 		&Midjourney{},
 		&TopUp{},
 		&ReferralReward{},
@@ -342,7 +342,7 @@ func migrateDB() error {
 		&LotteryDraw{},
 		&LotteryRule{},
 		&BusinessEvent{},
-		&OperationsPool{}, &OperationsEntry{}, &ChannelCostVersion{}, &OperationsState{}, &OperationsEvent{}, &OperationsLane{},
+		&OperationsPool{}, &OperationsEntry{}, &ChannelCostVersion{}, &OperationsState{}, &OperationsEvent{}, &OperationsLane{}, &OperationsRollupBucket{}, &OperationsHourlyRollup{},
 		&BusinessEventLogReceipt{},
 		&ContentAuditRecord{},
 		&QuotaData{},
@@ -421,6 +421,7 @@ func migrateDBFast() error {
 		{&Redemption{}, "Redemption"},
 		{&Ability{}, "Ability"},
 		{&Log{}, "Log"},
+		{&OperationsRollupDirtyHour{}, "OperationsRollupDirtyHour"},
 		{&Midjourney{}, "Midjourney"},
 		{&TopUp{}, "TopUp"},
 		{&ReferralReward{}, "ReferralReward"},
@@ -435,6 +436,8 @@ func migrateDBFast() error {
 		{&OperationsEntry{}, "OperationsEntry"},
 		{&ChannelCostVersion{}, "ChannelCostVersion"},
 		{&OperationsState{}, "OperationsState"},
+		{&OperationsRollupBucket{}, "OperationsRollupBucket"},
+		{&OperationsHourlyRollup{}, "OperationsHourlyRollup"},
 		{&BusinessEventLogReceipt{}, "BusinessEventLogReceipt"},
 		{&ContentAuditRecord{}, "ContentAuditRecord"},
 		{&QuotaData{}, "QuotaData"},
@@ -517,7 +520,7 @@ func migrateLOGDB() error {
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		return migrateClickHouseLogDB()
 	}
-	return LOG_DB.AutoMigrate(&Log{}, &TeamTaskLogReceipt{}, &TeamSyncLogReceipt{}, &BusinessEventLogReceipt{})
+	return LOG_DB.AutoMigrate(&Log{}, &TeamTaskLogReceipt{}, &TeamSyncLogReceipt{}, &BusinessEventLogReceipt{}, &OperationsRollupDirtyHour{})
 }
 
 func migrateClickHouseLogDB() error {
