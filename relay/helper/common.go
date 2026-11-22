@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 
@@ -187,6 +188,9 @@ func FlushWriter(c *gin.Context) (err error) {
 		}
 		writer = unwrapper.Unwrap()
 	}
+	if requestContextDone(c) {
+		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
+	}
 	return nil
 }
 
@@ -222,6 +226,7 @@ func ClaudeData(c *gin.Context, resp dto.ClaudeResponse) error {
 	} else {
 		c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
 		c.Render(-1, common.CustomEvent{Data: "data: " + string(jsonData)})
+		c.Set("relay_stream_response_written", true)
 	}
 	_ = FlushWriter(c)
 	return nil
@@ -235,22 +240,35 @@ func ClaudeChunkData(c *gin.Context, resp dto.ClaudeResponse, data string) {
 	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
 	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("data: %s\n", data)})
 	_ = FlushWriter(c)
+	c.Set("relay_stream_response_written", true)
 }
 
 func ResponseChunkData(c *gin.Context, resp dto.ResponsesStreamResponse, data string) error {
+	start := time.Now()
+	var diagnostics *relaycommon.StreamDiagnostics
+	if value, ok := c.Get(relaycommon.StreamDiagnosticsContextKey); ok {
+		diagnostics, _ = value.(*relaycommon.StreamDiagnostics)
+	}
+	defer func() {
+		if diagnostics != nil {
+			diagnostics.Write(start, time.Now(), false)
+		}
+	}()
 	if requestContextDone(c) {
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
 
-	event := common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)}
-	if err := event.Render(c.Writer); err != nil {
+	if _, err := c.Writer.Write([]byte(fmt.Sprintf("event: %s\ndata: %s\n\n", resp.Type, data))); err != nil {
 		return err
 	}
-	event.Data = fmt.Sprintf("data: %s", data)
-	if err := event.Render(c.Writer); err != nil {
+	if err := FlushWriter(c); err != nil {
 		return err
 	}
-	return FlushWriter(c)
+	c.Set("relay_stream_response_written", true)
+	if diagnostics != nil && resp.Type == "response.output_text.delta" && resp.Delta != "" {
+		diagnostics.Write(start, time.Now(), true)
+	}
+	return nil
 }
 
 func StringData(c *gin.Context, str string) error {
@@ -263,8 +281,14 @@ func StringData(c *gin.Context, str string) error {
 	}
 
 	c.Render(-1, common.CustomEvent{Data: "data: " + str})
-	return FlushWriter(c)
+	if err := FlushWriter(c); err != nil {
+		return err
+	}
+	c.Set("relay_stream_response_written", true)
+	return nil
 }
+
+const sseKeepAliveFrame = ": PING\n\n"
 
 func PingData(c *gin.Context) error {
 	if c == nil || c.Writer == nil {
@@ -275,7 +299,7 @@ func PingData(c *gin.Context) error {
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
 
-	if _, err := c.Writer.Write([]byte(": PING\n\n")); err != nil {
+	if _, err := c.Writer.Write([]byte(sseKeepAliveFrame)); err != nil {
 		return fmt.Errorf("write ping data failed: %w", err)
 	}
 	return FlushWriter(c)

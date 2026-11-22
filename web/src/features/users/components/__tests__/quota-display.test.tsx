@@ -374,7 +374,11 @@ it('combines creation and last login into one column with full dates visible dir
   const row = screen.getByRole('row', {
     name: /long-user-name-for-table-layout/,
   })
-  expect(within(row).getByText('—')).toBeInTheDocument()
+  const inviteColumn = screen.getByRole<HTMLTableCellElement>('columnheader', {
+    name: 'Invite Info',
+  })
+  const inviteCell = within(row).getAllByRole('cell')[inviteColumn.cellIndex]
+  expect(within(inviteCell).getByText('—')).toBeInTheDocument()
   const times = within(row).getAllByRole('time')
   expect(times).toHaveLength(2)
   expect(times[0]).toHaveTextContent(

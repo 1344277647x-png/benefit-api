@@ -313,6 +313,7 @@ export interface LogOtherData {
   matched_tier?: string
   request_rules?: RequestRuleTrace[]
   usage_facts?: Record<string, string | number>
+  pricing_snapshot_incomplete?: boolean
   reasoning_effort?: string
   image?: boolean
   image_ratio?: number
@@ -334,7 +335,25 @@ export interface LogOtherData {
   po?: string[]
   request_plugins?: RequestPluginRecordItem[]
   billing_source?: string
+  team_id?: number
+  member_user_id?: number
+  business_label?: string
+  business_event?: { category?: string; action?: string; event_key?: string }
+  reward_cents?: number
+  reward_quota?: number
+  quota?: number
+  invitee_bonus_quota?: number
+  referral_balance_before?: number
+  referral_balance_after?: number
+  site_balance_before?: number
+  site_balance_after?: number
+  draw_number?: number
+  tier?: string
+  rule_version?: string
   group?: string
+  is_channel_test?: boolean
+  channel_test_method?: 'manual' | 'manual_batch' | 'scheduled' | string
+  channel_test_group?: string
   stream_status?: {
     status?: string
     end_reason?: string

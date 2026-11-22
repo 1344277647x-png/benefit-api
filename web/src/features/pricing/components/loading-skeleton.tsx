@@ -48,6 +48,7 @@ export function LoadingSkeleton(props: LoadingSkeletonProps) {
                 <Skeleton className='h-7 w-20' />
                 <Skeleton className='h-7 w-28' />
               </div>
+              <Skeleton className='h-8 w-16 rounded-md' />
             </div>
           ))}
         </div>

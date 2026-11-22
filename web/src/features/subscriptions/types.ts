@@ -24,6 +24,8 @@ import { z } from 'zod'
 
 export const subscriptionPlanSchema = z.object({
   id: z.number(),
+  scope: z.enum(['personal', 'team']).default('personal'),
+  seat_limit: z.number().default(0),
   title: z.string(),
   subtitle: z.string().optional(),
   price_amount: z.number(),

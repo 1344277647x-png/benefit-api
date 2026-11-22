@@ -99,6 +99,7 @@ export function getPaymentIcon(
 
   switch (paymentType) {
     case PAYMENT_TYPES.ALIPAY:
+    case PAYMENT_TYPES.ALIPAY_NATIVE:
       return (
         <IconAlipay
           className={className}
@@ -106,6 +107,7 @@ export function getPaymentIcon(
         />
       )
     case PAYMENT_TYPES.WECHAT:
+    case PAYMENT_TYPES.QIXIANG_WECHAT:
       return (
         <IconWeChat
           className={className}

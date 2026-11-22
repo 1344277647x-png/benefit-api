@@ -48,6 +48,57 @@ func isPositiveOptionValue(value string) bool {
 	return err == nil && floatValue > 0
 }
 
+func validateReferralOption(key string, value string) error {
+	if !strings.HasPrefix(key, "referral_setting.") {
+		return nil
+	}
+	if key == "referral_setting.enabled" {
+		if value != "true" && value != "false" {
+			return fmt.Errorf("邀请返利开关值无效")
+		}
+		return nil
+	}
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed < 0 {
+		return fmt.Errorf("邀请返利配置必须是非负整数")
+	}
+	switch key {
+	case "referral_setting.reward_rate_basis_points":
+		if parsed > operation_setting.MaxReferralRewardRateBasisPoints {
+			return fmt.Errorf("邀请返利比例不能超过 100%%")
+		}
+	case "referral_setting.settlement_delay_hours":
+		if parsed > operation_setting.MaxReferralSettlementDelayHours {
+			return fmt.Errorf("邀请返利结算延迟不能超过 720 小时")
+		}
+	default:
+		if parsed > common.MaxWalletQuota {
+			return fmt.Errorf("邀请返利额度超过系统上限")
+		}
+	}
+	return nil
+}
+
+func validateLotteryOption(key string, value string) error {
+	if !strings.HasPrefix(key, "lottery_setting.") {
+		return nil
+	}
+	if key == "lottery_setting.enabled" {
+		if value != "true" && value != "false" {
+			return fmt.Errorf("抽奖活动开关值无效")
+		}
+		return nil
+	}
+	if key == "lottery_setting.rule_version" || key == "lottery_setting.regular_weights" || key == "lottery_setting.jackpot_weights" {
+		return nil
+	}
+	parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil || parsed < 0 {
+		return fmt.Errorf("抽奖活动时间必须是非负 Unix 时间戳")
+	}
+	return nil
+}
+
 func collectModelNamesFromOptionValue(raw string, modelNames map[string]struct{}) {
 	if strings.TrimSpace(raw) == "" {
 		return
@@ -184,11 +235,118 @@ func writePasskeyDomainSettingsError(c *gin.Context, err error) {
 	common.ApiError(c, err)
 }
 
+type ReferralOptionsUpdateRequest struct {
+	Enabled               bool `json:"enabled"`
+	MinimumTopupQuota     int  `json:"minimum_topup_quota"`
+	RewardRateBasisPoints int  `json:"reward_rate_basis_points"`
+	InviteeBonusQuota     int  `json:"invitee_bonus_quota"`
+	PerInviteeCapQuota    int  `json:"per_invitee_cap_quota"`
+	MonthlyCapQuota       int  `json:"monthly_cap_quota"`
+	SettlementDelayHours  int  `json:"settlement_delay_hours"`
+}
+
+type LotteryOptionsUpdateRequest struct {
+	Enabled        bool    `json:"enabled"`
+	StartAt        int64   `json:"start_at"`
+	EndAt          int64   `json:"end_at"`
+	RegularWeights []int64 `json:"regular_weights"`
+	JackpotWeights []int64 `json:"jackpot_weights"`
+}
+
+func UpdateReferralOptions(c *gin.Context) {
+	var request ReferralOptionsUpdateRequest
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		common.ApiErrorMsg(c, "无效的邀请返利配置")
+		return
+	}
+	if request.Enabled && !operation_setting.IsPaymentComplianceConfirmed() {
+		common.ApiErrorT(c, "Payment, redemption, subscription, and invitation reward features are disabled. The administrator must confirm compliance terms before enabling them.")
+		return
+	}
+
+	values := map[string]string{
+		"referral_setting.enabled":                  strconv.FormatBool(request.Enabled),
+		"referral_setting.minimum_topup_quota":      strconv.Itoa(request.MinimumTopupQuota),
+		"referral_setting.reward_rate_basis_points": strconv.Itoa(request.RewardRateBasisPoints),
+		"referral_setting.invitee_bonus_quota":      strconv.Itoa(request.InviteeBonusQuota),
+		"referral_setting.per_invitee_cap_quota":    strconv.Itoa(request.PerInviteeCapQuota),
+		"referral_setting.monthly_cap_quota":        strconv.Itoa(request.MonthlyCapQuota),
+		"referral_setting.settlement_delay_hours":   strconv.Itoa(request.SettlementDelayHours),
+	}
+	for key, value := range values {
+		if err := validateReferralOption(key, value); err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+	}
+	if err := model.UpdateOptionsBulkWithActivationKey(values, "referral_setting.enabled"); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAudit(c, "option.referral.update", map[string]interface{}{
+		"keys": len(values),
+	})
+	common.ApiSuccess(c, nil)
+}
+
+func UpdateLotteryOptions(c *gin.Context) {
+	previous := operation_setting.GetLotterySettingSnapshot()
+	var request LotteryOptionsUpdateRequest
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		common.ApiErrorMsg(c, "无效的抽奖活动配置")
+		return
+	}
+	if request.Enabled && !operation_setting.IsPaymentComplianceConfirmed() {
+		common.ApiErrorT(c, "Payment, redemption, subscription, and invitation reward features are disabled. The administrator must confirm compliance terms before enabling them.")
+		return
+	}
+	if request.StartAt < 0 || request.EndAt < 0 || (request.StartAt > 0 && request.EndAt > 0 && request.EndAt <= request.StartAt) {
+		common.ApiErrorMsg(c, "抽奖活动结束时间必须晚于开始时间")
+		return
+	}
+	rule, err := model.CreateLotteryRule(c.GetInt("id"), request.RegularWeights, request.JackpotWeights)
+	if err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	regularJSON, _ := common.Marshal(request.RegularWeights)
+	jackpotJSON, _ := common.Marshal(request.JackpotWeights)
+
+	values := map[string]string{
+		"lottery_setting.enabled":         strconv.FormatBool(request.Enabled),
+		"lottery_setting.start_at":        strconv.FormatInt(request.StartAt, 10),
+		"lottery_setting.end_at":          strconv.FormatInt(request.EndAt, 10),
+		"lottery_setting.rule_version":    rule.Version,
+		"lottery_setting.regular_weights": string(regularJSON),
+		"lottery_setting.jackpot_weights": string(jackpotJSON),
+	}
+	for key, value := range values {
+		if err := validateLotteryOption(key, value); err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+	}
+	if err := model.UpdateOptionsBulkWithActivationKey(values, "lottery_setting.enabled"); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAudit(c, "option.lottery.update", map[string]interface{}{
+		"keys": len(values), "previous_rule_version": previous.RuleVersion, "rule_version": rule.Version,
+		"previous_regular_weights": previous.RegularWeights, "regular_weights": request.RegularWeights,
+		"previous_jackpot_weights": previous.JackpotWeights, "jackpot_weights": request.JackpotWeights,
+	})
+	common.ApiSuccess(c, nil)
+}
+
 func UpdateOption(c *gin.Context) {
 	var option OptionUpdateRequest
 	err := common.DecodeJson(c.Request.Body, &option)
 	if err != nil {
 		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
+		return
+	}
+	if strings.HasPrefix(option.Key, "content_audit.") || strings.HasPrefix(option.Key, "lottery_setting.") {
+		common.ApiErrorMsg(c, "此配置必须通过专用设置接口修改")
 		return
 	}
 	switch option.Value.(type) {
@@ -204,6 +362,16 @@ func UpdateOption(c *gin.Context) {
 	switch option.Key {
 	case "QuotaForInviter", "QuotaForInvitee":
 		if isPositiveOptionValue(option.Value.(string)) && !operation_setting.IsPaymentComplianceConfirmed() {
+			common.ApiErrorT(c, "Payment, redemption, subscription, and invitation reward features are disabled. The administrator must confirm compliance terms before enabling them.")
+			return
+		}
+	case "referral_setting.enabled":
+		if option.Value == "true" && !operation_setting.IsPaymentComplianceConfirmed() {
+			common.ApiErrorT(c, "Payment, redemption, subscription, and invitation reward features are disabled. The administrator must confirm compliance terms before enabling them.")
+			return
+		}
+	case "lottery_setting.enabled":
+		if option.Value == "true" && !operation_setting.IsPaymentComplianceConfirmed() {
 			common.ApiErrorT(c, "Payment, redemption, subscription, and invitation reward features are disabled. The administrator must confirm compliance terms before enabling them.")
 			return
 		}
@@ -223,6 +391,14 @@ func UpdateOption(c *gin.Context) {
 			common.ApiError(c, err)
 			return
 		}
+	}
+	if err := validateReferralOption(option.Key, option.Value.(string)); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	if err := validateLotteryOption(option.Key, option.Value.(string)); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
 	}
 	switch option.Key {
 	case "GitHubOAuthEnabled":

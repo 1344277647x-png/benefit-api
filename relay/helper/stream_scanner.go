@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -99,22 +100,50 @@ func (b *StreamWriteBudget) Deadline(now time.Time, n int) time.Time {
 // recorders) are silently ignored.
 type streamResponseWriter struct {
 	gin.ResponseWriter
-	budget StreamWriteBudget
+	budget  StreamWriteBudget
+	hasData atomic.Bool
 }
 
 func (w *streamResponseWriter) Write(p []byte) (int, error) {
 	_ = http.NewResponseController(w.ResponseWriter).SetWriteDeadline(w.budget.Deadline(time.Now(), len(p)))
-	return w.ResponseWriter.Write(p)
+	n, err := w.ResponseWriter.Write(p)
+	if n > 0 && string(p) != sseKeepAliveFrame {
+		w.hasData.Store(true)
+	}
+	return n, err
 }
 
 func (w *streamResponseWriter) WriteString(s string) (int, error) {
 	_ = http.NewResponseController(w.ResponseWriter).SetWriteDeadline(w.budget.Deadline(time.Now(), len(s)))
-	return w.ResponseWriter.WriteString(s)
+	n, err := w.ResponseWriter.WriteString(s)
+	if n > 0 && s != sseKeepAliveFrame {
+		w.hasData.Store(true)
+	}
+	return n, err
 }
 
 // Unwrap lets http.ResponseController reach the connection.
 func (w *streamResponseWriter) Unwrap() http.ResponseWriter {
 	return w.ResponseWriter
+}
+
+// StreamOutputWritten excludes keepalives, which commit the headers but do
+// not deliver a model response or prevent an upstream retry.
+func StreamOutputWritten(c *gin.Context) bool {
+	if c.GetBool("relay_stream_response_written") {
+		return true
+	}
+	for writer := http.ResponseWriter(c.Writer); writer != nil; {
+		if stream, ok := writer.(*streamResponseWriter); ok {
+			return stream.hasData.Load()
+		}
+		unwrapper, ok := writer.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			break
+		}
+		writer = unwrapper.Unwrap()
+	}
+	return c.Writer != nil && c.Writer.Size() > 0
 }
 
 func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo, dataHandler func(data string, sr *StreamResult)) {
@@ -131,6 +160,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 
 	// 无条件新建 StreamStatus
 	info.StreamStatus = relaycommon.NewStreamStatus()
+	diagnostics := relaycommon.NewStreamDiagnostics(info.StartTime)
+	c.Set(relaycommon.StreamDiagnosticsContextKey, diagnostics)
+	defer func() { diagnostics.Finish(time.Now()) }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -226,6 +258,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 					if err != nil {
 						logger.LogError(c, common.LogText("ping data error: %s", err.Error()))
 						info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonPingFail, err)
+						stop()
 						return
 					}
 					logger.LogDebug(c, "ping data sent")
@@ -246,6 +279,8 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 
 	dataChan := make(chan string, 10)
 	sr := newStreamResult(info.StreamStatus)
+	readerEnd := relaycommon.StreamEndReasonEOF
+	var readerError error
 
 	wg.Add(1)
 	gopool.Go(func() {
@@ -268,18 +303,20 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				return
 			}
 		}
+		// The closed channel synchronizes readerEnd and readerError. Drain all
+		// queued events before recording EOF/DONE or closing the upstream.
+		info.StreamStatus.SetEndReason(readerEnd, readerError)
 	})
 
 	// Scanner goroutine with improved error handling
 	wg.Add(1)
 	common.RelayCtxGo(ctx, func() {
 		defer func() {
-			close(dataChan)
 			if r := recover(); r != nil {
 				logger.LogError(c, common.LogText("scanner goroutine panic: %v", r))
 				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonPanic, fmt.Errorf("scanner panic: %v", r))
 			}
-			stop()
+			close(dataChan)
 			logger.LogDebug(c, "scanner goroutine exited")
 			wg.Done()
 		}()
@@ -296,7 +333,6 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 
 			ticker.Reset(streamingTimeout)
 			data := scanner.Text()
-			logger.LogDebug(c, "stream scanner data: %s", data)
 
 			data, hasDataPrefix := strings.CutPrefix(data, "data:")
 			data = strings.TrimSpace(data)
@@ -307,6 +343,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				continue
 			}
 			if data != "[DONE]" {
+				diagnostics.Event(time.Now())
 				info.SetFirstResponseTime()
 				info.ReceivedResponseCount++
 
@@ -318,7 +355,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 					return
 				}
 			} else {
-				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
+				readerEnd = relaycommon.StreamEndReasonDone
 				logger.LogDebug(c, "received [DONE], stopping scanner")
 				return
 			}
@@ -332,10 +369,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		if err := scanner.Err(); err != nil {
 			if err != io.EOF {
 				logger.LogError(c, common.LogText("scanner error: %s", err.Error()))
-				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
+				readerEnd, readerError = relaycommon.StreamEndReasonScannerErr, err
 			}
 		}
-		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, nil)
 	})
 
 	// 主循环等待完成或超时

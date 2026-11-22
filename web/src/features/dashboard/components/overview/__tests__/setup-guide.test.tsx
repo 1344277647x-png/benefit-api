@@ -28,6 +28,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
+import { markOnboardingFlag, ONBOARDING_STORAGE_KEYS } from '@/lib/onboarding'
 import { useAuthStore } from '@/stores/auth-store'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
@@ -39,6 +40,9 @@ let keyLookupError: Error | null
 
 beforeEach(() => {
   window.localStorage.clear()
+  markOnboardingFlag(ONBOARDING_STORAGE_KEYS.apiUrlCopied)
+  markOnboardingFlag(ONBOARDING_STORAGE_KEYS.modelSelected)
+  markOnboardingFlag(ONBOARDING_STORAGE_KEYS.logsViewed)
   useSystemConfigStore.setState(useSystemConfigStore.getInitialState(), true)
   useAuthStore.getState().auth.setUser({
     id: 1,
@@ -116,9 +120,11 @@ describe('overview setup guide', () => {
       screen.getAllByRole('heading').map((heading) => heading.textContent)
     ).toEqual(['Overview', 'Usage at a glance'])
     expect(screen.queryByText('Setup guide complete')).not.toBeInTheDocument()
-    expect(screen.queryByText('Setup progress: 3/3')).not.toBeInTheDocument()
+    expect(screen.queryByText('Setup progress: 6/6')).not.toBeInTheDocument()
     for (const name of ['API Keys', 'Channels', 'Usage Logs', 'Pricing']) {
-      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('link', { name: new RegExp(name) })
+      ).not.toBeInTheDocument()
     }
     const panel = document.getElementById(
       toggle.getAttribute('aria-controls') ?? ''
@@ -145,7 +151,7 @@ describe('overview setup guide', () => {
       })
     ).toBeVisible()
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: /^API Keys/ })).toBeVisible()
+      expect(screen.getByRole('link', { name: /^API Keys/ })).toBeVisible()
     )
 
     await user.keyboard(' ')
@@ -179,6 +185,7 @@ describe('overview setup guide', () => {
 
   it('keeps the existing progress banner when an incomplete guide is manually collapsed', async () => {
     const user = userEvent.setup()
+    window.localStorage.clear()
     useAuthStore
       .getState()
       .auth.setUser({ id: 1, username: 'new-user', role: 1 })
@@ -187,11 +194,11 @@ describe('overview setup guide', () => {
     await user.click(
       await screen.findByRole('button', { name: 'Hide setup guide' })
     )
-    expect(screen.getByText('Setup progress: 1/3')).toBeVisible()
+    expect(screen.getByText('Setup progress: 1/6')).toBeVisible()
     expect(
       screen.getByText('Setup guide is collapsed. Expand it anytime.')
     ).toBeVisible()
-    expect(screen.getByRole('button', { name: 'API Keys' })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'API Keys' })).toBeVisible()
     expect(
       screen.queryByRole('button', { name: 'Setup guide' })
     ).not.toBeInTheDocument()
@@ -210,7 +217,7 @@ describe('overview setup guide', () => {
     })
     window.localStorage.setItem(storageKey, 'collapsed')
     await renderOverview()
-    expect(await screen.findByText('Setup progress: 2/3')).toBeVisible()
+    expect(await screen.findByText('Setup progress: 5/6')).toBeVisible()
 
     act(() => {
       useAuthStore.getState().auth.setUser({

@@ -156,7 +156,9 @@ func PurgeSubscriptionPlanCache() error {
 
 // Subscription plan
 type SubscriptionPlan struct {
-	Id int `json:"id"`
+	Id        int    `json:"id"`
+	Scope     string `json:"scope" gorm:"type:varchar(16);not null;default:'personal'"`
+	SeatLimit int    `json:"seat_limit" gorm:"type:int;not null;default:0"`
 
 	Title    string `json:"title" gorm:"type:varchar(128);not null"`
 	Subtitle string `json:"subtitle" gorm:"type:varchar(255);default:''"`
@@ -214,6 +216,9 @@ func (p *SubscriptionPlan) BeforeUpdate(tx *gorm.DB) error {
 }
 
 func (p *SubscriptionPlan) NormalizeDefaults() {
+	if p.Scope == "" {
+		p.Scope = "personal"
+	}
 	if p.AllowBalancePay == nil {
 		p.AllowBalancePay = common.GetPointer(true)
 	}
@@ -403,7 +408,7 @@ func getSubscriptionPlanByIdTx(tx *gorm.DB, id int) (*SubscriptionPlan, error) {
 		return nil, errors.New("invalid plan id")
 	}
 	key := subscriptionPlanCacheKey(id)
-	if key != "" {
+	if key != "" && tx == nil {
 		if cached, found, err := getSubscriptionPlanCache().Get(key); err == nil && found {
 			cached.NormalizeDefaults()
 			return &cached, nil
@@ -418,7 +423,9 @@ func getSubscriptionPlanByIdTx(tx *gorm.DB, id int) (*SubscriptionPlan, error) {
 		return nil, err
 	}
 	plan.NormalizeDefaults()
-	_ = getSubscriptionPlanCache().SetWithTTL(key, plan, subscriptionPlanCacheTTL())
+	if tx == nil {
+		_ = getSubscriptionPlanCache().SetWithTTL(key, plan, subscriptionPlanCacheTTL())
+	}
 	return &plan, nil
 }
 
@@ -499,6 +506,9 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 	}
 	if plan == nil || plan.Id == 0 {
 		return nil, errors.New("invalid plan")
+	}
+	if plan.Scope != "" && plan.Scope != "personal" {
+		return nil, errors.New("team plan cannot create a personal subscription")
 	}
 	if userId <= 0 {
 		return nil, errors.New("invalid user id")
@@ -628,6 +638,9 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if err := upsertSubscriptionTopUpTx(tx, &order); err != nil {
 			return err
 		}
+		if err := operationsSnapshotSubscriptionTx(tx, subscription, &order, 0); err != nil {
+			return err
+		}
 		order.Status = common.TopUpStatusSuccess
 		order.CompleteTime = common.GetTimestamp()
 		if providerPayload != "" {
@@ -740,6 +753,9 @@ func AdminBindSubscription(userId int, planId int, sourceNote string) (*common.M
 		}
 		subscription, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, "admin")
 		if err == nil {
+			err = operationsSnapshotSubscriptionTx(tx, subscription, nil, 0)
+		}
+		if err == nil {
 			groupChanged = subscription.PrevUserGroup != ""
 		}
 		return err
@@ -782,7 +798,7 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 		if err != nil {
 			return err
 		}
-		if !plan.Enabled {
+		if !plan.Enabled || (plan.Scope != "" && plan.Scope != "personal") {
 			return common.NewMessage("Subscription plan is not enabled")
 		}
 		if plan.PriceAmount < 0 {
@@ -831,6 +847,9 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 			ProviderPayload: fmt.Sprintf("charged_quota=%d", requiredQuota),
 		}
 		if err := tx.Create(order).Error; err != nil {
+			return err
+		}
+		if err := operationsSnapshotSubscriptionTx(tx, subscription, order, requiredQuota); err != nil {
 			return err
 		}
 
@@ -1427,7 +1446,7 @@ func RefundSubscriptionPreConsume(requestId string) error {
 			Where("request_id = ?", requestId).First(&record).Error; err != nil {
 			return err
 		}
-		if record.Status == "refunded" {
+		if record.Status == "refunded" || record.Status == "settled" {
 			return nil
 		}
 		if record.PreConsumed <= 0 {

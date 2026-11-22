@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -94,14 +95,14 @@ type User struct {
 	VerificationCode     string                     `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
 	AccessToken          *string                    `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // Deprecated: 旧版面板访问令牌，仅在升级后的过渡期内使用；删除 users.access_token 列时一并移除。
 	AccessTokenCreatedAt *int64                     `json:"-" gorm:"type:bigint;column:access_token_created_at"`    // Deprecated: 旧版面板访问令牌，仅在升级后的过渡期内使用；删除 users.access_token 列时一并移除。
-	Quota                int                        `json:"quota" gorm:"type:int;default:0"`
-	UsedQuota            int                        `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
+	Quota                int                        `json:"quota" gorm:"type:bigint;default:0"`
+	UsedQuota            int                        `json:"used_quota" gorm:"type:bigint;default:0;column:used_quota"` // used quota
 	RequestCount         int                        `json:"request_count" gorm:"type:int;default:0;"`               // request number
 	Group                string                     `json:"group" gorm:"type:varchar(64);default:'default'"`
 	AffCode              string                     `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
 	AffCount             int                        `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
-	AffQuota             int                        `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
-	AffHistoryQuota      int                        `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
+	AffQuota             int                        `json:"aff_quota" gorm:"type:bigint;default:0;column:aff_quota"`           // 邀请剩余额度
+	AffHistoryQuota      int                        `json:"aff_history_quota" gorm:"type:bigint;default:0;column:aff_history"` // 邀请历史额度
 	InviterId            int                        `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
 	DeletedAt            gorm.DeletedAt             `gorm:"index"`
 	LinuxDOId            string                     `json:"linux_do_id" gorm:"column:linux_do_id;index"`
@@ -112,6 +113,7 @@ type User struct {
 	LastLoginAt          int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
 	AuthVersion          int64                      `json:"-" gorm:"type:bigint;not null;default:1;column:auth_version"`
 	AdminPermissions     map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
+	UsageSummary     *UserUsageSummary          `json:"usage_summary,omitempty" gorm:"-:all"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -421,7 +423,7 @@ func GetAllUsers(pageInfo *common.PageInfo, sortOptions ...UserSortOptions) (use
 
 	// Get paginated users within same transaction
 	order := resolveUserSortOptions(sortOptions)
-	err = order.Apply(tx.Unscoped()).Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Omit("password", "access_token").Find(&users).Error
+	err = order.Apply(tx.Unscoped()).Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Omit("password", "access_token", "setting").Find(&users).Error
 	if err != nil {
 		tx.Rollback()
 		return nil, 0, err
@@ -436,12 +438,23 @@ func GetAllUsers(pageInfo *common.PageInfo, sortOptions ...UserSortOptions) (use
 }
 
 func SearchUsers(keyword string, group string, role *int, status *int, startIdx int, num int, sortOptions ...UserSortOptions) ([]*User, int64, error) {
+	return SearchUsersByField(context.Background(), keyword, "", group, role, status, startIdx, num, sortOptions...)
+}
+
+func SearchUsersByField(ctx context.Context, keyword string, field string, group string, role *int, status *int, startIdx int, num int, sortOptions ...UserSortOptions) ([]*User, int64, error) {
+	var exactID int
+	if field == "id" {
+		var err error
+		exactID, err = strconv.Atoi(strings.TrimSpace(keyword))
+		if err != nil || exactID <= 0 {
+			return []*User{}, 0, nil
+		}
+	}
 	var users []*User
 	var total int64
 	var err error
 
-	// 开始事务
-	tx := DB.Begin()
+	tx := DB.WithContext(ctx).Begin()
 	if tx.Error != nil {
 		return nil, 0, tx.Error
 	}
@@ -454,21 +467,23 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 	// 构建基础查询
 	query := tx.Unscoped().Model(&User{})
 
-	// 构建搜索条件
-	likeCondition := "username LIKE ? OR email LIKE ? OR display_name LIKE ?"
-	likeArgs := []any{"%" + keyword + "%", "%" + keyword + "%", "%" + keyword + "%"}
-
-	// 尝试将关键字转换为整数ID
-	keywordInt, err := strconv.Atoi(keyword)
-	if err == nil {
-		// 如果是数字，同时搜索ID和其他字段
-		likeCondition = "id = ? OR " + likeCondition
-		likeArgs = append([]any{keywordInt}, likeArgs...)
+	switch field {
+	case "id":
+		query = query.Where("id = ?", exactID)
+	case "username":
+		query = query.Where("username = ?", strings.TrimSpace(keyword))
+	case "email":
+		query = query.Where("email = ?", NormalizeEmail(keyword))
+	default:
+		pattern := "%" + keyword + "%"
+		if id, parseErr := strconv.Atoi(keyword); parseErr == nil {
+			query = query.Where("(id = ? OR username LIKE ? OR email LIKE ? OR display_name LIKE ?)", id, pattern, pattern, pattern)
+		} else {
+			query = query.Where("(username LIKE ? OR email LIKE ? OR display_name LIKE ?)", pattern, pattern, pattern)
+		}
 	}
-
-	query = query.Where("("+likeCondition+")", likeArgs...)
 	if group != "" {
-		query = query.Where(commonGroupCol+" = ?", group)
+		query = query.Where(clause.Eq{Column: clause.Column{Name: "group"}, Value: group})
 	}
 	if role != nil {
 		query = query.Where("role = ?", *role)
@@ -490,7 +505,7 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 
 	// 获取分页数据
 	order := resolveUserSortOptions(sortOptions)
-	err = order.Apply(query.Omit("password", "access_token")).Limit(num).Offset(startIdx).Find(&users).Error
+	err = order.Apply(query.Omit("password", "access_token", "setting")).Limit(num).Offset(startIdx).Find(&users).Error
 	if err != nil {
 		tx.Rollback()
 		return nil, 0, err
@@ -570,11 +585,14 @@ func HardDeleteUserById(id int) (int64, error) {
 }
 
 func inviteUser(inviterId int) error {
-	result := DB.Model(&User{}).Where("id = ?", inviterId).Updates(map[string]any{
-		"aff_count":   gorm.Expr("aff_count + ?", 1),
-		"aff_quota":   gorm.Expr("aff_quota + ?", common.QuotaForInviter),
-		"aff_history": gorm.Expr("aff_history + ?", common.QuotaForInviter),
-	})
+	updates := map[string]any{
+		"aff_count": gorm.Expr("aff_count + ?", 1),
+	}
+	if !operation_setting.IsReferralEnabled() {
+		updates["aff_quota"] = gorm.Expr("aff_quota + ?", common.QuotaForInviter)
+		updates["aff_history"] = gorm.Expr("aff_history + ?", common.QuotaForInviter)
+	}
+	result := DB.Model(&User{}).Where("id = ?", inviterId).Updates(updates)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -585,40 +603,10 @@ func inviteUser(inviterId int) error {
 }
 
 func (user *User) TransferAffQuotaToQuota(quota int) error {
-	// 检查quota是否小于最小额度
 	if float64(quota) < common.QuotaPerUnit {
 		return common.NewMessage("Minimum transfer quota is {{min}}!", map[string]any{"min": logger.FormatQuota(common.QuotaFromFloat(common.QuotaPerUnit))})
 	}
-
-	// 开始数据库事务
-	tx := DB.Begin()
-	if tx.Error != nil {
-		return tx.Error
-	}
-	defer tx.Rollback() // 确保在函数退出时事务能回滚
-
-	// 加锁查询用户以确保数据一致性
-	err := lockForUpdate(tx).First(user, user.Id).Error
-	if err != nil {
-		return err
-	}
-
-	// 再次检查用户的AffQuota是否足够
-	if user.AffQuota < quota {
-		return common.NewMessage("Invitation quota is insufficient!")
-	}
-
-	// 更新用户额度
-	user.AffQuota -= quota
-	user.Quota += quota
-
-	// 保存用户状态
-	if err := tx.Save(user).Error; err != nil {
-		return err
-	}
-
-	// 提交事务
-	return tx.Commit().Error
+	return TransferReferralQuota(user.Id, quota)
 }
 
 func (user *User) prepareForInsert(tx *gorm.DB) error {
@@ -717,7 +705,9 @@ func (user *User) finishInsert(inviterId int) {
 	if common.QuotaForNewUser > 0 {
 		RecordLog(user.Id, LogTypeSystem, common.NewMessage("New user sign-up bonus {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForNewUser)}))
 	}
-	if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
+	if inviterId != 0 && operation_setting.IsReferralEnabled() {
+		_ = inviteUser(inviterId)
+	} else if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
 		if common.QuotaForInvitee > 0 {
 			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
 			RecordLog(user.Id, LogTypeSystem, common.NewMessage("Invitation code bonus {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForInvitee)}))
@@ -774,7 +764,9 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 	if common.QuotaForNewUser > 0 {
 		RecordLog(user.Id, LogTypeSystem, common.NewMessage("New user sign-up bonus {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForNewUser)}))
 	}
-	if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
+	if inviterId != 0 && operation_setting.IsReferralEnabled() {
+		_ = inviteUser(inviterId)
+	} else if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
 		if common.QuotaForInvitee > 0 {
 			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
 			RecordLog(user.Id, LogTypeSystem, common.NewMessage("Invitation code bonus {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForInvitee)}))
@@ -1338,13 +1330,23 @@ func GetUserSetting(id int, fromDB bool) (settingMap dto.UserSetting, err error)
 }
 
 func IncreaseUserQuota(id int, quota int, db bool) (err error) {
+	if operationsAvailable(DB) {
+		if err := common.ValidateWalletQuota(quota); err != nil {
+			return err
+		}
+		return AdjustOperationsWallet(id, quota, false)
+	}
+	return IncreaseUserQuotaForBilling(id, quota, db)
+}
+
+func IncreaseUserQuotaForBilling(id int, quota int, db bool) (err error) {
 	if quota < 0 {
 		return errors.New("quota cannot be negative")
 	}
 	if err := common.ValidateWalletQuota(quota); err != nil {
 		return err
 	}
-	if !db && common.BatchUpdateEnabled {
+	if !db && common.BatchUpdateEnabled && !operationsAvailable(DB) {
 		addNewRecord(BatchUpdateTypeUserQuota, id, quota)
 		gopool.Go(func() {
 			if err := cacheIncrUserQuota(id, int64(quota)); err != nil {
@@ -1355,6 +1357,10 @@ func IncreaseUserQuota(id int, quota int, db bool) (err error) {
 	}
 	if err := increaseUserQuota(id, quota); err != nil {
 		return err
+	}
+	if operationsAvailable(DB) {
+		syncOperationsWalletCache(id, int64(quota))
+		return nil
 	}
 	gopool.Go(func() {
 		if err := cacheIncrUserQuota(id, int64(quota)); err != nil {
@@ -1385,8 +1391,25 @@ func increaseUserQuota(id int, quota int) (err error) {
 }
 
 func DecreaseUserQuota(id int, quota int, db bool) (err error) {
+	if operationsAvailable(DB) {
+		if quota < 0 || quota > common.MaxWalletQuota {
+			return errors.New("invalid wallet adjustment")
+		}
+		return AdjustOperationsWallet(id, -quota, false)
+	}
+	return DecreaseUserQuotaForBilling(id, quota, db)
+}
+
+func DecreaseUserQuotaForBilling(id int, quota int, db bool) (err error) {
 	if quota < 0 {
 		return errors.New("quota cannot be negative")
+	}
+	if operationsAvailable(DB) {
+		if err := decreaseUserQuota(id, quota); err != nil {
+			return err
+		}
+		syncOperationsWalletCache(id, -int64(quota))
+		return nil
 	}
 	gopool.Go(func() {
 		err := cacheDecrUserQuota(id, int64(quota))
@@ -1394,7 +1417,7 @@ func DecreaseUserQuota(id int, quota int, db bool) (err error) {
 			common.SysLog(common.LogText("failed to decrease user quota: %s", err.Error()))
 		}
 	})
-	if !db && common.BatchUpdateEnabled {
+	if !db && common.BatchUpdateEnabled && !operationsAvailable(DB) {
 		addNewRecord(BatchUpdateTypeUserQuota, id, -quota)
 		return nil
 	}
@@ -1469,9 +1492,9 @@ func updateUserUsedQuotaAndRequestCount(id int, quota int, count int) {
 	//}
 }
 
-func updateUserQuotaUsedQuotaAndRequestCount(id int, quota int, usedQuota int, requestCount int) {
+func updateUserQuotaUsedQuotaAndRequestCount(id int, quota int, usedQuota int, requestCount int) error {
 	if quota == 0 && usedQuota == 0 && requestCount == 0 {
-		return
+		return nil
 	}
 
 	err := DB.Model(&User{}).Where("id = ?", id).Updates(
@@ -1484,6 +1507,7 @@ func updateUserQuotaUsedQuotaAndRequestCount(id int, quota int, usedQuota int, r
 	if err != nil {
 		common.SysLog(common.LogText("failed to batch update user quota, used quota and request count: %s", err.Error()))
 	}
+	return err
 }
 
 // GetUsernameById gets username from Redis first, falls back to DB if needed

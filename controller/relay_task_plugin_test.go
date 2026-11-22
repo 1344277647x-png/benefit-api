@@ -189,6 +189,7 @@ func TestExecuteTaskSubmissionRefundsWhenInsertFails(t *testing.T) {
 func TestExecuteTaskSubmissionSettlementFailureStaysDurableAndWritesNothing(t *testing.T) {
 	events := make([]string, 0, 3)
 	database := setupTaskSubmissionDatabase(t, true, &events)
+	require.NoError(t, database.AutoMigrate(&model.BusinessEvent{}))
 	billing := &taskSubmissionTestBilling{events: &events, settleErr: errors.New("settlement failed")}
 	c := taskSubmissionTestContext()
 	info := taskSubmissionRelayInfo(billing)
@@ -208,6 +209,9 @@ func TestExecuteTaskSubmissionSettlementFailureStaysDurableAndWritesNothing(t *t
 	var count int64
 	require.NoError(t, database.Model(&model.Task{}).Where("task_id = ?", "task_public").Count(&count).Error)
 	assert.Equal(t, int64(1), count)
+	var exception model.BusinessEvent
+	require.NoError(t, database.Where("request_id = ?", info.RequestId).Take(&exception).Error)
+	assert.Equal(t, "settlement_failed", exception.Action)
 	assert.False(t, c.Writer.Written())
 }
 
@@ -465,16 +469,20 @@ func TestExecuteTaskSubmissionDisconnectAfterDurableInsertDoesNotRefund(t *testi
 func setupTaskSubmissionDatabase(t *testing.T, migrate bool, events *[]string) *gorm.DB {
 	t.Helper()
 	previousDB := model.DB
+	previousRedis := common.RedisEnabled
+	common.RedisEnabled = false
 	var models []any
 	if migrate {
 		models = append(models, &model.Task{})
 	}
 	database, _ := openTaskDialectDatabase(t, models...)
-	require.NoError(t, database.Callback().Create().Before("gorm:create").Register("test:task-submit-order", func(*gorm.DB) {
-		*events = append(*events, "insert")
+	require.NoError(t, database.Callback().Create().Before("gorm:create").Register("test:task-submit-order", func(tx *gorm.DB) {
+		if _, ok := tx.Statement.Dest.(*model.Task); ok {
+			*events = append(*events, "insert")
+		}
 	}))
 	model.DB = database
-	t.Cleanup(func() { model.DB = previousDB })
+	t.Cleanup(func() { model.DB, common.RedisEnabled = previousDB, previousRedis })
 	return database
 }
 

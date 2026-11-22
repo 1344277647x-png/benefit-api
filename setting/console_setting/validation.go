@@ -1,6 +1,7 @@
 package console_setting
 
 import (
+	"fmt"
 	"net/url"
 	"sort"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"github.com/MoeForge/moego/regexp"
 	"github.com/QuantumNous/new-api/common"
 )
+
+const maxAnnouncementContentCharacters = 10000
 
 var (
 	urlRegex       = regexp.MustCompile(`^https?://(?:(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?|(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?))(?:\:[0-9]{1,5})?(?:/.*)?$`)
@@ -175,6 +178,9 @@ func validateAnnouncements(announcementsStr string) error {
 	validTypes := map[string]bool{
 		"default": true, "ongoing": true, "success": true, "warning": true, "error": true,
 	}
+	validPopupFrequencies := map[string]bool{
+		"once": true, "daily": true, "session": true,
+	}
 	for i, ann := range list {
 		content, ok := ann["content"].(string)
 		if !ok || content == "" {
@@ -198,12 +204,23 @@ func validateAnnouncements(announcementsStr string) error {
 				}
 			}
 		}
-		if exceedsMaxCharacters(content, 500) {
-			return common.NewMessage("Announcement #{{index}} content cannot exceed 500 characters", map[string]any{"index": i + 1})
+		if exceedsMaxCharacters(content, maxAnnouncementContentCharacters) {
+			return common.NewMessage("Announcement #{{index}} content cannot exceed {{limit}} characters", map[string]any{"index": i + 1, "limit": maxAnnouncementContentCharacters})
 		}
 		if extra, exists := ann["extra"]; exists {
 			if extraStr, ok := extra.(string); ok && exceedsMaxCharacters(extraStr, 100) {
 				return common.NewMessage("Announcement #{{index}} note cannot exceed 100 characters", map[string]any{"index": i + 1})
+			}
+		}
+		if popupEnabled, exists := ann["popupEnabled"]; exists {
+			if _, ok := popupEnabled.(bool); !ok {
+				return fmt.Errorf("第%d个公告的弹窗开关必须为布尔值", i+1)
+			}
+		}
+		if popupFrequency, exists := ann["popupFrequency"]; exists {
+			frequency, ok := popupFrequency.(string)
+			if !ok || !validPopupFrequencies[frequency] {
+				return fmt.Errorf("第%d个公告的弹窗频率值不合法", i+1)
 			}
 		}
 	}

@@ -42,11 +42,15 @@ func PrepareRequestBilling(c *gin.Context, info *relaycommon.RelayInfo) *types.N
 	}
 	info.SetEstimatePromptTokens(tokens)
 
-	priceData, err := helper.ModelPriceHelper(c, info, tokens, meta)
+	_, err = helper.ModelPriceHelper(c, info, tokens, meta)
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest))
 	}
-	if priceData.FreeModel {
+	if err := ApplyCreationImageCountToPrice(c, info); err != nil {
+		return types.NewErrorWithStatusCode(err, types.ErrorCodeModelPriceError, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+	}
+	priceData := info.PriceData
+	if priceData.FreeModel && info.TeamId == 0 {
 		logger.LogInfo(c, common.LogText("model %s is free, skipping pre-consume", info.OriginModelName))
 		return nil
 	}
@@ -61,7 +65,11 @@ func RefundFailedRequestBilling(c *gin.Context, info *relaycommon.RelayInfo, api
 	}
 	apiErr = service.NormalizeViolationFeeError(apiErr)
 	if info.Billing != nil {
-		info.Billing.Refund(c)
+		if result, ok := GetCreationImageExecutionResult(c); ok {
+			RefundCreationImageBilling(c, result)
+		} else if !service.SettleFailedTextStream(c, info) {
+			info.Billing.Refund(c)
+		}
 	}
 	service.ChargeViolationFeeIfNeeded(c, info, apiErr)
 	return apiErr

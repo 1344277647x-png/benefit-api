@@ -24,10 +24,56 @@ type RequestErrorLike = {
     data?: {
       error?: {
         code?: string
+        message?: string
       }
       message?: string
     }
   }
+}
+
+const UPSTREAM_QUOTA_EXHAUSTED = 'upstream_quota_exhausted'
+const LEGACY_UPSTREAM_QUOTA_CODES = new Set([
+  'insufficient_quota',
+  'quota_exceeded',
+])
+const PLATFORM_QUOTA_CODES = new Set([
+  'insufficient_user_quota',
+  'pre_consume_token_quota_failed',
+])
+
+function isUpstreamQuotaError(
+  errorCode: string | undefined,
+  message: string
+): boolean {
+  if (
+    errorCode === UPSTREAM_QUOTA_EXHAUSTED ||
+    LEGACY_UPSTREAM_QUOTA_CODES.has(errorCode || '')
+  ) {
+    return true
+  }
+  if (PLATFORM_QUOTA_CODES.has(errorCode || '')) return false
+  const normalized = message.toLowerCase()
+  return [
+    'insufficient_quota',
+    'quota exceeded',
+    'quota_exceeded',
+    'exceeded your current quota',
+    'billing_hard_limit_reached',
+    'credits exhausted',
+    'insufficient credits',
+    'billing limit',
+    'account balance insufficient',
+  ].some((signal) => normalized.includes(signal))
+}
+
+function safeErrorMessage(
+  errorCode: string | undefined,
+  message: string
+): string {
+  if (isUpstreamQuotaError(errorCode, message)) {
+    return ERROR_MESSAGES.UPSTREAM_QUOTA_EXHAUSTED
+  }
+  return message
 }
 
 export type RequestErrorDetails = {
@@ -37,12 +83,15 @@ export type RequestErrorDetails = {
 
 export function parseRequestErrorDetails(error: unknown): RequestErrorDetails {
   const requestError = error as RequestErrorLike
+  const errorCode = requestError?.response?.data?.error?.code || undefined
+  const message =
+    requestError?.response?.data?.error?.message ||
+    requestError?.response?.data?.message ||
+    requestError?.message ||
+    ERROR_MESSAGES.API_REQUEST_ERROR
 
   return {
-    errorCode: requestError?.response?.data?.error?.code || undefined,
-    errorMessage:
-      requestError?.response?.data?.message ||
-      requestError?.message ||
-      ERROR_MESSAGES.API_REQUEST_ERROR,
+    errorCode,
+    errorMessage: safeErrorMessage(errorCode, message),
   }
 }

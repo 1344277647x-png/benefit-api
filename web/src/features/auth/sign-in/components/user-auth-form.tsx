@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button'
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -308,7 +309,7 @@ export function UserAuthForm({
             variant='outline'
             disabled={passkeyButtonDisabled}
             onClick={handlePasskeyLogin}
-            className='h-11 w-full justify-center gap-2 rounded-lg'
+            className='h-12 w-full justify-center gap-2 rounded-[8px]'
           >
             {isPasskeyLoading ? (
               <Loader2 className='h-4 w-4 animate-spin' />
@@ -366,6 +367,9 @@ export function UserAuthForm({
                       {...field}
                     />
                   </FormControl>
+                  <FormDescription className='text-xs'>
+                    {t('Use your username, or a bound email address.')}
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -398,8 +402,8 @@ export function UserAuthForm({
             {/* Submit Button */}
             <Button
               type='submit'
-              className='mt-2 w-full justify-center gap-2'
-              disabled={isLoading}
+              className='benefit-liquid-primary mt-2 h-12 w-full justify-center gap-2 rounded-[8px]'
+              disabled={isLoading || (requiresLegalConsent && !agreedToLegal)}
             >
               {isLoading ? <Loader2 className='animate-spin' /> : <LogIn />}
               {t('Sign in')}

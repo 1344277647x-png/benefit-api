@@ -90,8 +90,15 @@ func streamResponseTencent2OpenAI(TencentResponse *TencentChatResponse) *dto.Cha
 	return &response
 }
 
-func tencentStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+func tencentStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (resultUsage *dto.Usage, resultErr *types.NewAPIError) {
 	var responseText strings.Builder
+	usage := &dto.Usage{}
+	defer func() {
+		if resultErr != nil {
+			service.RetainPartialStreamUsage(c, info, usage, responseText.String())
+		}
+	}()
+	completed := false
 	scanner := helper.NewStreamScanner(resp.Body)
 	scanner.Split(bufio.ScanLines)
 
@@ -103,33 +110,62 @@ func tencentStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *htt
 			continue
 		}
 		data = strings.TrimPrefix(data, "data:")
+		data = strings.TrimSpace(data)
+		if data == "[DONE]" {
+			completed = true
+			break
+		}
 
 		var tencentResponse TencentChatResponse
 		err := common.Unmarshal([]byte(data), &tencentResponse)
 		if err != nil {
-			common.SysLog(common.LogText("error unmarshalling stream response: %s", err.Error()))
-			continue
+			service.CloseResponseBodyGracefully(resp)
+			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+		}
+		if tencentResponse.Error.Code != 0 || tencentResponse.Error.Message != "" {
+			service.CloseResponseBodyGracefully(resp)
+			return nil, types.WithOpenAIError(types.OpenAIError{
+				Message: tencentResponse.Error.Message,
+				Type:    "upstream_error",
+				Code:    tencentResponse.Error.Code,
+			}, http.StatusBadGateway)
 		}
 
 		response := streamResponseTencent2OpenAI(&tencentResponse)
+		if tencentResponse.Usage.TotalTokens > 0 {
+			usage = &dto.Usage{PromptTokens: tencentResponse.Usage.PromptTokens,
+				CompletionTokens: tencentResponse.Usage.CompletionTokens, TotalTokens: tencentResponse.Usage.TotalTokens}
+		}
 		if len(response.Choices) != 0 {
 			responseText.WriteString(response.Choices[0].Delta.GetContentString())
+			if response.Choices[0].FinishReason != nil && *response.Choices[0].FinishReason != "" {
+				completed = true
+			}
 		}
 
 		err = helper.ObjectData(c, response)
 		if err != nil {
-			common.SysLog(err.Error())
+			service.CloseResponseBodyGracefully(resp)
+			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusBadGateway)
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		common.SysLog(common.LogText("error reading stream: %s", err.Error()))
+		service.CloseResponseBodyGracefully(resp)
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusBadGateway)
+	}
+	if !completed {
+		service.CloseResponseBodyGracefully(resp)
+		return nil, types.NewOpenAIError(errors.New("tencent stream ended without a completed event"), types.ErrorCodeBadResponse, http.StatusBadGateway)
 	}
 
 	helper.Done(c)
 
 	service.CloseResponseBodyGracefully(resp)
 
+	if service.ValidUsage(usage) {
+		return usage, nil
+	}
 	return service.ResponseText2Usage(c, responseText.String(), info.UpstreamModelName, info.GetEstimatePromptTokens()), nil
 }
 

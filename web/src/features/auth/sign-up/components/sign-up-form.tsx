@@ -395,7 +395,7 @@ export function SignUpForm({
         {/* Submit Button */}
         <Button
           type='submit'
-          className='mt-2 w-full justify-center gap-2'
+          className='benefit-liquid-primary mt-2 h-12 w-full justify-center gap-2 rounded-[8px]'
           disabled={
             isLoading ||
             (requiresLegalConsent && !agreedToLegal) ||

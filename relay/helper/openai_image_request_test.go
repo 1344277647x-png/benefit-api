@@ -243,3 +243,38 @@ func TestGetAndValidOpenAIImageRequestNBounds(t *testing.T) {
 		require.Contains(t, err.Error(), boundErr)
 	})
 }
+
+func TestGetAndValidOpenAIImageRequestPreservesAspectRatio(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(
+		http.MethodPost,
+		"/v1/images/generations",
+		bytes.NewBufferString(`{"model":"gpt-image-2","prompt":"a panorama","aspect_ratio":"21:9"}`),
+	)
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	request, err := GetAndValidOpenAIImageRequest(c, relayconstant.RelayModeImagesGenerations)
+	require.NoError(t, err)
+	require.Equal(t, "21:9", request.AspectRatio)
+
+	encoded, err := common.Marshal(request)
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), `"aspect_ratio":"21:9"`)
+}
+
+func TestGetAndValidOpenAIImageRequestGPTImageVersionsUseDefaults(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, model := range []string{"gpt-image-2", "4K gpt-image-2"} {
+		t.Run(model, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			body := fmt.Sprintf(`{"model":%q,"prompt":"a cat"}`, model)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewBufferString(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			request, err := GetAndValidOpenAIImageRequest(c, relayconstant.RelayModeImagesGenerations)
+			require.NoError(t, err)
+			require.Equal(t, "auto", request.Quality)
+		})
+	}
+}

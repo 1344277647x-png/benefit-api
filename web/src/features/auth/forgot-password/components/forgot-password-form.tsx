@@ -120,7 +120,7 @@ export function ForgotPasswordForm({
 
         <Button
           type='submit'
-          className='mt-2'
+          className='benefit-liquid-primary mt-2 h-12 rounded-[8px]'
           disabled={isLoading || isActive || !turnstileReady}
         >
           {isActive

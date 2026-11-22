@@ -38,6 +38,7 @@ export type AmountResponse = ApiResponse<string>
 export type PaymentResponse = ApiResponse<Record<string, unknown>> & {
   url?: string
 }
+export type AlipayPaymentResponse = ApiResponse<{ pay_url: string }>
 export type StripePaymentResponse = ApiResponse<{ pay_link: string }>
 export type AffiliateCodeResponse = ApiResponse<string>
 export type AffiliateTransferResponse = ApiResponse
@@ -122,10 +123,15 @@ export interface WaffoPayMethod {
 export interface TopupInfo {
   /** Whether online topup is enabled */
   enable_online_topup: boolean
+  /** Whether native Alipay website payment is enabled */
+  enable_alipay_topup?: boolean
+  enable_qixiang_topup?: boolean
   /** Whether Stripe topup is enabled */
   enable_stripe_topup: boolean
   /** Available payment methods */
   pay_methods: PaymentMethod[]
+  /** Configured Epay methods only; excludes native Alipay and other gateways */
+  epay_pay_methods?: PaymentMethod[]
   /** Minimum topup amount for online topup */
   min_topup: number
   /** Minimum topup amount for Stripe */

@@ -28,6 +28,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { ChannelHealthPanel } from '@/features/channel-health'
 import { ROLE } from '@/lib/roles'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
@@ -98,7 +99,10 @@ export function Channels() {
           <ChannelsPrimaryButtons />
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
-          <ChannelsTable />
+          <div className='flex h-full min-h-0 flex-col'>
+            <ChannelHealthPanel />
+            <ChannelsTable />
+          </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>
 

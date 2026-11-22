@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import { requestWaffoPayment, isApiSuccess } from '../api'
+import { rememberPendingPayment } from '../constants'
 import { getPaymentErrorTranslation } from '../lib'
 
 function getPaymentUrl(data: unknown): string | null {
@@ -68,6 +69,7 @@ export function useWaffoPayment() {
           const paymentUrl = getPaymentUrl(response.data)
 
           if (paymentUrl) {
+            rememberPendingPayment()
             window.open(paymentUrl, '_blank')
             toast.success(i18next.t('Redirecting to payment page...'))
             return true

@@ -16,31 +16,41 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
+import { Share2 } from 'lucide-react'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { SectionPageLayout } from '@/components/layout'
+import { Button } from '@/components/ui/button'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { getSelf } from '@/lib/api'
 
-import { AffiliateRewardsCard } from './components/affiliate-rewards-card'
 import { BillingHistoryDialog } from './components/dialogs/billing-history-dialog'
 import { CreemConfirmDialog } from './components/dialogs/creem-confirm-dialog'
 import { PaymentConfirmDialog } from './components/dialogs/payment-confirm-dialog'
-import { TransferDialog } from './components/dialogs/transfer-dialog'
+import { PaymentStatusBanner } from './components/payment-status-banner'
 import { RechargeFormCard } from './components/recharge-form-card'
 import { SubscriptionPlansCard } from './components/subscription-plans-card'
+import { WalletFlowSteps } from './components/wallet-flow-steps'
 import { WalletStatsCard } from './components/wallet-stats-card'
-import { DEFAULT_DISCOUNT_RATE, PAYMENT_TYPES } from './constants'
+import {
+  consumePendingPayment,
+  DEFAULT_DISCOUNT_RATE,
+  PAYMENT_TYPES,
+  type PaymentReturnStatus,
+} from './constants'
 import {
   useTopupInfo,
   usePayment,
-  useAffiliate,
   useRedemption,
   useCreemPayment,
   useWaffoPayment,
   useWaffoPancakePayment,
+  usePaymentConfirmation,
 } from './hooks'
 import {
   getDefaultPaymentType,
@@ -56,10 +66,14 @@ import type {
 } from './types'
 
 interface WalletProps {
+  initialTradeNo?: string
   initialShowHistory?: boolean
+  initialPaymentStatus?: PaymentReturnStatus
 }
 
 export function Wallet(props: WalletProps) {
+  const queryClient = useQueryClient()
+  const [historyRevision, setHistoryRevision] = useState(0)
   const { t } = useTranslation()
   const [user, setUser] = useState<UserWalletData | null>(null)
   const [userLoading, setUserLoading] = useState(true)
@@ -72,13 +86,14 @@ export function Wallet(props: WalletProps) {
   >(null)
   const [paymentLoading, setPaymentLoading] = useState<string | null>(null)
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
-  const [transferDialogOpen, setTransferDialogOpen] = useState(false)
   const [billingDialogOpen, setBillingDialogOpen] = useState(false)
   const [redemptionCode, setRedemptionCode] = useState('')
   const [creemDialogOpen, setCreemDialogOpen] = useState(false)
   const [selectedCreemProduct, setSelectedCreemProduct] =
     useState<CreemProduct | null>(null)
   const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(true)
+  const [paymentStatus, setPaymentStatus] =
+    useState<PaymentReturnStatus | null>(props.initialPaymentStatus ?? null)
 
   const { status } = useStatus()
   const { currency } = useSystemConfig()
@@ -97,12 +112,6 @@ export function Wallet(props: WalletProps) {
     calculatePaymentAmount,
     processPayment,
   } = usePayment()
-  const {
-    affiliateLink,
-    loading: affiliateLoading,
-    transferQuota,
-    transferring,
-  } = useAffiliate()
   const { redeeming, redeemCode } = useRedemption()
   const { processing: creemProcessing, processCreemPayment } = useCreemPayment()
   const { processing: waffoProcessing, processWaffoPayment } = useWaffoPayment()
@@ -130,11 +139,48 @@ export function Wallet(props: WalletProps) {
   }, [fetchUser])
 
   useEffect(() => {
+    const returnedFromHostedPayment = consumePendingPayment()
+    if (props.initialPaymentStatus) {
+      setPaymentStatus(props.initialPaymentStatus)
+    } else if (returnedFromHostedPayment) {
+      setPaymentStatus('pending')
+    }
+
     if (props.initialShowHistory) {
       setBillingDialogOpen(true)
+    }
+    if (
+      !props.initialTradeNo &&
+      (props.initialShowHistory || props.initialPaymentStatus)
+    ) {
+      // Keep the result banner visible first; the user can open the full
+      // history from the banner without losing the outcome message.
       window.history.replaceState({}, '', window.location.pathname)
     }
-  }, [props.initialShowHistory])
+  }, [
+    props.initialPaymentStatus,
+    props.initialShowHistory,
+    props.initialTradeNo,
+  ])
+
+  useEffect(() => {
+    if (props.initialPaymentStatus === 'success') {
+      fetchUser()
+    }
+  }, [fetchUser, props.initialPaymentStatus])
+
+  const handlePaymentConfirmed = useCallback(() => {
+    setPaymentStatus('success')
+    void fetchUser()
+    setHistoryRevision((revision) => revision + 1)
+    void queryClient.invalidateQueries({ queryKey: ['lottery', 'status'] })
+    toast.success(t('Payment completed'))
+  }, [fetchUser, queryClient, t])
+
+  const paymentConfirmation = usePaymentConfirmation({
+    tradeNo: paymentStatus === 'pending' ? props.initialTradeNo : undefined,
+    onConfirmed: handlePaymentConfirmed,
+  })
 
   // Initialize topup amount when topup info is loaded
   const topupAmountInitializedRef = useRef(false)
@@ -222,15 +268,6 @@ export function Wallet(props: WalletProps) {
     }
   }
 
-  // Handle transfer
-  const handleTransfer = async (amount: number) => {
-    const success = await transferQuota(amount)
-    if (success) {
-      await fetchUser()
-    }
-    return success
-  }
-
   // Handle Creem product selection
   const handleCreemProductSelect = (product: CreemProduct) => {
     setSelectedCreemProduct(product)
@@ -282,13 +319,28 @@ export function Wallet(props: WalletProps) {
     []
   )
 
+  let walletFlowStep = 0
+  if (topupAmount > 0) walletFlowStep = 1
+  if (selectedPaymentMethod) walletFlowStep = 2
+  if (confirmDialogOpen || paymentStatus) walletFlowStep = 3
+
   return (
     <>
       <SectionPageLayout>
         <SectionPageLayout.Title>{t('Wallet')}</SectionPageLayout.Title>
         <SectionPageLayout.Content>
           <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
+            {paymentStatus && (
+              <PaymentStatusBanner
+                status={paymentStatus}
+                onDismiss={() => setPaymentStatus(null)}
+                onOpenHistory={() => setBillingDialogOpen(true)}
+                confirmationState={paymentConfirmation.state}
+                onRetryConfirmation={paymentConfirmation.retry}
+              />
+            )}
             <WalletStatsCard user={user} loading={userLoading} />
+            <WalletFlowSteps currentStep={walletFlowStep} />
 
             <div
               className={
@@ -339,15 +391,14 @@ export function Wallet(props: WalletProps) {
               />
             </div>
 
-            <AffiliateRewardsCard
-              user={user}
-              affiliateLink={affiliateLink}
-              onTransfer={() => setTransferDialogOpen(true)}
-              complianceConfirmed={
-                topupInfo?.payment_compliance_confirmed !== false
-              }
-              loading={affiliateLoading}
-            />
+            <Button
+              variant='outline'
+              className='mx-auto w-full max-w-sm'
+              render={<Link to='/referrals' />}
+            >
+              <Share2 aria-hidden='true' />
+              {t('Open Referral Center')}
+            </Button>
           </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>
@@ -365,15 +416,8 @@ export function Wallet(props: WalletProps) {
         usdExchangeRate={effectiveUsdExchangeRate}
       />
 
-      <TransferDialog
-        open={transferDialogOpen}
-        onOpenChange={setTransferDialogOpen}
-        onConfirm={handleTransfer}
-        availableQuota={user?.aff_quota ?? 0}
-        transferring={transferring}
-      />
-
       <BillingHistoryDialog
+        refreshVersion={historyRevision}
         open={billingDialogOpen}
         onOpenChange={setBillingDialogOpen}
       />

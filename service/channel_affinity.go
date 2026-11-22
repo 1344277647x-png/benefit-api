@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/cachex"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -727,6 +728,14 @@ func AppendChannelAffinityAdminInfo(c *gin.Context, other *model.LogOther) {
 }
 
 func RecordChannelAffinity(c *gin.Context, channelID int) {
+	if c != nil {
+		if success, checked := c.Get(relaycommon.RelaySuccessContextKey); checked && success != true {
+			return
+		}
+		if c.GetBool("relay_stream_partial_failed") {
+			return
+		}
+	}
 	if channelID <= 0 {
 		return
 	}

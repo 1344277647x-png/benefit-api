@@ -80,6 +80,7 @@ export const ERROR_MESSAGES = {
   STREAM_START_ERROR: 'Error establishing connection',
   CONNECTION_CLOSED: 'Connection closed',
   INTERRUPTED: 'Generation was interrupted',
+  UPSTREAM_QUOTA_EXHAUSTED: '当前模型暂时不可用，请稍后重试或切换其他模型。',
 } as const
 
 // Message action button styles

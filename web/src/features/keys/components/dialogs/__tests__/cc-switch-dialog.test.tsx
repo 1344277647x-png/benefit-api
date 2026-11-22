@@ -33,6 +33,7 @@ beforeEach(() => {
 
 afterEach(() => {
   queryClient.clear()
+  vi.restoreAllMocks()
 })
 
 function renderDialog(models = ['gpt-5.4', 'claude-sonnet-4-6']) {
@@ -123,5 +124,22 @@ describe('CC Switch model selection', () => {
 
     expect(input).toHaveValue('Development')
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+  })
+
+  it('passes a typed model name to CC Switch even if it is absent from the list', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    renderDialog([])
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('radio', { name: 'Codex' }))
+    const input = screen.getByRole('combobox', { name: 'Primary Model' })
+    await user.type(input, 'custom-model')
+    await user.keyboard('{Escape}')
+    expect(input).toHaveValue('custom-model')
+    await user.click(screen.getByRole('button', { name: 'Open CC Switch' }))
+
+    expect(open).toHaveBeenCalledTimes(1)
+    expect(
+      new URL(String(open.mock.calls[0][0])).searchParams.get('model')
+    ).toBe('custom-model')
   })
 })

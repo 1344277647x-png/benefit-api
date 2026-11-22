@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
@@ -343,6 +344,12 @@ func GetAllUsers(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if c.Query("include_usage") != "false" {
+		if err := attachUserUsageSummaries(c, users); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
 
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(users)
@@ -353,6 +360,18 @@ func GetAllUsers(c *gin.Context) {
 
 func SearchUsers(c *gin.Context) {
 	keyword := c.Query("keyword")
+	field := c.Query("exact_field")
+	switch field {
+	case "":
+	case "id", "username", "email":
+		if strings.TrimSpace(keyword) == "" {
+			common.ApiError(c, errors.New("keyword is required for exact search"))
+			return
+		}
+	default:
+		common.ApiError(c, errors.New("invalid exact_field"))
+		return
+	}
 	group := c.Query("group")
 	var role *int
 	if roleStr := c.Query("role"); roleStr != "" {
@@ -368,16 +387,130 @@ func SearchUsers(c *gin.Context) {
 	}
 	pageInfo := common.GetPageQuery(c)
 	sortOptions := model.NewUserSortOptions(c.Query("sort_by"), c.Query("sort_order"))
-	users, total, err := model.SearchUsers(keyword, group, role, status, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), sortOptions)
+	users, total, err := model.SearchUsersByField(c.Request.Context(), keyword, field, group, role, status, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), sortOptions)
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	if c.Query("include_usage") != "false" {
+		if err := attachUserUsageSummaries(c, users); err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	}
 
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(users)
 	common.ApiSuccess(c, pageInfo)
 	return
+}
+
+func attachUserUsageSummaries(c *gin.Context, users []*model.User) error {
+	summaries, err := getUserUsageSummaries(c, users)
+	if err != nil {
+		return err
+	}
+	for _, user := range users {
+		if user != nil {
+			summary := summaries[user.Id]
+			user.UsageSummary = &summary
+		}
+	}
+	return nil
+}
+
+func GetUserListUsage(c *gin.Context) {
+	rawIDs := c.Query("ids")
+	const maxUsers = 100
+	if rawIDs == "" || len(rawIDs) > maxUsers*20 {
+		common.ApiError(c, errors.New("invalid user ids"))
+		return
+	}
+	parts := strings.Split(rawIDs, ",")
+	if len(parts) > maxUsers {
+		common.ApiError(c, errors.New("too many user ids"))
+		return
+	}
+	ids := make([]int, 0, len(parts))
+	for _, part := range parts {
+		id, err := strconv.Atoi(part)
+		if err != nil || id <= 0 {
+			common.ApiError(c, errors.New("invalid user id"))
+			return
+		}
+		ids = append(ids, id)
+	}
+	users, err := model.GetUserUsageAccounts(c.Request.Context(), ids)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	summaries, err := getUserUsageSummaries(c, users)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, summaries)
+}
+
+func getUserUsageSummaries(c *gin.Context, users []*model.User) (map[int]model.UserUsageSummary, error) {
+	userIDs := make([]int, 0, len(users))
+	for _, user := range users {
+		if user != nil {
+			userIDs = append(userIDs, user.Id)
+		}
+	}
+	startTimestamp, endTimestamp, lifetime, err := userUsageRange(c)
+	if err != nil {
+		return nil, err
+	}
+	summaries, err := model.GetUsersUsageSummaries(c.Request.Context(), userIDs, startTimestamp, endTimestamp)
+	if err != nil {
+		return nil, err
+	}
+	var pending map[int]model.UserUsageSummary
+	if lifetime {
+		pending = model.GetPendingUsersUsage(userIDs)
+	}
+	for _, user := range users {
+		if user == nil {
+			continue
+		}
+		summary := summaries[user.Id]
+		if lifetime {
+			summary.RequestCount = int64(user.RequestCount) + pending[user.Id].RequestCount
+			summary.ConsumedQuota = int64(user.UsedQuota) + pending[user.Id].ConsumedQuota
+		}
+		summaries[user.Id] = summary
+	}
+	return summaries, nil
+}
+
+func userUsageRange(c *gin.Context) (int64, int64, bool, error) {
+	startValue := strings.TrimSpace(c.Query("usage_start"))
+	endValue := strings.TrimSpace(c.Query("usage_end"))
+	if startValue == "" && endValue == "" {
+		return 0, 0, true, nil
+	}
+	startTimestamp := int64(0)
+	endTimestamp := time.Now().Unix()
+	var err error
+	if startValue != "" {
+		startTimestamp, err = strconv.ParseInt(startValue, 10, 64)
+		if err != nil || startTimestamp < 0 {
+			return 0, 0, false, errors.New("usage_start must be a Unix timestamp")
+		}
+	}
+	if endValue != "" {
+		endTimestamp, err = strconv.ParseInt(endValue, 10, 64)
+		if err != nil || endTimestamp <= 0 {
+			return 0, 0, false, errors.New("usage_end must be a Unix timestamp")
+		}
+	}
+	if startTimestamp > endTimestamp {
+		return 0, 0, false, errors.New("usage_start must not be later than usage_end")
+	}
+	return startTimestamp, endTimestamp, false, nil
 }
 
 func canManageTargetRole(myRole int, targetRole int) bool {
@@ -401,6 +534,8 @@ func GetUser(c *gin.Context) {
 		return
 	}
 	user.AdminPermissions = authz.Capabilities(user.Id, user.Role)
+	// Notification credentials are only exposed through the owner's settings API.
+	user.Setting = ""
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -439,6 +574,7 @@ func TransferAffQuota(c *gin.Context) {
 		common.ApiErrorT(c, "Transfer failed {{error}}", map[string]any{"error": err.Error()})
 		return
 	}
+	service.NotifyBusinessEventDelivery()
 	common.ApiSuccessT(c, "Transfer successful", nil)
 }
 

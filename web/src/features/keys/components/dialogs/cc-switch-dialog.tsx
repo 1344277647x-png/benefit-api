@@ -17,18 +17,31 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
-import { Combobox } from '@/components/ui/combobox'
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from '@/components/ui/combobox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { getUserModels } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
+
+import {
+  getApiBaseUrl,
+  getServerAddress,
+  toClientApiKey,
+} from '../../lib/server-address'
 
 const APP_CONFIGS = {
   claude: {
@@ -55,19 +68,6 @@ const APP_CONFIGS = {
 
 type AppType = keyof typeof APP_CONFIGS
 
-function getServerAddress(): string {
-  try {
-    const raw = localStorage.getItem('status')
-    if (raw) {
-      const status = JSON.parse(raw)
-      if (status.server_address) return status.server_address
-    }
-  } catch {
-    /* empty */
-  }
-  return window.location.origin
-}
-
 function buildCCSwitchURL(
   app: string,
   name: string,
@@ -75,7 +75,7 @@ function buildCCSwitchURL(
   apiKey: string
 ): string {
   const serverAddress = getServerAddress()
-  const endpoint = app === 'codex' ? `${serverAddress}/v1` : serverAddress
+  const endpoint = app === 'codex' ? getApiBaseUrl() : serverAddress
   const params = new URLSearchParams()
   params.set('resource', 'provider')
   params.set('app', app)
@@ -109,10 +109,7 @@ export function CCSwitchDialog(props: Props) {
     staleTime: 5 * 60 * 1000,
   })
 
-  const modelOptions = useMemo(() => {
-    const items = modelsData?.data ?? []
-    return items.map((m) => ({ value: m, label: m }))
-  }, [modelsData?.data])
+  const modelOptions = modelsData?.data ?? []
 
   useEffect(() => {
     if (props.open) {
@@ -139,9 +136,7 @@ export function CCSwitchDialog(props: Props) {
       toast.warning(t('Please select a primary model'))
       return
     }
-    const key = props.tokenKey.startsWith('sk-')
-      ? props.tokenKey
-      : `sk-${props.tokenKey}`
+    const key = toClientApiKey(props.tokenKey)
     const url = buildCCSwitchURL(app, name, models, key)
     window.open(url, '_blank')
     props.onOpenChange(false)
@@ -198,24 +193,50 @@ export function CCSwitchDialog(props: Props) {
           />
         </div>
 
-        {currentConfig.modelFields.map((field) => (
-          <div key={field.key} className='space-y-2'>
-            <Label htmlFor={`cc-switch-${field.key}`} required={field.required}>
-              {t(field.labelKey)}
-            </Label>
-            <Combobox
-              id={`cc-switch-${field.key}`}
-              aria-label={t(field.labelKey)}
-              options={modelOptions}
-              value={models[field.key] || ''}
-              onValueChange={(v) =>
-                setModels((prev) => ({ ...prev, [field.key]: v ?? '' }))
-              }
-              placeholder={t('Select or enter model name')}
-              emptyText={t('No models found')}
-            />
-          </div>
-        ))}
+        {currentConfig.modelFields.map((field) => {
+          const id = `cc-switch-${field.key}`
+          const label = t(field.labelKey)
+          const value = models[field.key] ?? ''
+          const updateModel = (model: string) =>
+            setModels((previous) => ({ ...previous, [field.key]: model }))
+
+          return (
+            <div key={field.key} className='space-y-2'>
+              <Label htmlFor={id} required={field.required}>
+                {label}
+              </Label>
+              <Combobox
+                items={modelOptions}
+                value={modelOptions.includes(value) ? value : null}
+                inputValue={value}
+                onInputValueChange={(model, details) => {
+                  if (details.reason === 'input-change') updateModel(model)
+                }}
+                onValueChange={(model) => {
+                  if (model !== null) updateModel(model)
+                }}
+              >
+                <ComboboxInput
+                  id={id}
+                  aria-label={label}
+                  aria-required={field.required}
+                  triggerAriaLabel={label}
+                  placeholder={t('Select or enter model name')}
+                />
+                <ComboboxContent>
+                  <ComboboxEmpty>{t('No models found')}</ComboboxEmpty>
+                  <ComboboxList>
+                    {(model: string) => (
+                      <ComboboxItem key={model} value={model}>
+                        <span className='min-w-0 break-all'>{model}</span>
+                      </ComboboxItem>
+                    )}
+                  </ComboboxList>
+                </ComboboxContent>
+              </Combobox>
+            </div>
+          )
+        })}
       </div>
     </Dialog>
   )

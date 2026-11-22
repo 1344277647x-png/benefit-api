@@ -86,14 +86,6 @@ func TestProcessChannelErrorUsesSnapshotWithoutLeakingChannelMetadata(t *testing
 
 	logs, total, err := model.GetUserLogs(7, model.LogFilter{Type: model.LogTypeError}, 0, 10)
 	require.NoError(t, err)
-	require.Equal(t, int64(1), total)
-	require.Len(t, logs, 1)
-	assert.Equal(t, channelSnapshot.ChannelId, logs[0].ChannelId)
-	assert.Empty(t, logs[0].ChannelName)
-	userOther, err := common.StrToMap(logs[0].Other)
-	require.NoError(t, err)
-	assert.NotContains(t, userOther, "admin_info")
-	for _, key := range []string{"channel_id", "channel_name", "channel_type"} {
-		assert.NotContains(t, userOther, key)
-	}
+	assert.Zero(t, total)
+	assert.Empty(t, logs)
 }

@@ -26,6 +26,7 @@ const { I18nextProvider, initReactI18next } = await import('react-i18next')
 const { QueryClient, QueryClientProvider } =
   await import('@tanstack/react-query')
 const { api } = await import('@/lib/api')
+const { useAuthStore } = await import('@/stores/auth-store')
 const { ApiKeysProvider } = await import('../api-keys-provider')
 const { ApiKeysMutateDrawer } = await import('../api-keys-mutate-drawer')
 
@@ -87,6 +88,12 @@ function installApiFixtures(createdPayloads: Array<Record<string, unknown>>) {
 }
 
 async function renderCreateDrawer(): Promise<void> {
+  useAuthStore.getState().auth.setUser({
+    id: 42,
+    username: 'api-key-test-user',
+    role: 1,
+    group: 'default',
+  })
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -199,6 +206,7 @@ afterEach(() => {
   apiClient.get = originalGet
   apiClient.post = originalPost
   localStorage.clear()
+  useAuthStore.getState().auth.reset('idle')
   if (renderedDrawer) {
     renderedDrawer.queryClient.clear()
     renderedDrawer = null
@@ -306,6 +314,12 @@ describe('API key expiry across editing sessions', () => {
         allow_user_quota_query: true,
       }
       const second = { ...first, id: 2, name: 'non-expiring', expired_time: -1 }
+      useAuthStore.getState().auth.setUser({
+        id: 42,
+        username: 'api-key-test-user',
+        role: 1,
+        group: 'default',
+      })
       let resolveDetail!: (value: { data: unknown }) => void
       const detail = new Promise<{ data: unknown }>((resolve) => {
         resolveDetail = resolve

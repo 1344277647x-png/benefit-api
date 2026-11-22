@@ -91,6 +91,8 @@ func GetStatus(c *gin.Context) {
 		"password_login_enabled":        common.PasswordLoginEnabled,
 		"password_register_enabled":     common.PasswordRegisterEnabled,
 		"default_use_auto_group":        setting.DefaultUseAutoGroup,
+		"team_subscriptions_enabled":    operation_setting.TeamReleaseReady && operation_setting.IsTeamEnabled() && model.TeamTaskLogDeliverySupported(),
+		"lottery_enabled":               operation_setting.GetLotterySettingSnapshot().Enabled,
 
 		"password_login_encryption_enabled": common.PasswordLoginEncryptionEnabled,
 
@@ -214,6 +216,16 @@ func GetHomePageContent(c *gin.Context) {
 	homePageContent := common.OptionMap["HomePageContent"]
 	common.OptionMapRWMutex.RUnlock()
 	serveRevalidatedJSON(c, homePageContent)
+}
+
+func GetDocsContent(c *gin.Context) {
+	common.OptionMapRWMutex.RLock()
+	defer common.OptionMapRWMutex.RUnlock()
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    common.OptionMap["DocsContent"],
+	})
 }
 
 func SendEmailVerification(c *gin.Context) {

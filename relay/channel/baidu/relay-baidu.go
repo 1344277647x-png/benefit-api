@@ -114,13 +114,39 @@ func embeddingResponseBaidu2OpenAI(response *BaiduEmbeddingResponse) *dto.OpenAI
 	return &openAIEmbeddingResponse
 }
 
+func newBaiduUpstreamError(response BaiduChatResponse, statusCode int) *types.NewAPIError {
+	message := response.ErrorMsg
+	if message == "" {
+		message = fmt.Sprintf("baidu upstream error code %d", response.ErrorCode)
+	}
+	return types.WithOpenAIError(types.OpenAIError{
+		Message: message,
+		Type:    "upstream_error",
+		Code:    response.ErrorCode,
+	}, statusCode)
+}
+
 func baiduStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*types.NewAPIError, *dto.Usage) {
 	usage := &dto.Usage{}
+	var streamErr *types.NewAPIError
+	var text strings.Builder
+	completed := false
+	defer func() {
+		if streamErr != nil {
+			service.RetainPartialStreamUsage(c, info, usage, text.String())
+		}
+	}()
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		var baiduResponse BaiduChatStreamResponse
 		if err := common.Unmarshal([]byte(data), &baiduResponse); err != nil {
 			common.SysLog(common.LogText("error unmarshalling stream response: %s", err.Error()))
-			sr.Error(err)
+			streamErr = types.NewError(err, types.ErrorCodeBadResponseBody)
+			sr.Stop(streamErr)
+			return
+		}
+		if baiduResponse.ErrorMsg != "" || baiduResponse.ErrorCode != 0 {
+			streamErr = newBaiduUpstreamError(baiduResponse.BaiduChatResponse, resp.StatusCode)
+			sr.Stop(streamErr)
 			return
 		}
 		if baiduResponse.Usage.TotalTokens != 0 {
@@ -129,12 +155,22 @@ func baiduStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 			usage.CompletionTokens = baiduResponse.Usage.TotalTokens - baiduResponse.Usage.PromptTokens
 		}
 		response := streamResponseBaidu2OpenAI(&baiduResponse)
+		text.WriteString(baiduResponse.Result)
+		completed = completed || baiduResponse.IsEnd
 		if err := helper.ObjectData(c, response); err != nil {
 			common.SysLog(common.LogText("error sending stream response: %s", err.Error()))
 			sr.Error(err)
+			streamErr = types.NewError(err, types.ErrorCodeBadResponseBody)
+			sr.Stop(streamErr)
 		}
 	})
 	service.CloseResponseBodyGracefully(resp)
+	if streamErr == nil && (!completed || c.Request.Context().Err() != nil || info.StreamStatus.HasErrors() || !info.StreamStatus.IsNormalEnd()) {
+		streamErr = types.NewError(errors.New("baidu stream did not complete"), types.ErrorCodeBadResponseBody)
+	}
+	if streamErr != nil {
+		return streamErr, usage
+	}
 	return nil, usage
 }
 
@@ -150,7 +186,7 @@ func baiduHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respon
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 	}
 	if baiduResponse.ErrorMsg != "" {
-		return types.NewError(fmt.Errorf("%s", baiduResponse.ErrorMsg), types.ErrorCodeBadResponseBody), nil
+		return newBaiduUpstreamError(baiduResponse, resp.StatusCode), nil
 	}
 	fullTextResponse := responseBaidu2OpenAI(&baiduResponse)
 	jsonResponse, err := json.Marshal(fullTextResponse)

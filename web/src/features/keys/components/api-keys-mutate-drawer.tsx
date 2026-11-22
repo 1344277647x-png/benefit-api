@@ -72,6 +72,7 @@ import {
   translateServerText,
 } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
 
 import {
   createApiKey,
@@ -107,6 +108,7 @@ export function ApiKeysMutateDrawer({
   currentRow,
 }: ApiKeyMutateDrawerProps) {
   const { t } = useTranslation()
+  const user = useAuthStore((state) => state.auth.user)
   const isUpdate = !!currentRow
   const currentRowId = currentRow?.id
   const { triggerRefresh } = useApiKeys()
@@ -120,9 +122,9 @@ export function ApiKeysMutateDrawer({
 
   // Fetch models
   const { data: modelsData } = useQuery({
-    queryKey: ['user-models'],
-    queryFn: async () => requireServerSuccess(await getUserModels()),
-    enabled: open,
+    queryKey: ['user-models', user?.id ?? null, user?.group ?? ''],
+    queryFn: getUserModels,
+    enabled: open && Boolean(user?.id),
     staleTime: 0,
   })
 
@@ -132,9 +134,9 @@ export function ApiKeysMutateDrawer({
     isFetched: groupsFetched,
     isFetching: groupsFetching,
   } = useQuery({
-    queryKey: ['user-groups'],
-    queryFn: async () => requireServerSuccess(await getUserGroups()),
-    enabled: open,
+    queryKey: ['user-groups', user?.id ?? null, user?.group ?? ''],
+    queryFn: getUserGroups,
+    enabled: open && Boolean(user?.id),
     staleTime: 0,
   })
 

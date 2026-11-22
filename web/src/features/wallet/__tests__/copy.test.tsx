@@ -114,7 +114,7 @@ it.each([
     expect(screen.getByRole('button', { name: /^20 / })).toHaveTextContent(
       `支付 ${full}`
     )
-    expect(screen.getByPlaceholderText('最低 1')).toBeVisible()
+    expect(screen.getByPlaceholderText('最低充值 1')).toBeVisible()
     await act(() => i18n.changeLanguage('en'))
     expect(screen.getByRole('button', { name: /^100 / })).toHaveTextContent(
       `20% OFFPay ${paid} • Save ${saved}`

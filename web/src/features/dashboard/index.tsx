@@ -37,6 +37,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { ModelsChartPreferences } from './components/models/models-chart-preferences'
 import { ModelsFilter } from './components/models/models-filter-dialog'
+import { OperationsReport } from './components/operations/operations-report'
 import { OverviewDashboard } from './components/overview/overview-dashboard'
 import { DEFAULT_TIME_GRANULARITY } from './constants'
 import {
@@ -113,6 +114,14 @@ const LazyFlowCharts = lazy(() =>
   import('./components/flow/flow-charts').then((m) => ({
     default: m.FlowCharts,
   }))
+)
+
+const LazyBillingReconciliationPanel = lazy(() =>
+  import('./components/reconciliation/billing-reconciliation-panel').then(
+    (m) => ({
+      default: m.BillingReconciliationPanel,
+    })
+  )
 )
 
 function LogStatCardsFallback() {
@@ -194,6 +203,12 @@ const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
   users: {
     titleKey: 'User Analytics',
   },
+  operations: {
+    titleKey: 'Operations report',
+  },
+  reconciliation: {
+    titleKey: 'Settlement reconciliation',
+  },
 }
 
 export function Dashboard() {
@@ -253,7 +268,11 @@ export function Dashboard() {
   const visibleSections = useMemo(
     () =>
       DASHBOARD_SECTION_IDS.filter(
-        (section) => section !== 'overview' && (section !== 'users' || isAdmin)
+        (section) =>
+          section !== 'overview' &&
+          (section !== 'users' || isAdmin) &&
+          (section !== 'operations' || isAdmin) &&
+          (section !== 'reconciliation' || isAdmin)
       ),
     [isAdmin]
   )
@@ -413,6 +432,18 @@ export function Dashboard() {
                   filters={modelFilters}
                   sensitiveVisible={flowSensitiveVisible}
                 />
+              </Suspense>
+            </FadeIn>
+          )}
+          {activeSection === 'operations' && isAdmin && (
+            <FadeIn>
+              <OperationsReport />
+            </FadeIn>
+          )}
+          {activeSection === 'reconciliation' && isAdmin && (
+            <FadeIn>
+              <Suspense fallback={<ModelChartsFallback />}>
+                <LazyBillingReconciliationPanel />
               </Suspense>
             </FadeIn>
           )}

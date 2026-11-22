@@ -38,7 +38,7 @@ import { UsersTable } from '../users-table'
 
 const clients: QueryClient[] = []
 const premiumSearchUrl =
-  '/api/user/search?keyword=&group=premium&p=1&page_size=20'
+  '/api/user/search?keyword=&include_usage=false&group=premium&p=1&page_size=20'
 
 beforeEach(() => {
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
@@ -56,6 +56,9 @@ async function renderUsers(initialEntry = '/users/') {
   const get = vi.spyOn(api, 'get').mockImplementation(async (url) => {
     if (url === '/api/group/') {
       return { data: { success: true, data: ['default', 'premium'] } }
+    }
+    if (url === '/api/user/usage-summary') {
+      return { data: { success: true, data: {} } }
     }
     return {
       data: {
@@ -124,25 +127,30 @@ function getGroupFilterTrigger() {
 it('searches only the selected user group and lists all users again after the filter is cleared', async () => {
   const user = userEvent.setup()
   const { get, router } = await renderUsers()
-  expect(get).toHaveBeenCalledWith('/api/user/', {
-    params: { p: 1, page_size: 20 },
-  })
+  const accountListRequest = {
+    params: expect.objectContaining({
+      p: 1,
+      page_size: 20,
+      include_usage: false,
+    }),
+  }
+  expect(get).toHaveBeenCalledWith('/api/user/', accountListRequest)
 
   await user.click(getGroupFilterTrigger())
   await user.click(await screen.findByRole('option', { name: /^premium/ }))
 
-  await waitFor(() => expect(get).toHaveBeenLastCalledWith(premiumSearchUrl))
+  await waitFor(() => expect(get).toHaveBeenCalledWith(premiumSearchUrl))
   expect(router.state.location.search).toMatchObject({ group: ['premium'] })
   expect(getGroupFilterTrigger()).toHaveTextContent('premium')
 
   await user.click(screen.getByRole('option', { name: 'Clear filters' }))
 
-  await waitFor(() =>
-    expect(get).toHaveBeenLastCalledWith('/api/user/', {
-      params: { p: 1, page_size: 20 },
-    })
-  )
-  expect(router.state.location.search).not.toHaveProperty('group')
+  await waitFor(() => {
+    expect(router.state.location.search).not.toHaveProperty('group')
+    expect(get.mock.calls.filter(([url]) => url === '/api/user/')).toHaveLength(
+      2
+    )
+  })
 })
 
 it('restores the user group filter from the page URL on load', async () => {

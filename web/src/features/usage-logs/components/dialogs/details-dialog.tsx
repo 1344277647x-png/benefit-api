@@ -17,24 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import {
   Copy,
   Check,
@@ -82,6 +64,7 @@ import {
   getResponseTimeColor,
   getReasoningEffortVariant,
   logTokenName,
+  getBusinessLogDetails,
   renderAuditContent,
   renderLogContent,
 } from '../../lib/format'
@@ -174,6 +157,7 @@ function BillingBreakdown(props: {
   log: UsageLog
   other: LogOtherData
   isAdmin: boolean
+  hideGroupRatio?: boolean
 }) {
   const { t } = useTranslation()
   const { log, other, isAdmin } = props
@@ -240,7 +224,11 @@ function BillingBreakdown(props: {
   const userGR = other.user_group_ratio
   const isUserGR = userGR != null && Number.isFinite(userGR) && userGR !== -1
   const effectiveGR = isUserGR ? userGR : other.group_ratio
-  if (effectiveGR != null && Number.isFinite(effectiveGR)) {
+  if (
+    !props.hideGroupRatio &&
+    effectiveGR != null &&
+    Number.isFinite(effectiveGR)
+  ) {
     rows.push({
       label: isUserGR ? t('User Exclusive Ratio') : t('Group Ratio'),
       value: `${formatRatio(effectiveGR)}x`,
@@ -527,6 +515,20 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
   const other = parseLogOther(props.log.other)
   const typeConfig = getLogTypeConfig(props.log.type)
+  const isChannelTest = other?.is_channel_test === true
+  const isLegacyChannelTest =
+    props.log.token_name === '模型测试' &&
+    props.log.content === '模型测试' &&
+    !isChannelTest
+  const channelTestGroup = isChannelTest
+    ? other?.channel_test_group || props.log.group || other?.group || ''
+    : ''
+  const channelTestMethod = (() => {
+    if (!isChannelTest) return ''
+    if (other?.channel_test_method === 'scheduled') return t('Scheduled test')
+    if (other?.channel_test_method === 'manual_batch') return t('Batch test')
+    return t('Manual test')
+  })()
 
   const isViolation = isViolationFeeLog(other)
   const isRefund = props.log.type === 6
@@ -685,6 +687,22 @@ export function DetailsDialog(props: DetailsDialogProps) {
             size='sm'
             copyable={false}
           />
+          {isChannelTest && (
+            <StatusBadge
+              label={t('Channel model test')}
+              variant='info'
+              size='sm'
+              copyable={false}
+            />
+          )}
+          {isLegacyChannelTest && (
+            <StatusBadge
+              label={t('Historical test, group not recorded')}
+              variant='warning'
+              size='sm'
+              copyable={false}
+            />
+          )}
         </>
       }
       description={t('View the complete details for this log entry')}
@@ -700,6 +718,11 @@ export function DetailsDialog(props: DetailsDialogProps) {
       bodyClassName='pr-2 sm:pr-4'
     >
       <div className='w-full max-w-full min-w-0 space-y-2.5 overflow-x-hidden py-1 sm:space-y-3'>
+        {getBusinessLogDetails(props.log.type, other, t).map(
+          ({ label, value }) => (
+            <DetailRow key={label} label={label} value={value} />
+          )
+        )}
         {/* Overview section - key identifiers */}
         <div className='min-w-0 space-y-1'>
           {props.log.request_id && (
@@ -747,13 +770,23 @@ export function DetailsDialog(props: DetailsDialogProps) {
             />
           )}
 
-          {(props.log.group || other?.group) && (
-            <DetailRow
-              label={t('Group')}
-              value={props.log.group || other?.group || ''}
-              mono
-            />
+          {isChannelTest && (
+            <DetailRow label={t('Test Method')} value={channelTestMethod} />
           )}
+
+          {channelTestGroup && (
+            <DetailRow label={t('Test Group')} value={channelTestGroup} mono />
+          )}
+
+          {!isChannelTest &&
+            !isLegacyChannelTest &&
+            (props.log.group || other?.group) && (
+              <DetailRow
+                label={t('Group')}
+                value={props.log.group || other?.group || ''}
+                mono
+              />
+            )}
 
           {showAdminIp && (
             <DetailRow
@@ -1227,7 +1260,19 @@ export function DetailsDialog(props: DetailsDialogProps) {
             log={props.log}
             other={other}
             isAdmin={props.isAdmin}
+            hideGroupRatio={isLegacyChannelTest}
           />
+        )}
+
+        {props.isAdmin && other?.billing_source === 'team' && (
+          <DetailSection label={t('Team consumption')}>
+            <DetailRow label={t('Team ID')} value={other.team_id ?? '-'} mono />
+            <DetailRow
+              label={t('Member ID')}
+              value={other.member_user_id ?? props.log.user_id}
+              mono
+            />
+          </DetailSection>
         )}
 
         {/* Tiered pricing breakdown (when billing_mode is tiered_expr) */}
@@ -1252,6 +1297,22 @@ export function DetailsDialog(props: DetailsDialogProps) {
             />
           </DetailSection>
         )}
+
+        {isConsume &&
+          other?.billing_source === 'team' &&
+          other?.billing_mode === 'tiered_expr' &&
+          (other.pricing_snapshot_incomplete || !other.expr_b64) && (
+            <DetailSection label={t('Dynamic Pricing')}>
+              <p
+                role='status'
+                className='text-muted-foreground text-xs break-words'
+              >
+                {t(
+                  'Some historical pricing details are unavailable for this team request. The charged quota remains authoritative.'
+                )}
+              </p>
+            </DetailSection>
+          )}
 
         {/* Admin billing mode indicator for non-consume */}
         {props.isAdmin &&

@@ -23,8 +23,18 @@ import { toast } from 'sonner'
 import { handleServerError } from '@/lib/handle-server-error'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
-import { updatePasskeyDomains, updateSystemOption } from '../api'
-import type { UpdateOptionRequest, UpdatePasskeyDomainsRequest } from '../types'
+import {
+  updateLotteryOptions,
+  updatePasskeyDomains,
+  updateReferralOptions,
+  updateSystemOption,
+} from '../api'
+import type {
+  LotteryOptionsUpdateRequest,
+  ReferralOptionsUpdateRequest,
+  UpdateOptionRequest,
+  UpdatePasskeyDomainsRequest,
+} from '../types'
 
 // Configuration keys that require status refresh
 const STATUS_RELATED_KEYS = new Set([
@@ -79,6 +89,55 @@ export function useUpdateOption() {
     },
     onError: (error: Error) => {
       handleServerError(error, i18next.t('Failed to update setting'))
+    },
+  })
+}
+
+export function useUpdateReferralOptions() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (request: ReferralOptionsUpdateRequest) => {
+      const data = await updateReferralOptions(request)
+      if (!data.success) {
+        throw new Error(data.message || i18next.t('Failed to update setting'))
+      }
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system-options'] })
+      toast.success(i18next.t('Setting updated successfully'))
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || i18next.t('Failed to update setting'))
+    },
+  })
+}
+
+export function useUpdateLotteryOptions() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (request: LotteryOptionsUpdateRequest) => {
+      const data = await updateLotteryOptions(request)
+      if (!data.success) {
+        throw new Error(data.message || i18next.t('Failed to update setting'))
+      }
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system-options'] })
+      queryClient.invalidateQueries({ queryKey: ['status'] })
+      queryClient.invalidateQueries({ queryKey: ['lottery'] })
+      try {
+        window.localStorage.removeItem('status')
+      } catch {
+        /* empty */
+      }
+      toast.success(i18next.t('Setting updated successfully'))
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || i18next.t('Failed to update setting'))
     },
   })
 }

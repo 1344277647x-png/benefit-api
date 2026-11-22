@@ -27,7 +27,7 @@ import { useMediaQuery } from '@/hooks'
 import { toIntlLocale } from '@/i18n/languages'
 import { getUserGroups } from '@/lib/api'
 import { getCurrencyDisplay } from '@/lib/currency'
-import { requireServerSuccess } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
 import { API_KEY_STATUSES } from '../constants'
@@ -48,9 +48,11 @@ import { DataTableRowActions } from './data-table-row-actions'
 const EMPTY_GROUP_RATIOS: Record<string, number | string> = {}
 
 function useGroupRatios(): Record<string, number | string> {
+  const user = useAuthStore((state) => state.auth.user)
   const { data } = useQuery({
-    queryKey: ['user-groups'],
-    queryFn: async () => requireServerSuccess(await getUserGroups()),
+    queryKey: ['user-groups', user?.id ?? null, user?.group ?? ''],
+    queryFn: getUserGroups,
+    enabled: Boolean(user?.id),
     staleTime: 0,
     select: (res) => {
       if (!res.success || !res.data) return {}

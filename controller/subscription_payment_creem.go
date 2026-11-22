@@ -45,7 +45,7 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if !plan.Enabled {
+	if !plan.Enabled || (plan.Scope != "" && plan.Scope != "personal") {
 		common.ApiErrorT(c, "Subscription plan is not enabled")
 		return
 	}

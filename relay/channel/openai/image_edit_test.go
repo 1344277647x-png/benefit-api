@@ -30,6 +30,7 @@ func TestConvertImageEditRequestMultipart(t *testing.T) {
 		require.NoError(t, writer.WriteField("prompt", prompt))
 		require.NoError(t, writer.WriteField("stream", "true"))
 		require.NoError(t, writer.WriteField("partial_images", "3"))
+		require.NoError(t, writer.WriteField("aspect_ratio", "21:9"))
 		part, err := writer.CreateFormFile("image", "input.png")
 		require.NoError(t, err)
 		_, err = part.Write([]byte("fake image"))
@@ -70,8 +71,10 @@ func TestConvertImageEditRequestMultipart(t *testing.T) {
 
 		require.Equal(t, "gpt-image-1", replayedRequest.PostForm.Get("model"))
 		require.Equal(t, prompt, replayedRequest.PostForm.Get("prompt"))
+		require.NotContains(t, replayedRequest.PostForm, "n")
 		require.Equal(t, "true", replayedRequest.PostForm.Get("stream"))
 		require.Equal(t, "3", replayedRequest.PostForm.Get("partial_images"))
+		require.Equal(t, "21:9", replayedRequest.PostForm.Get("aspect_ratio"))
 		require.Len(t, replayedRequest.MultipartForm.File["image"], 1)
 		require.Equal(t, "low", replayedRequest.PostForm.Get("complexity"))
 		require.Len(t, replayedRequest.MultipartForm.File["mask"], 1)
@@ -104,5 +107,31 @@ func TestConvertImageEditRequestMultipart(t *testing.T) {
 		c.Request.PostForm = nil
 
 		convertAndReplay(t, c, prompt)
+	})
+
+	t.Run("creation request overrides enriched fields", func(t *testing.T) {
+		c := newMultipartContext(t, "original prompt")
+		c.Request.URL.Path = "/pg/creation/images"
+		require.NoError(t, c.Request.ParseMultipartForm(32<<20))
+		request := dto.ImageRequest{
+			Model:         "gpt-image-2",
+			Prompt:        "enriched prompt",
+			N:             common.GetPointer(uint(1)),
+			InputFidelity: []byte(`"high"`),
+		}
+		converted, err := (&Adaptor{}).ConvertImageRequest(c, &relaycommon.RelayInfo{
+			RelayMode: relayconstant.RelayModeImagesEdits,
+		}, request)
+		require.NoError(t, err)
+		convertedBody, ok := converted.(*bytes.Buffer)
+		require.True(t, ok)
+
+		replayedRequest := httptest.NewRequest(http.MethodPost, "/v1/images/edits", bytes.NewReader(convertedBody.Bytes()))
+		replayedRequest.Header.Set("Content-Type", c.Request.Header.Get("Content-Type"))
+		require.NoError(t, replayedRequest.ParseMultipartForm(32<<20))
+		require.Equal(t, "gpt-image-2", replayedRequest.PostForm.Get("model"))
+		require.Equal(t, "enriched prompt", replayedRequest.PostForm.Get("prompt"))
+		require.Equal(t, "1", replayedRequest.PostForm.Get("n"))
+		require.Equal(t, "high", replayedRequest.PostForm.Get("input_fidelity"))
 	})
 }

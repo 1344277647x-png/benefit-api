@@ -217,3 +217,17 @@ func (c *ImageGenerationCallCounter) Commit(info *RelayInfo) {
 		CallCount: count,
 	}
 }
+
+// IsNonBillableResponsesStatus reports response states that cannot finalize an image charge.
+func IsNonBillableResponsesStatus(status []byte) bool {
+	var value string
+	if len(status) == 0 || common.Unmarshal(status, &value) != nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "failed", "cancelled", "canceled", "incomplete":
+		return true
+	default:
+		return false
+	}
+}

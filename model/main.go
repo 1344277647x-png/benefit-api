@@ -225,7 +225,17 @@ func InitDB() (err error) {
 		}
 		common.SysLog(common.LogText("database migration started"))
 		err = migrateDB()
-		return err
+		if err != nil {
+			return err
+		}
+		if err := ensureUserQuotaColumns(DB, common.MainDatabaseType()); err != nil {
+			return err
+		}
+		if err := EnsureOperationsStart(DB); err != nil {
+			return err
+		}
+		operationsReadyDB.Store(DB)
+		return nil
 	} else {
 		common.FatalLog(err)
 	}
@@ -297,14 +307,19 @@ func ensureUserQuotaColumns(db *gorm.DB, dbType common.DatabaseType) error {
 		return fmt.Errorf("failed to inspect users schema: %w", err)
 	}
 	for _, expected := range userQuotaColumns {
+		found := false
 		for _, actual := range columnTypes {
 			if !strings.EqualFold(actual.Name(), expected) {
 				continue
 			}
 			dataType := actual.DatabaseTypeName()
+			found = true
 			if !is64BitIntegerType(dbType, dataType) {
 				return fmt.Errorf("users.%s uses %s; 32-bit is not supported", expected, dataType)
 			}
+		}
+		if !found {
+			return fmt.Errorf("users.%s is missing; wallet schema is incomplete", expected)
 		}
 	}
 	return nil
@@ -351,12 +366,23 @@ func migrateDB() error {
 		&LoginEncryptionKey{},
 		&Redemption{},
 		&Ability{},
-		&Log{},
+		&Log{}, &OperationsRollupDirtyHour{},
 		&Midjourney{},
 		&TopUp{},
+		&ReferralReward{},
+		&LotteryAccount{},
+		&LotteryGrant{},
+		&LotteryDraw{},
+		&LotteryRule{},
+		&BusinessEvent{},
+		&OperationsPool{}, &OperationsEntry{}, &ChannelCostVersion{}, &OperationsState{}, &OperationsEvent{}, &OperationsLane{}, &OperationsRollupBucket{}, &OperationsHourlyRollup{},
+		&BusinessEventLogReceipt{},
+		&ContentAuditRecord{},
 		&QuotaData{},
 		&Task{},
 		&TaskPlugin{},
+		&GenerationJob{},
+		&GenerationAsset{},
 		&Model{},
 		&Vendor{},
 		&PrefillGroup{},
@@ -367,9 +393,22 @@ func migrateDB() error {
 		&SubscriptionOrder{},
 		&UserSubscription{},
 		&SubscriptionPreConsumeRecord{},
+		&Team{},
+		&TeamMember{},
+		&TeamInvitation{},
+		&TeamSubscription{},
+		&TeamQuotaPeriod{},
+		&TeamOrder{},
+		&TeamUsage{},
+		&TeamSyncBillingEvent{},
+		&TeamSyncLogReceipt{},
+		&TeamTaskBillingEvent{},
+		&TeamTaskLogReceipt{},
 		&CustomOAuthProvider{},
 		&UserOAuthBinding{},
 		&PerfMetric{},
+		&ChannelHealthSnapshot{},
+		&ChannelHealthBucket{},
 		&SystemInstance{},
 		&SystemTask{},
 		&SystemTaskLock{},
@@ -408,7 +447,7 @@ func migrateLOGDB() error {
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		return migrateClickHouseLogDB()
 	}
-	return LOG_DB.AutoMigrate(&Log{})
+	return LOG_DB.AutoMigrate(&Log{}, &TeamTaskLogReceipt{}, &TeamSyncLogReceipt{}, &BusinessEventLogReceipt{}, &OperationsRollupDirtyHour{})
 }
 
 func migrateClickHouseLogDB() error {
@@ -513,6 +552,8 @@ func ensureSubscriptionPlanTableSQLite() error {
 	if !DB.Migrator().HasTable(tableName) {
 		createSQL := `CREATE TABLE ` + "`" + tableName + "`" + ` (
 ` + "`id`" + ` integer,
+` + "`scope`" + ` varchar(16) NOT NULL DEFAULT 'personal',
+` + "`seat_limit`" + ` integer NOT NULL DEFAULT 0,
 ` + "`title`" + ` varchar(128) NOT NULL,
 ` + "`subtitle`" + ` varchar(255) DEFAULT '',
 ` + "`price_amount`" + ` decimal(10,6) NOT NULL,
@@ -550,6 +591,8 @@ PRIMARY KEY (` + "`id`" + `)
 		existing[c.Name] = struct{}{}
 	}
 	required := []sqliteColumnDef{
+		{Name: "scope", DDL: "`scope` varchar(16) NOT NULL DEFAULT 'personal'"},
+		{Name: "seat_limit", DDL: "`seat_limit` integer NOT NULL DEFAULT 0"},
 		{Name: "title", DDL: "`title` varchar(128) NOT NULL"},
 		{Name: "subtitle", DDL: "`subtitle` varchar(255) DEFAULT ''"},
 		{Name: "price_amount", DDL: "`price_amount` decimal(10,6) NOT NULL"},

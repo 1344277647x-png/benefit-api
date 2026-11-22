@@ -32,7 +32,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatLocalCurrencyAmount } from '@/lib/currency'
 
-import { DEFAULT_DISCOUNT_RATE } from '../../constants'
+import { DEFAULT_DISCOUNT_RATE, PAYMENT_TYPES } from '../../constants'
 import { formatCurrency, getPaymentIcon } from '../../lib'
 import type { PaymentMethod } from '../../types'
 
@@ -135,7 +135,11 @@ export function PaymentConfirmDialog({
                   paymentMethod?.icon,
                   paymentMethod?.name
                 )}
-                <span className='font-medium'>{paymentMethod?.name}</span>
+                <span className='font-medium'>
+                  {paymentMethod?.type === PAYMENT_TYPES.QIXIANG_WECHAT
+                    ? t('WeChat Pay')
+                    : paymentMethod?.name}
+                </span>
               </div>
             </div>
           </div>

@@ -458,13 +458,17 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if !summary.hasBillableUsage() {
 		extraContent = append(extraContent, common.NewMessage("Upstream returned no usage, so nothing was charged (possibly an upstream timeout)"))
 		logger.LogError(ctx, common.LogText("total tokens is 0, cannot consume quota, userId %d, channelId %d, tokenId %d, model %s， pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, summary.ModelName, relayInfo.FinalPreConsumedQuota))
-	} else {
-		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, summary.Quota)
-		model.UpdateChannelUsedQuota(relayInfo.ChannelId, summary.Quota)
 	}
 
-	if err := SettleBilling(ctx, relayInfo, summary.Quota); err != nil {
-		logger.LogError(ctx, common.LogText("error settling billing: %s", err.Error()))
+	if relayInfo.BillingSource != BillingSourceTeam {
+		if err := SettleBilling(ctx, relayInfo, summary.Quota); err != nil {
+			logger.LogError(ctx, common.LogText("error settling billing: %s", err.Error()))
+			return // failure has a durable exception, never a successful consume log
+		}
+		if summary.hasBillableUsage() {
+			model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, summary.Quota)
+			model.UpdateChannelUsedQuota(relayInfo.ChannelId, summary.Quota)
+		}
 	}
 
 	logModel := summary.ModelName
@@ -542,6 +546,16 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 
 	attachQuotaSaturation(ctx, relayInfo, other)
 
+	if relayInfo.BillingSource == BillingSourceTeam {
+		relayInfo.TeamPromptTokens = summary.PromptTokens
+		relayInfo.TeamCompletionTokens = summary.CompletionTokens
+		relayInfo.TeamBillingDetails = teamBillingLogDetails(other.Snapshot())
+		if err := SettleBilling(ctx, relayInfo, summary.Quota); err != nil {
+			logger.LogError(ctx, "team text billing settlement failed; usage counters and log withheld: "+err.Error())
+			return
+		}
+		return // the durable team event writes exactly one independent log
+	}
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     summary.PromptTokens,

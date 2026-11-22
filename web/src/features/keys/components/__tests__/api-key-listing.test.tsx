@@ -45,6 +45,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import zh from '@/i18n/locales/zh.json'
 import { api } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth-store'
 import {
   DEFAULT_CURRENCY_CONFIG,
   useSystemConfigStore,
@@ -145,6 +146,7 @@ afterEach(() => {
   cleanup()
   toast.dismiss()
   localStorage.clear()
+  useAuthStore.getState().auth.reset()
   clients.splice(0).forEach((client) => client.clear())
   useSystemConfigStore
     .getState()
@@ -304,6 +306,12 @@ function KeysPage() {
 }
 
 async function renderKeysPage(status = 1, overrides: Partial<ApiKey> = {}) {
+  useAuthStore.getState().auth.setUser({
+    id: 1,
+    username: 'member',
+    role: 1,
+    group: 'default',
+  })
   let currentKey = { ...key, status, ...overrides }
   vi.mocked(api.get).mockImplementation(async (url) => {
     if (url.startsWith('/api/token/')) {
@@ -469,7 +477,7 @@ it('keeps full mobile information without group or quota section headings', asyn
       screen.queryByText(zh.translation['Group'], { exact: true })
     ).not.toBeInTheDocument()
     expect(screen.getByText('default')).toBeInTheDocument()
-    expect(screen.getByText('1x')).toBeInTheDocument()
+    expect(await screen.findByText('1x')).toBeInTheDocument()
     expect(screen.getByText(zh.translation['Models'])).toBeInTheDocument()
     expect(
       screen.getByText(zh.translation['IP Restriction'])

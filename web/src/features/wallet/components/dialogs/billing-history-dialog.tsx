@@ -56,11 +56,13 @@ import {
 } from '../../lib/billing'
 
 interface BillingHistoryDialogProps {
+  refreshVersion?: number
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
 export function BillingHistoryDialog({
+  refreshVersion,
   open,
   onOpenChange,
 }: BillingHistoryDialogProps) {
@@ -78,7 +80,7 @@ export function BillingHistoryDialog({
     handlePageSizeChange,
     handleSearch,
     handleCompleteOrder,
-  } = useBillingHistory()
+  } = useBillingHistory({ refreshVersion })
 
   const [confirmTradeNo, setConfirmTradeNo] = useState<string | null>(null)
   const { copyToClipboard, copiedText } = useCopyToClipboard({ notify: false })

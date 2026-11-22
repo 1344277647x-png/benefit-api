@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -102,7 +103,7 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 	return helper.ObjectData(c, lastStreamResponse)
 }
 
-func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (resultUsage *dto.Usage, resultErr *types.NewAPIError) {
 	if resp == nil || resp.Body == nil {
 		logger.LogError(c, common.LogText("invalid response or response body"))
 		return nil, types.NewOpenAIError(fmt.Errorf("invalid response"), types.ErrorCodeBadResponse, http.StatusInternalServerError)
@@ -122,8 +123,38 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	var secondLastStreamData string // 保留倒数第二个stream data；部分兼容网关把完整usage放在倒数第二个事件
 	seenStreamToolCalls := make(map[string]struct{})
 	var streamFunctionCallNames []string
+	var streamErr *types.NewAPIError
+
+	// 检查是否为音频模型
+	isAudioModel := strings.Contains(strings.ToLower(model), "audio")
+	defer func() {
+		if !isAudioModel && resultErr != nil {
+			for _, name := range streamFunctionCallNames {
+				info.CountBillableToolCall(dto.BuildInCallFunctionCall, name)
+			}
+			service.RetainPartialStreamUsage(c, info, usage, responseTextBuilder.String())
+		}
+	}()
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+		if streamErr != nil {
+			sr.Stop(streamErr)
+			return
+		}
+		// Some providers send an OpenAI-compatible error object inside the SSE
+		// stream after the HTTP response has already been accepted. Detect it
+		// before normal chunk processing so it cannot be forwarded or billed as
+		// a successful completion.
+		if !isAudioModel {
+			var simpleResponse dto.SimpleResponse
+			if err := common.UnmarshalJsonStr(data, &simpleResponse); err == nil {
+				if oaiErr := simpleResponse.GetOpenAIError(); dto.HasOpenAIError(oaiErr) {
+					streamErr = types.WithOpenAIError(*oaiErr, http.StatusBadGateway)
+					sr.Stop(streamErr)
+					return
+				}
+			}
+		}
 		if lastStreamData != "" {
 			if err := HandleStreamFormat(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent); err != nil {
 				common.SysLog(common.LogText("error handling stream format: %s", err.Error()))
@@ -131,6 +162,15 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			}
 		}
 		if len(data) > 0 {
+			if !isAudioModel {
+				var chunk struct {
+					Usage *dto.Usage `json:"usage"`
+				}
+				if common.UnmarshalJsonStr(data, &chunk) == nil && service.ValidUsage(chunk.Usage) {
+					usage = chunk.Usage
+				}
+			}
+			// Some gateways send all usage in the penultimate event.
 			if lastStreamData != "" {
 				secondLastStreamData = lastStreamData
 			}
@@ -143,6 +183,21 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			}
 		}
 	})
+	if streamErr != nil || (!isAudioModel && (info.StreamStatus == nil || info.StreamStatus.EndReason != relaycommon.StreamEndReasonDone)) {
+		// The handler buffers one chunk for final usage extraction. If the
+		// provider stops early, deliver that chunk without a success marker.
+		var chunk dto.ChatCompletionsStreamResponse
+		if lastStreamData != "" && c.Request.Context().Err() == nil &&
+			common.UnmarshalJsonStr(lastStreamData, &chunk) == nil && len(chunk.Choices) > 0 {
+			if err := HandleStreamFormat(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent); err != nil {
+				logger.LogError(c, common.LogText("failed to write the last chat stream chunk: %s", err.Error()))
+			}
+		}
+		if streamErr == nil {
+			streamErr = types.NewOpenAIError(errors.New("upstream chat stream ended without [DONE]"), types.ErrorCodeBadResponse, http.StatusBadGateway)
+		}
+		return nil, streamErr
+	}
 
 	info.StreamStatus.RequireTerminal()
 
@@ -280,7 +335,7 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
 
-	if oaiError := simpleResponse.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
+	if oaiError := simpleResponse.GetOpenAIError(); dto.HasOpenAIError(oaiError) {
 		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
 	}
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 )
 
@@ -33,8 +34,9 @@ type FundingSource interface {
 var ErrInsufficientWalletQuota = errors.New("wallet quota insufficient")
 
 type WalletFunding struct {
-	userId   int
-	consumed int // 实际预扣的用户额度
+	requestId string
+	userId    int
+	consumed  int // 实际预扣的用户额度
 }
 
 func (w *WalletFunding) Source() string { return BillingSourceWallet }
@@ -56,13 +58,7 @@ func (w *WalletFunding) PreConsume(amount int) error {
 }
 
 func (w *WalletFunding) Settle(delta int) error {
-	if delta == 0 {
-		return nil
-	}
-	if delta > 0 {
-		return model.DecreaseUserQuota(w.userId, delta, false)
-	}
-	return model.IncreaseUserQuota(w.userId, -delta, false)
+	return model.SettleOperationsWallet(w.userId, w.requestId, w.consumed+delta, delta)
 }
 
 func (w *WalletFunding) Refund() error {
@@ -71,7 +67,7 @@ func (w *WalletFunding) Refund() error {
 	}
 	// IncreaseUserQuota 是 quota += N 的非幂等操作，不能重试，否则会多退额度。
 	// 订阅的 RefundSubscriptionPreConsume 有 requestId 幂等保护所以可以重试。
-	return model.IncreaseUserQuota(w.userId, w.consumed, false)
+	return model.IncreaseUserQuotaForBilling(w.userId, w.consumed, false)
 }
 
 // ---------------------------------------------------------------------------
@@ -79,6 +75,8 @@ func (w *WalletFunding) Refund() error {
 // ---------------------------------------------------------------------------
 
 type SubscriptionFunding struct {
+	actualQuota    int
+	hasActualQuota bool
 	requestId      string
 	userId         int
 	modelName      string
@@ -113,10 +111,11 @@ func (s *SubscriptionFunding) PreConsume(_ int) error {
 }
 
 func (s *SubscriptionFunding) Settle(delta int) error {
-	if delta == 0 {
-		return nil
+	actual := int(s.preConsumed) + delta
+	if s.hasActualQuota {
+		actual = s.actualQuota
 	}
-	return model.PostConsumeUserSubscriptionDelta(s.subscriptionId, int64(delta))
+	return model.SettleOperationsSubscription(s.userId, s.subscriptionId, s.requestId, actual, int64(delta))
 }
 
 func (s *SubscriptionFunding) Refund() error {
@@ -126,6 +125,58 @@ func (s *SubscriptionFunding) Refund() error {
 	return refundWithRetry(func() error {
 		return model.RefundSubscriptionPreConsume(s.requestId)
 	})
+}
+
+// TeamFunding is pinned to one request ID and one quota period. It never
+// invokes the member's personal wallet or subscription, including on failure.
+type TeamFunding struct {
+	requestId string
+	teamId    int
+	userId    int
+	tokenId   int
+	async     bool
+	reserved  int64
+	meta      model.TeamSyncBillingMeta
+}
+
+func (f *TeamFunding) Source() string { return BillingSourceTeam }
+
+func (f *TeamFunding) PreConsume(amount int) error {
+	usage, _, err := model.PreConsumeTeamForToken(f.requestId, f.teamId, f.userId, f.tokenId, int64(amount))
+	if err != nil {
+		return err
+	}
+	f.reserved = usage.Reserved
+	return nil
+}
+
+func (f *TeamFunding) Settle(delta int) error {
+	if !f.async {
+		if delta > common.MaxQuota || delta < -common.MaxQuota || f.reserved > common.MaxQuota {
+			return errors.New("invalid team settlement amount")
+		}
+		finalAmount := f.reserved + int64(delta)
+		if err := model.RecordTeamSyncSettlementIntent(f.requestId, finalAmount, f.meta); err != nil {
+			return err
+		}
+		if err := model.SettleTeamSyncUsage(f.requestId, finalAmount); err != nil {
+			return err
+		}
+		f.reserved = finalAmount
+		return nil
+	}
+	if err := model.AdjustTeamUsage(f.requestId, int64(delta), false); err != nil {
+		return err
+	}
+	f.reserved += int64(delta)
+	return nil
+}
+
+func (f *TeamFunding) Refund() error {
+	if f.reserved <= 0 {
+		return nil
+	}
+	return model.RefundTeamUsage(f.requestId)
 }
 
 // refundWithRetry 尝试多次执行退款操作以提高成功率，只能用于基于事务的退款函数！！！！！！

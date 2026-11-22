@@ -158,6 +158,7 @@ function ChatRouteComponent() {
       src={iframeSrc}
       key={iframeSrc}
       className='h-full w-full border-0'
+      sandbox='allow-scripts allow-forms allow-popups allow-downloads allow-modals allow-presentation'
       allow='camera; microphone'
       title={`Chat preset: ${preset.name}`}
     />

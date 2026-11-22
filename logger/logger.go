@@ -39,6 +39,23 @@ func GetCurrentLogPath() string {
 	return currentLogPath
 }
 
+// CloseLogFile releases the active file and restores the process writers.
+func CloseLogFile() error {
+	setupLogLock.Lock()
+	defer setupLogLock.Unlock()
+	currentLogPathMu.Lock()
+	defer currentLogPathMu.Unlock()
+	if currentLogFile == nil {
+		return nil
+	}
+	common.LogWriterMu.Lock()
+	defer common.LogWriterMu.Unlock()
+	gin.DefaultWriter, gin.DefaultErrorWriter = os.Stdout, os.Stderr
+	err := currentLogFile.Close()
+	currentLogFile, currentLogPath = nil, ""
+	return err
+}
+
 func SetupLogger() {
 	defer func() {
 		setupLogWorking = false

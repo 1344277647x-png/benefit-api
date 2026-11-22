@@ -258,7 +258,8 @@ func TestResponseModelDoesNotRecordSynthesizedModel(t *testing.T) {
 		ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "mapped"},
 	}
 	_, apiErr := openai.OaiResponsesToChatBufferedStreamHandler(c, info, &http.Response{
-		StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("data: [DONE]\n\n")),
+		StatusCode: http.StatusOK, Header: make(http.Header),
+		Body: io.NopCloser(strings.NewReader("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\":\"completed\"}}\n\n")),
 	})
 	require.Nil(t, apiErr)
 	assert.Nil(t, info.ResponseModel)

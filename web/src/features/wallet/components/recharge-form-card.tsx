@@ -37,6 +37,7 @@ import {
 import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
+import { PAYMENT_TYPES } from '../constants'
 import {
   formatCurrency,
   getDiscountLabel,
@@ -132,6 +133,8 @@ export function RechargeFormCard({
 
   const hasConfigurableTopup =
     topupInfo?.enable_online_topup ||
+    topupInfo?.enable_alipay_topup ||
+    topupInfo?.enable_qixiang_topup ||
     topupInfo?.enable_stripe_topup ||
     enableWaffoTopup ||
     enableWaffoPancakeTopup
@@ -255,17 +258,17 @@ export function RechargeFormCard({
                           )}
                           onClick={() => onSelectPreset(preset)}
                         >
-                          <div className='flex w-full items-center justify-between'>
-                            <div className='text-base font-semibold sm:text-lg'>
+                          <div className='flex w-full items-center justify-between gap-1'>
+                            <div className='text-base font-semibold tabular-nums sm:text-lg'>
                               {formatNumber(displayValue)}
                             </div>
                             {hasDiscount && (
-                              <div className='text-xs font-medium text-green-600'>
+                              <div className='text-xs font-medium text-emerald-600 dark:text-emerald-400'>
                                 {getDiscountLabel(discount, t)}
                               </div>
                             )}
                           </div>
-                          <div className='text-muted-foreground mt-1.5 w-full text-xs sm:mt-2'>
+                          <div className='text-muted-foreground mt-1.5 w-full text-xs tabular-nums sm:mt-2'>
                             {hasDiscount && savedAmount > 0 ? (
                               <Trans
                                 t={t}
@@ -275,7 +278,9 @@ export function RechargeFormCard({
                                   saved: formatCurrency(savedAmount),
                                 }}
                                 components={{
-                                  savings: <span className='text-green-600' />,
+                                  savings: (
+                                    <span className='text-emerald-600 dark:text-emerald-400' />
+                                  ),
                                 }}
                               />
                             ) : (
@@ -306,7 +311,7 @@ export function RechargeFormCard({
                     onChange={(e) => handleAmountChange(e.target.value)}
                     min={minTopup}
                     placeholder={t('Minimum {{amount}}', { amount: minTopup })}
-                    className='h-9 text-base sm:h-10 sm:text-lg'
+                    className='h-9 text-base tabular-nums sm:h-10 sm:text-lg'
                   />
                   <div className='bg-muted/30 flex min-h-9 items-center justify-between gap-2 rounded-md border px-3 lg:min-w-52'>
                     <span className='text-muted-foreground truncate text-xs'>
@@ -330,6 +335,10 @@ export function RechargeFormCard({
                 {hasStandardPaymentMethods ? (
                   <div className='grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-3'>
                     {topupInfo?.pay_methods?.map((method) => {
+                      const methodName =
+                        method.type === PAYMENT_TYPES.QIXIANG_WECHAT
+                          ? t('WeChat Pay')
+                          : method.name
                       const minTopup = Math.max(
                         method.min_topup || 0,
                         getMinTopupAmount(topupInfo)
@@ -353,8 +362,8 @@ export function RechargeFormCard({
                           title={disabledReason}
                           aria-label={
                             disabledReason
-                              ? `${method.name}. ${disabledReason}`
-                              : method.name
+                              ? `${methodName}. ${disabledReason}`
+                              : methodName
                           }
                           className='min-h-14 min-w-0 justify-start gap-2 rounded-lg px-3 py-2 text-left'
                         >
@@ -370,7 +379,7 @@ export function RechargeFormCard({
                           )}
                           <span className='flex min-w-0 flex-col items-start gap-0.5'>
                             <span className='max-w-full truncate'>
-                              {method.name}
+                              {methodName}
                             </span>
                             {disabledLabel && (
                               <span className='text-muted-foreground max-w-full truncate text-[11px] leading-4 font-normal'>

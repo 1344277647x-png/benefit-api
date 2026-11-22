@@ -16,6 +16,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
@@ -28,6 +29,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/channel_health_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
 
@@ -38,10 +40,17 @@ import (
 )
 
 type testResult struct {
-	context     *gin.Context
-	localErr    error
-	newAPIError *types.NewAPIError
+	context        *gin.Context
+	localErr       error
+	newAPIError    *types.NewAPIError
+	protocolReport *ChannelProtocolCheckReport
 }
+
+const (
+	channelTestMethodManual      = "manual"
+	channelTestMethodManualBatch = "manual_batch"
+	channelTestMethodScheduled   = "scheduled"
+)
 
 func normalizeChannelTestEndpoint(channel *model.Channel, endpointType string) string {
 	normalized := strings.TrimSpace(endpointType)
@@ -99,7 +108,53 @@ func resolveChannelTestUserID(c *gin.Context) (int, error) {
 	return rootUser.Id, nil
 }
 
-func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool) testResult {
+func resolveChannelTestGroup(channel *model.Channel, requestedGroup string) (string, error) {
+	if channel == nil {
+		return "", errors.New("channel is nil")
+	}
+
+	groups := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, configuredGroup := range channel.GetGroups() {
+		group := strings.TrimSpace(configuredGroup)
+		if group == "" {
+			continue
+		}
+		if _, exists := seen[group]; exists {
+			continue
+		}
+		seen[group] = struct{}{}
+		groups = append(groups, group)
+	}
+
+	requestedGroup = strings.TrimSpace(requestedGroup)
+	if requestedGroup == "" {
+		if len(groups) == 0 {
+			return "default", nil
+		}
+		return groups[0], nil
+	}
+	if len(groups) == 0 && requestedGroup == "default" {
+		return "default", nil
+	}
+
+	if _, exists := seen[requestedGroup]; !exists {
+		return "", fmt.Errorf("group %q is not configured for channel #%d", requestedGroup, channel.Id)
+	}
+	return requestedGroup, nil
+}
+
+func applyChannelTestGroupContext(c *gin.Context, group string) {
+	common.SetContextKey(c, constant.ContextKeyUserGroup, group)
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, group)
+}
+
+func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testGroup string, testMethod string, testModel string, endpointType string, isStream bool) testResult {
+	return testChannelWithProtocolCheck(ctx, channel, testUserID, testGroup, testMethod, testModel, endpointType, isStream, channelProtocolCheckNone)
+}
+
+func testChannelWithProtocolCheck(ctx context.Context, channel *model.Channel, testUserID int, testGroup string, testMethod string, testModel string, endpointType string, isStream bool, protocolCheck string) testResult {
+	endpointType, isStream = applyProtocolCheckOverrides(protocolCheck, endpointType, isStream)
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -208,8 +263,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("channel", channel.Type)
 	c.Set("base_url", channel.GetBaseURL())
-	group, _ := model.GetUserGroup(testUserID, false)
-	c.Set("group", group)
+	applyChannelTestGroupContext(c, testGroup)
 
 	newAPIError := middleware.SetupContextForSelectedChannel(c, channel, testModel)
 	if newAPIError != nil {
@@ -239,6 +293,10 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 			relayFormat = types.RelayFormatRerank
 		case constant.EndpointTypeImageGeneration:
 			relayFormat = types.RelayFormatOpenAIImage
+		case constant.EndpointTypeGeminiImage:
+			relayFormat = types.RelayFormatGemini
+		case constant.EndpointTypeOpenAIVideo:
+			relayFormat = types.RelayFormatTask
 		case constant.EndpointTypeEmbeddings:
 			relayFormat = types.RelayFormatEmbedding
 		default:
@@ -252,6 +310,9 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		}
 		if c.Request.URL.Path == "/v1/images/generations" {
 			relayFormat = types.RelayFormatOpenAIImage
+		}
+		if c.Request.URL.Path == "/v1/videos" {
+			relayFormat = types.RelayFormatTask
 		}
 		if c.Request.URL.Path == "/v1/messages" {
 			relayFormat = types.RelayFormatClaude
@@ -524,7 +585,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		}
 	}
 	result := w.Result()
-	respBody, err := readTestResponseBody(result.Body, isStream)
+	respBody, err := readTestResponseBodyForProtocol(result.Body, isStream, protocolCheck)
 	if err != nil {
 		return testResult{
 			context:     c,
@@ -532,7 +593,19 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 			newAPIError: types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError),
 		}
 	}
-	if bodyErr := validateTestResponseBody(respBody, isStream); bodyErr != nil {
+	var protocolReport *ChannelProtocolCheckReport
+	if protocolCheck != channelProtocolCheckNone {
+		var checkErr error
+		protocolReport, checkErr = evaluateChannelProtocolCheck(protocolCheck, respBody)
+		if checkErr != nil {
+			return testResult{
+				context:        c,
+				localErr:       checkErr,
+				newAPIError:    types.NewOpenAIError(checkErr, types.ErrorCodeBadResponseBody, http.StatusInternalServerError),
+				protocolReport: protocolReport,
+			}
+		}
+	} else if bodyErr := validateTestResponseBody(respBody, isStream); bodyErr != nil {
 		return testResult{
 			context:     c,
 			localErr:    bodyErr,
@@ -545,7 +618,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	tok := time.Now()
 	milliseconds := tok.Sub(tik).Milliseconds()
 	consumedTime := float64(milliseconds) / 1000.0
-	other := buildTestLogOther(c, info, priceData, usage, tieredResult)
+	other := buildTestLogOther(c, info, priceData, usage, tieredResult, testMethod)
 	model.RecordConsumeLog(c, testUserID, model.RecordConsumeLogParams{
 		ChannelId:        channel.Id,
 		PromptTokens:     usage.PromptTokens,
@@ -559,11 +632,16 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		Group:            info.UsingGroup,
 		Other:            other,
 	})
-	common.SysLog(common.LogText("testing channel #%d, response: \n%s", channel.Id, string(respBody)))
+	logBody := string(respBody)
+	if len(logBody) > 4096 {
+		logBody = logBody[:4096] + "...(truncated)"
+	}
+	common.SysLog(common.LogText("testing channel #%d, response: \n%s", channel.Id, logBody))
 	return testResult{
-		context:     c,
-		localErr:    nil,
-		newAPIError: nil,
+		context:        c,
+		localErr:       nil,
+		newAPIError:    nil,
+		protocolReport: protocolReport,
 	}
 }
 
@@ -603,9 +681,12 @@ func settleTestQuota(info *relaycommon.RelayInfo, priceData hosttypes.PriceData,
 	return common.QuotaFromFloat(priceData.ModelPrice * common.QuotaPerUnit), nil
 }
 
-func buildTestLogOther(c *gin.Context, info *relaycommon.RelayInfo, priceData hosttypes.PriceData, usage *dto.Usage, tieredResult *billingexpr.TieredResult) *model.LogOther {
+func buildTestLogOther(c *gin.Context, info *relaycommon.RelayInfo, priceData hosttypes.PriceData, usage *dto.Usage, tieredResult *billingexpr.TieredResult, testMethod string) *model.LogOther {
 	other := service.GenerateTextOtherInfo(c, info, priceData.ModelRatio, priceData.GroupRatioInfo.GroupRatio, priceData.CompletionRatio,
 		usage.PromptTokensDetails.CachedTokens, priceData.CacheRatio, priceData.ModelPrice, priceData.GroupRatioInfo.GroupSpecialRatio)
+	other.SetPublic("is_channel_test", true)
+	other.SetPublic("channel_test_method", testMethod)
+	other.SetPublic("channel_test_group", info.UsingGroup)
 	if tieredResult != nil {
 		service.InjectTieredBillingInfo(other, info, tieredResult)
 	}
@@ -640,8 +721,15 @@ func coerceTestUsage(usageAny any, isStream bool, estimatePromptTokens int) (*dt
 }
 
 func readTestResponseBody(body io.ReadCloser, isStream bool) ([]byte, error) {
+	return readTestResponseBodyForProtocol(body, isStream, channelProtocolCheckNone)
+}
+
+func readTestResponseBodyForProtocol(body io.ReadCloser, isStream bool, protocolCheck string) ([]byte, error) {
 	defer func() { _ = body.Close() }()
 	const maxStreamLogBytes = 8 << 10
+	if protocolCheck == channelProtocolCheckResponsesStream {
+		return io.ReadAll(io.LimitReader(body, maxProtocolCheckStreamBytes))
+	}
 	if isStream {
 		return io.ReadAll(io.LimitReader(body, maxStreamLogBytes))
 	}
@@ -761,6 +849,24 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 				Prompt: "a cute cat",
 				N:      lo.ToPtr(uint(1)),
 				Size:   "1024x1024",
+			}
+		case constant.EndpointTypeGeminiImage:
+			return &dto.GeminiChatRequest{
+				Contents: []dto.GeminiChatContent{{
+					Role:  "user",
+					Parts: []dto.GeminiPart{{Text: "a cute cat"}},
+				}},
+				GenerationConfig: dto.GeminiChatGenerationConfig{
+					ResponseModalities: []string{"IMAGE"},
+				},
+			}
+		case constant.EndpointTypeOpenAIVideo:
+			return &taskdto.VideoRequest{
+				Model:    model,
+				Prompt:   "a slow camera move through a neon garden",
+				Duration: 5,
+				Width:    1280,
+				Height:   720,
 			}
 		case constant.EndpointTypeJinaRerank:
 			// 返回 RerankRequest
@@ -908,6 +1014,22 @@ func TestChannel(c *gin.Context) {
 	testModel := c.Query("model")
 	endpointType := c.Query("endpoint_type")
 	isStream, _ := strconv.ParseBool(c.Query("stream"))
+	protocolCheck, err := normalizeChannelProtocolCheck(c.Query("protocol_check"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+	testGroup, err := resolveChannelTestGroup(channel, c.Query("group"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
 	testUserID, err := resolveChannelTestUserID(c)
 	if err != nil {
 		common.ApiError(c, err)
@@ -918,37 +1040,51 @@ func TestChannel(c *gin.Context) {
 	if c.Request != nil {
 		requestCtx = c.Request.Context()
 	}
-	result := testChannel(requestCtx, channel, testUserID, testModel, endpointType, isStream)
+	result := testChannelWithProtocolCheck(requestCtx, channel, testUserID, testGroup, channelTestMethodManual, testModel, endpointType, isStream, protocolCheck)
+	milliseconds := time.Since(tik).Milliseconds()
+	recordChannelTestHealth(channel, result, milliseconds)
 	if result.localErr != nil {
 		resp := gin.H{
 			"success": false,
 			"message": result.localErr.Error(),
 			"time":    0.0,
+			"group":   testGroup,
 		}
 		if result.newAPIError != nil {
 			resp["error_code"] = result.newAPIError.GetErrorCode()
 		}
+		if result.protocolReport != nil {
+			resp["protocol_check"] = result.protocolReport
+		}
 		c.JSON(http.StatusOK, resp)
 		return
 	}
-	tok := time.Now()
-	milliseconds := tok.Sub(tik).Milliseconds()
 	go channel.UpdateResponseTime(milliseconds)
 	consumedTime := float64(milliseconds) / 1000.0
 	if result.newAPIError != nil {
-		c.JSON(http.StatusOK, gin.H{
+		resp := gin.H{
 			"success":    false,
 			"message":    result.newAPIError.Error(),
 			"time":       consumedTime,
 			"error_code": result.newAPIError.GetErrorCode(),
-		})
+			"group":      testGroup,
+		}
+		if result.protocolReport != nil {
+			resp["protocol_check"] = result.protocolReport
+		}
+		c.JSON(http.StatusOK, resp)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
+	resp := gin.H{
 		"success": true,
 		"message": "",
 		"time":    consumedTime,
-	})
+		"group":   testGroup,
+	}
+	if result.protocolReport != nil {
+		resp["protocol_check"] = result.protocolReport
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // channelTestSummary records the outcome of one channel test cycle so the
@@ -961,12 +1097,17 @@ type channelTestSummary struct {
 	Enabled   int `json:"enabled"`
 }
 
-func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, testUserID int, allowDisable bool, disableThreshold int64) channelTestSummary {
+func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, testUserID int, allowDisable bool, testMethod string, disableThreshold int64) channelTestSummary {
 	summary := channelTestSummary{}
 	isChannelEnabled := channel.Status == common.ChannelStatusEnabled
 	tik := time.Now()
-	result := testChannel(ctx, channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
+	testGroup, groupErr := resolveChannelTestGroup(channel, "")
+	result := testResult{localErr: groupErr}
+	if groupErr == nil {
+		result = testChannel(ctx, channel, testUserID, testGroup, testMethod, "", "", shouldUseStreamForAutomaticChannelTest(channel))
+	}
 	milliseconds := time.Since(tik).Milliseconds()
+	recordChannelTestHealth(channel, result, milliseconds)
 	if ctx.Err() != nil {
 		return summary
 	}
@@ -992,7 +1133,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		}
 	}
 
-	if newAPIError == nil {
+	if result.localErr == nil && newAPIError == nil {
 		summary.Succeeded++
 	} else {
 		summary.Failed++
@@ -1105,10 +1246,49 @@ func runChannelTestWorkers(
 	return summary
 }
 
+func recordChannelTestHealth(channel *model.Channel, result testResult, latencyMs int64) {
+	if !channel_health_setting.GetSetting().Enabled || channel == nil || result.context == nil {
+		return
+	}
+	modelName := common.GetContextKeyString(result.context, constant.ContextKeyOriginalModel)
+	if modelName == "" {
+		return
+	}
+	sample := model.ChannelHealthSample{
+		ChannelID:    channel.Id,
+		ModelName:    modelName,
+		EndpointType: model.ChannelHealthEndpoint(result.context.Request.URL.Path),
+		SampledAt:    time.Now().Unix(),
+		Success:      result.localErr == nil && result.newAPIError == nil,
+		LatencyMs:    latencyMs,
+	}
+	if !sample.Success {
+		if result.newAPIError == nil {
+			sample.HTTPStatus = 0
+			sample.ErrorClass = "network"
+		} else {
+			sample.HTTPStatus = result.newAPIError.StatusCode
+			if !model.IsChannelHealthFailureStatus(sample.HTTPStatus) {
+				return
+			}
+			sample.ErrorCode = string(result.newAPIError.GetErrorCode())
+			sample.ErrorClass = "upstream"
+			if sample.HTTPStatus == http.StatusTooManyRequests {
+				sample.ErrorClass = "rate_limit"
+			} else if sample.HTTPStatus <= 0 {
+				sample.ErrorClass = "network"
+			}
+		}
+	}
+	if err := model.RecordChannelHealthSample(sample); err != nil {
+		common.SysError("record channel test health: " + err.Error())
+	}
+}
+
 // performChannelTests runs channel health checks with the configured bounded
 // concurrency and honors cancellation when a system-task runner loses its
 // lease.
-func performChannelTests(ctx context.Context, channels []*model.Channel, testUserID int, allowDisable bool, concurrency int, report func(processed, total int)) channelTestSummary {
+func performChannelTests(ctx context.Context, channels []*model.Channel, testUserID int, allowDisable bool, concurrency int, testMethod string, report func(processed, total int)) channelTestSummary {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -1121,7 +1301,7 @@ func performChannelTests(ctx context.Context, channels []*model.Channel, testUse
 		channels,
 		concurrency,
 		func(ctx context.Context, channel *model.Channel) channelTestSummary {
-			return testChannelForHealthCheck(ctx, channel, testUserID, allowDisable, disableThreshold)
+			return testChannelForHealthCheck(ctx, channel, testUserID, allowDisable, testMethod, disableThreshold)
 		},
 		report,
 	)
@@ -1150,8 +1330,12 @@ func runChannelTestTask(ctx context.Context, mode string, notify bool, report fu
 	}
 	selected := selectChannelsForAutomaticTest(channels, mode)
 	allowDisable := mode != operation_setting.ChannelTestModePassiveRecovery
+	testMethod := channelTestMethodScheduled
+	if notify {
+		testMethod = channelTestMethodManualBatch
+	}
 	concurrency := operation_setting.GetMonitorSetting().ChannelTestConcurrency
-	summary := performChannelTests(ctx, selected, testUserID, allowDisable, concurrency, report)
+	summary := performChannelTests(ctx, selected, testUserID, allowDisable, concurrency, testMethod, report)
 	if notify && (ctx == nil || ctx.Err() == nil) {
 		service.NotifyChannelWatchers(dto.NotifyTypeChannelTest, func(lang string) (string, string) {
 			return i18n.Translate(lang, i18n.MsgChannelTestCompletedSubject), i18n.Translate(lang, i18n.MsgChannelTestCompletedContent)

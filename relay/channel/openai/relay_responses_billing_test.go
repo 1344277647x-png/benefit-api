@@ -134,13 +134,11 @@ func TestOaiResponsesStreamHandlerCompletionLifecycle(t *testing.T) {
 		{name: "midstream disconnect followed by cleanup EOF", event: "response.output_text.delta", cancel: true, closeEOF: true, wantEnd: relaycommon.StreamEndReasonClientGone, wantError: true},
 		{name: "cancellation before flush", event: "response.completed", responseStatus: "completed", cancel: true, cancelBeforeFlush: true, wantEnd: relaycommon.StreamEndReasonClientGone, wantError: true},
 		{name: "event write failure", event: "response.completed", responseStatus: "completed", failWrite: 1, wantEnd: relaycommon.StreamEndReasonHandlerStop, wantError: true},
-		{name: "data write failure", event: "response.completed", responseStatus: "completed", failWrite: 2, wantEnd: relaycommon.StreamEndReasonHandlerStop, wantError: true},
-		{name: "delimiter write failure", event: "response.completed", responseStatus: "completed", failWrite: 3, wantEnd: relaycommon.StreamEndReasonHandlerStop, wantError: true},
 		{name: "flush failure", event: "response.completed", responseStatus: "completed", failFlush: true, wantEnd: relaycommon.StreamEndReasonHandlerStop, wantError: true},
-		{name: "protocol error before completion", event: "response.completed", responseStatus: "completed", priorError: true, cancel: true, wantEnd: relaycommon.StreamEndReasonClientGone, wantError: true},
-		{name: "upstream read failure before handler returns", event: "response.completed", responseStatus: "completed", scannerError: true, wantEnd: relaycommon.StreamEndReasonScannerErr, wantError: true},
-		{name: "done with failed response", event: "response.done", responseStatus: "failed", eof: true, wantEnd: relaycommon.StreamEndReasonEOF, wantError: true},
-		{name: "done with incomplete response", event: "response.done", responseStatus: "incomplete", eof: true, wantEnd: relaycommon.StreamEndReasonEOF},
+		{name: "protocol error before completion", event: "response.completed", responseStatus: "completed", priorError: true, eof: true, wantEnd: relaycommon.StreamEndReasonHandlerStop, wantError: true},
+		{name: "upstream read failure after output", event: "response.output_text.delta", scannerError: true, wantEnd: relaycommon.StreamEndReasonScannerErr, wantError: true},
+		{name: "done with failed response", event: "response.done", responseStatus: "failed", eof: true, wantEnd: relaycommon.StreamEndReasonHandlerStop, wantError: true},
+		{name: "done with incomplete response", event: "response.done", responseStatus: "incomplete", eof: true, wantEnd: relaycommon.StreamEndReasonHandlerStop, wantError: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			payload := fmt.Sprintf(`{"type":%q,"response":{"status":%q,"usage":{"input_tokens":7,"output_tokens":5,"total_tokens":12},"output":[{"id":"img_1","type":"image_generation_call","status":"completed","result":"image-data"}]}}`, tc.event, tc.responseStatus)
@@ -163,7 +161,7 @@ func TestOaiResponsesStreamHandlerCompletionLifecycle(t *testing.T) {
 			t.Cleanup(cancel)
 			writer := &responsesLifecycleWriter{
 				ResponseRecorder: httptest.NewRecorder(), body: body, needle: payload + "\n\n",
-				cancelBeforeFlush: tc.cancelBeforeFlush, waitForCleanup: tc.cancel || tc.scannerError,
+				cancelBeforeFlush: tc.cancelBeforeFlush, waitForCleanup: tc.cancel,
 				failWrite: tc.failWrite, writeErr: errors.New("downstream write failed"),
 			}
 			if tc.cancel {
@@ -187,22 +185,41 @@ func TestOaiResponsesStreamHandlerCompletionLifecycle(t *testing.T) {
 			info.SetEstimatePromptTokens(7)
 			resp := &http.Response{StatusCode: http.StatusOK, Body: upstream, Header: http.Header{"Content-Type": {"text/event-stream"}}}
 			usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
-			require.Nil(t, apiErr)
-			require.NotNil(t, usage)
+			if tc.wantError {
+				require.NotNil(t, apiErr)
+				require.Nil(t, usage)
+				usage = info.PartialStreamUsage
+			} else {
+				require.Nil(t, apiErr)
+				require.NotNil(t, usage)
+			}
 			require.NotNil(t, info.StreamStatus)
 			assert.Equal(t, tc.wantEnd, info.StreamStatus.EndReason)
-			assert.Equal(t, tc.responseStatus, info.StreamStatus.ResponseOutcome())
+			wantOutcome := tc.responseStatus
+			if tc.priorError {
+				wantOutcome = "failed"
+			}
+			assert.Equal(t, wantOutcome, info.StreamStatus.ResponseOutcome())
 			log := service.GenerateTextOtherInfo(c, info, 1, 1, 1, 0, 1, 0, 1).Snapshot()["stream_status"].(map[string]any)
 			assert.Equal(t, tc.wantError, log["status"] == "error")
-			if tc.responseStatus != "" {
+			if tc.priorError {
+				assert.Nil(t, usage)
+			} else if tc.responseStatus != "" {
+				require.NotNil(t, usage)
 				assert.Equal(t, 7, usage.PromptTokens)
 				assert.Equal(t, 5, usage.CompletionTokens)
 				assert.Equal(t, 12, usage.TotalTokens)
 				require.NotNil(t, info.ResponsesUsageInfo)
 				require.Contains(t, info.ResponsesUsageInfo.BuiltInTools, dto.BuildInToolImageGeneration)
-				assert.Equal(t, 1, info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration].CallCount)
+				wantImages := 0
+				if !tc.wantError {
+					wantImages = 1
+				}
+				assert.Equal(t, wantImages, info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration].CallCount)
 			}
-			if tc.failWrite == 0 {
+			if tc.priorError || wantOutcome == "failed" || wantOutcome == "incomplete" {
+				assert.Empty(t, writer.Body.String())
+			} else if tc.failWrite == 0 {
 				assert.Contains(t, writer.Body.String(), payload+"\n\n")
 			} else {
 				assert.ErrorIs(t, info.StreamStatus.EndError, writer.writeErr)
@@ -358,7 +375,7 @@ func TestOaiResponsesHandlerCountsCompletedImageGenerationOutputs(t *testing.T) 
 	assert.False(t, c.GetBool("image_generation_call"))
 }
 
-func TestOaiResponsesHandlerCountsImageGenerationOnIncompleteStatus(t *testing.T) {
+func TestOaiResponsesHandlerDoesNotChargeImagesOnIncompleteStatus(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	body, err := common.Marshal(dto.OpenAIResponsesResponse{
@@ -394,10 +411,10 @@ func TestOaiResponsesHandlerCountsImageGenerationOnIncompleteStatus(t *testing.T
 
 	_, apiErr := OaiResponsesHandler(c, info, resp)
 	require.Nil(t, apiErr)
-	assert.Equal(t, 1, info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration].CallCount)
+	assert.Equal(t, 0, info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration].CallCount)
 }
 
-func runResponsesImageBillingStream(t *testing.T, events ...string) *relaycommon.RelayInfo {
+func runResponsesImageBillingStream(t *testing.T, wantError bool, events ...string) *relaycommon.RelayInfo {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	oldTimeout := constant.StreamingTimeout
@@ -420,6 +437,7 @@ func runResponsesImageBillingStream(t *testing.T, events ...string) *relaycommon
 	c.Set(common.RequestIdKey, "responses-image-billing-test")
 	info := &relaycommon.RelayInfo{
 		OriginModelName: "gpt-5.1",
+		IsStream:        true,
 		DisablePing:     true,
 		ChannelMeta: &relaycommon.ChannelMeta{
 			UpstreamModelName: "gpt-5.1",
@@ -432,7 +450,11 @@ func runResponsesImageBillingStream(t *testing.T, events ...string) *relaycommon
 	}
 
 	_, apiErr := OaiResponsesStreamHandler(c, info, resp)
-	require.Nil(t, apiErr)
+	if wantError {
+		require.NotNil(t, apiErr)
+	} else {
+		require.Nil(t, apiErr)
+	}
 	require.NotNil(t, info.ResponsesUsageInfo)
 	require.Contains(t, info.ResponsesUsageInfo.BuiltInTools, dto.BuildInToolImageGeneration)
 	return info
@@ -441,7 +463,7 @@ func runResponsesImageBillingStream(t *testing.T, events ...string) *relaycommon
 func TestOaiResponsesStreamHandlerDeduplicatesCompletedImageOutput(t *testing.T) {
 	item := `{"type":"image_generation_call","id":"img_1","call_id":"call_1","status":"completed","result":"base64-a"}`
 	info := runResponsesImageBillingStream(
-		t,
+		t, false,
 		`{"type":"response.output_item.done","output_index":0,"item":`+item+`}`,
 		`{"type":"response.completed","response":{"status":"completed","output":[`+item+`],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`,
 	)
@@ -449,19 +471,29 @@ func TestOaiResponsesStreamHandlerDeduplicatesCompletedImageOutput(t *testing.T)
 	assert.Equal(t, 1, info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration].CallCount)
 }
 
-func TestOaiResponsesStreamHandlerCountsImageOutputOnIncomplete(t *testing.T) {
-	info := runResponsesImageBillingStream(
-		t,
-		`{"type":"response.output_item.done","output_index":0,"item":{"type":"image_generation_call","id":"img_1","status":"completed","result":"base64-a"}}`,
-		`{"type":"response.incomplete","response":{"status":"incomplete"}}`,
-	)
-
-	assert.Equal(t, 1, info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration].CallCount)
+func TestOaiResponsesStreamHandlerDoesNotChargeImagesOnIncomplete(t *testing.T) {
+	for _, tc := range []struct {
+		name, terminal string
+		wantError      bool
+	}{
+		{"missing reason", `{"type":"response.incomplete","response":{"status":"incomplete"}}`, true},
+		{"output limit", `{"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			info := runResponsesImageBillingStream(
+				t, tc.wantError,
+				`{"type":"response.output_item.done","output_index":0,"item":{"type":"image_generation_call","id":"img_1","status":"completed","result":"base64-a"}}`,
+				tc.terminal,
+			)
+			assert.Equal(t, 0, info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration].CallCount)
+			assert.Nil(t, info.PartialStreamUsage)
+		})
+	}
 }
 
 func TestOaiResponsesStreamHandlerDoesNotCountPartialImageEvent(t *testing.T) {
 	info := runResponsesImageBillingStream(
-		t,
+		t, false,
 		`{"type":"response.image_generation_call.partial_image","output_index":0,"partial_image_b64":"partial-bytes"}`,
 		`{"type":"response.completed","response":{"status":"completed","output":[]}}`,
 	)
@@ -705,4 +737,128 @@ func TestAzureHostedWebSearch(t *testing.T) {
 			assert.Equal(t, map[string]int{"bing_web_search": 5}, billed)
 		})
 	}
+}
+
+func TestOaiResponsesHandlerIncompleteStatusCommitsZeroImageGeneration(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body, err := common.Marshal(dto.OpenAIResponsesResponse{
+		Status: []byte(`"incomplete"`),
+		Output: []dto.ResponsesOutput{
+			{
+				Type:   dto.ResponsesOutputTypeImageGenerationCall,
+				ID:     "img_1",
+				Status: "completed",
+				Result: "base64-a",
+			},
+		},
+		Usage: &dto.Usage{InputTokens: 1, OutputTokens: 1, TotalTokens: 2},
+	})
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "gpt-5.1",
+		ResponsesUsageInfo: &relaycommon.ResponsesUsageInfo{
+			BuiltInTools: map[string]*relaycommon.BuildInToolInfo{
+				dto.BuildInToolImageGeneration: {ToolName: dto.BuildInToolImageGeneration, CallCount: 0},
+			},
+		},
+	}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewReader(body)),
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+	}
+
+	_, apiErr := OaiResponsesHandler(c, info, resp)
+	require.Nil(t, apiErr)
+	assert.Equal(t, 0, info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration].CallCount)
+}
+
+func TestOaiResponsesStreamHandlerReturnsRetryableErrorBeforeFirstEvent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() {
+		constant.StreamingTimeout = oldTimeout
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	info := &relaycommon.RelayInfo{
+		DisablePing: true,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "gpt-5.1",
+		},
+	}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader("")),
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+	}
+
+	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
+	require.Nil(t, usage)
+	require.NotNil(t, apiErr)
+	assert.Equal(t, http.StatusBadGateway, apiErr.StatusCode)
+	assert.Equal(t, types.ErrorCodeReadResponseBodyFailed, apiErr.GetErrorCode())
+	assert.Equal(t, relaycommon.StreamEndReasonEOF, info.StreamStatus.EndReason)
+	assert.Equal(t, 0, info.ReceivedResponseCount)
+}
+
+func TestOaiResponsesStreamHandlerRejectsEOFBeforeCompleted(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() {
+		constant.StreamingTimeout = oldTimeout
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	info := &relaycommon.RelayInfo{
+		DisablePing: true,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "gpt-5.1",
+		},
+	}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"model\":\"gpt-5.1\"}}\n\n",
+		)),
+		Header: http.Header{"Content-Type": []string{"text/event-stream"}},
+	}
+
+	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
+	require.Nil(t, usage)
+	require.NotNil(t, apiErr)
+	assert.Equal(t, types.ErrorCodeReadResponseBodyFailed, apiErr.GetErrorCode())
+	assert.Equal(t, http.StatusBadGateway, apiErr.StatusCode)
+	assert.Equal(t, relaycommon.StreamEndReasonEOF, info.StreamStatus.EndReason)
+	assert.Equal(t, 1, info.ReceivedResponseCount)
+}
+
+func TestOaiResponsesStreamHandlerRejectsMalformedEvent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	info := &relaycommon.RelayInfo{DisablePing: true, ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "gpt-5.1"}}
+	resp := &http.Response{StatusCode: http.StatusOK,
+		Body:   io.NopCloser(strings.NewReader("data: {not-json}\n\n")),
+		Header: http.Header{"Content-Type": []string{"text/event-stream"}}}
+	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
+	require.Nil(t, usage)
+	require.NotNil(t, apiErr)
+	require.Equal(t, types.ErrorCodeBadResponseBody, apiErr.GetErrorCode())
+	require.NotEqual(t, relaycommon.StreamEndReasonDone, info.StreamStatus.EndReason)
 }

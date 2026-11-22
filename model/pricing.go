@@ -2,6 +2,7 @@ package model
 
 import (
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -144,6 +145,101 @@ func getPricingEndpointTypesForAbility(ability AbilityWithChannel, advancedCusto
 // relay routes: Advanced Custom settings, or a task plugin's meta.relay.
 func pricingUsesRelayRoutes(channelType int) bool {
 	return channelType == constant.ChannelTypeAdvancedCustom || channelType == constant.ChannelTypeTaskPlugin
+}
+
+// GetEnabledModelEndpointGroups returns the channel groups that can route each
+// model through each supported endpoint. It intentionally checks the channel
+// status in addition to the ability row so stale abilities from a disabled
+// channel cannot make a model appear usable to callers such as the creation
+// center.
+func GetEnabledModelEndpointGroups() (map[string]map[constant.EndpointType][]string, error) {
+	abilities, err := GetAllEnableAbilityWithChannels()
+	if err != nil {
+		return nil, err
+	}
+	advancedCustomConfigs := loadPricingAdvancedCustomConfigs(abilities)
+	groupsByModel := make(map[string]map[constant.EndpointType]map[string]struct{})
+	for _, ability := range abilities {
+		if ability.ChannelStatus != common.ChannelStatusEnabled {
+			continue
+		}
+		group := strings.TrimSpace(ability.Group)
+		modelName := strings.TrimSpace(ability.Model)
+		if group == "" || modelName == "" {
+			continue
+		}
+		for _, endpointType := range getPricingEndpointTypesForAbility(ability, advancedCustomConfigs) {
+			endpointGroups, ok := groupsByModel[modelName]
+			if !ok {
+				endpointGroups = make(map[constant.EndpointType]map[string]struct{})
+				groupsByModel[modelName] = endpointGroups
+			}
+			groups, ok := endpointGroups[endpointType]
+			if !ok {
+				groups = make(map[string]struct{})
+				endpointGroups[endpointType] = groups
+			}
+			groups[group] = struct{}{}
+		}
+	}
+
+	result := make(map[string]map[constant.EndpointType][]string, len(groupsByModel))
+	for modelName, endpointGroups := range groupsByModel {
+		result[modelName] = make(map[constant.EndpointType][]string, len(endpointGroups))
+		for endpointType, groups := range endpointGroups {
+			values := make([]string, 0, len(groups))
+			for group := range groups {
+				values = append(values, group)
+			}
+			sort.Strings(values)
+			result[modelName][endpointType] = values
+		}
+	}
+	return result, nil
+}
+
+// GetModelSupportEndpointTypesForGroups returns only the endpoint capabilities
+// backed by enabled channels in the supplied groups. The global pricing cache
+// intentionally remains available for admin/public catalog views, but API key
+// model discovery must not advertise a capability owned by another group.
+func GetModelSupportEndpointTypesForGroups(groups []string) (map[string][]constant.EndpointType, error) {
+	endpointGroups, err := GetEnabledModelEndpointGroups()
+	if err != nil {
+		return nil, err
+	}
+
+	groupSet := make(map[string]struct{}, len(groups))
+	for _, group := range groups {
+		group = strings.TrimSpace(group)
+		if group == "" {
+			continue
+		}
+		groupSet[group] = struct{}{}
+	}
+
+	result := make(map[string][]constant.EndpointType)
+	for modelName, endpointGroups := range endpointGroups {
+		for endpointType, endpointGroupNames := range endpointGroups {
+			usable := false
+			for _, group := range endpointGroupNames {
+				if _, ok := groupSet[group]; ok && ratio_setting.ContainsGroupRatio(group) {
+					usable = true
+					break
+				}
+			}
+			if !usable {
+				continue
+			}
+			result[modelName] = append(result[modelName], endpointType)
+		}
+	}
+
+	for modelName := range result {
+		sort.Slice(result[modelName], func(i, j int) bool {
+			return result[modelName][i] < result[modelName][j]
+		})
+	}
+	return result, nil
 }
 
 // loadPricingAdvancedCustomConfigs runs inside updatePricing while

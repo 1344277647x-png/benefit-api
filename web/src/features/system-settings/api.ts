@@ -22,6 +22,8 @@ import type {
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
+  LotteryOptionsUpdateRequest,
+  ReferralOptionsUpdateRequest,
   SystemOptionsResponse,
   SystemTaskListResponse,
   SystemTaskFilters,
@@ -41,6 +43,37 @@ export async function getSystemOptions() {
 
 export async function updateSystemOption(request: UpdateOptionRequest) {
   const res = await api.put<UpdateOptionResponse>('/api/option/', request)
+  return res.data
+}
+
+export async function updateReferralOptions(
+  request: ReferralOptionsUpdateRequest
+) {
+  const res = await api.post<UpdateOptionResponse>(
+    '/api/option/referral',
+    request
+  )
+  return res.data
+}
+
+export async function updateLotteryOptions(
+  request: LotteryOptionsUpdateRequest
+) {
+  const res = await api.post<UpdateOptionResponse>(
+    '/api/option/lottery',
+    request
+  )
+  return res.data
+}
+
+export async function updateContentAuditSetting(request: {
+  enabled: boolean
+  privacy_ready: boolean
+}) {
+  const res = await api.post<UpdateOptionResponse>(
+    '/api/option/content_audit',
+    request
+  )
   return res.data
 }
 

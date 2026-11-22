@@ -46,6 +46,29 @@ func attachQuotaSaturation(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, o
 		clamp.Op, clamp.Kind, clamp.Original, clamp.Clamped, relayInfo.UserId, relayInfo.GetBillingModelName()))
 }
 
+func AppendImageBatchLogInfo(other *model.LogOther, batch *relaycommon.ImageBatchInfo) {
+	if other == nil || batch == nil {
+		return
+	}
+	other.SetPublic("batch_mode", batch.Mode)
+	other.SetPublic("requested_count", batch.RequestedCount)
+	other.SetPublic("result_count", batch.ResultCount)
+	other.SetPublic("failed_count", batch.FailedCount)
+	other.SetPublic("reference_count", batch.ReferenceCount)
+	if batch.Resolution != "" {
+		other.SetPublic("resolution", batch.Resolution)
+	}
+	if batch.AspectRatio != "" {
+		other.SetPublic("aspect_ratio", batch.AspectRatio)
+	}
+	if batch.ResolvedSize != "" {
+		other.SetPublic("resolved_size", batch.ResolvedSize)
+	}
+	if len(batch.Errors) > 0 {
+		other.SetAdmin("image_batch_errors", batch.Errors)
+	}
+}
+
 func appendRequestPath(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, other *model.LogOther) {
 	if other == nil {
 		return
@@ -95,6 +118,11 @@ func AppendRelayLogAdminInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo,
 	}
 
 	AppendChannelAffinityAdminInfo(ctx, other)
+	if value, ok := ctx.Get(relaycommon.StreamDiagnosticsContextKey); ok {
+		if diagnostics, ok := value.(*relaycommon.StreamDiagnostics); ok {
+			other.SetAdmin("stream_diagnostics", diagnostics.Snapshot())
+		}
+	}
 	if events := RequestPolicy(ctx).Events(); len(events) > 0 {
 		other.SetAdmin("request_policy", events)
 	}
@@ -112,6 +140,7 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	other.SetPublic("model_price", modelPrice)
 	other.SetPublic("user_group_ratio", userGroupRatio)
 	other.SetPublic("frt", float64(relayInfo.FirstResponseTime.UnixMilli()-relayInfo.StartTime.UnixMilli()))
+	other.SetPublic("operations_request_started_at", relayInfo.StartTime.Unix())
 	if relayInfo.ReasoningEffort != "" {
 		other.SetPublic("reasoning_effort", relayInfo.ReasoningEffort)
 	}
@@ -127,6 +156,7 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 
 	AppendRelayLogAdminInfo(ctx, relayInfo, other)
 	AppendResponseModelLogInfo(relayInfo, other)
+	AppendImageBatchLogInfo(other, relayInfo.ImageBatchInfo)
 	appendRequestPath(ctx, relayInfo, other)
 	appendRequestConversionChain(relayInfo, other)
 	appendFinalRequestFormat(relayInfo, other)
@@ -168,7 +198,16 @@ func appendRequestPluginRecord(relayInfo *relaycommon.RelayInfo, other *model.Lo
 }
 
 func appendStreamStatus(relayInfo *relaycommon.RelayInfo, other *model.LogOther) {
-	if relayInfo == nil || other == nil || !relayInfo.IsStream || relayInfo.StreamStatus == nil {
+	if relayInfo == nil || other == nil || !relayInfo.IsStream {
+		return
+	}
+	if relayInfo.PartialStreamUsage != nil {
+		other.SetAdmin("partial_stream_billing", map[string]any{
+			"usage_source":      relayInfo.PartialStreamUsageSource,
+			"request_succeeded": false,
+		})
+	}
+	if relayInfo.StreamStatus == nil {
 		return
 	}
 	ss := relayInfo.StreamStatus
@@ -204,6 +243,9 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other *model.LogOther) 
 	// billing_source: "wallet" or "subscription"
 	if relayInfo.BillingSource != "" {
 		other.SetPublic("billing_source", relayInfo.BillingSource)
+	}
+	if relayInfo.BillingSource == BillingSourceTeam {
+		other.SetPublic("team_id", relayInfo.TeamId)
 	}
 	if relayInfo.UserSetting.BillingPreference != "" {
 		other.SetPublic("billing_preference", relayInfo.UserSetting.BillingPreference)

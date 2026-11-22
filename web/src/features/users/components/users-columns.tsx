@@ -32,8 +32,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { toIntlLocale } from '@/i18n/languages'
 import { getCurrencyDisplay } from '@/lib/currency'
-import { formatQuota } from '@/lib/format'
+import { formatCompactNumber, formatQuota } from '@/lib/format'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
 import {
@@ -47,7 +48,8 @@ import { DataTableRowActions } from './data-table-row-actions'
 import { UserQuotaCell } from './user-quota-cell'
 
 export function useUsersColumns(): ColumnDef<User>[] {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const currencyConfig = useSystemConfigStore((state) => state.config.currency)
   const { meta: currency } = getCurrencyDisplay()
   const quotaUnit = currency.kind === 'tokens' ? t('Tokens') : currency.symbol
@@ -195,6 +197,53 @@ export function useUsersColumns(): ColumnDef<User>[] {
         meta: { mobileOrder: 40 },
       },
       {
+        id: 'usage_tokens',
+        header: t('Tokens'),
+        cell: ({ row }) => {
+          const summary = row.original.usage_summary
+          return (
+            <span className='font-medium tabular-nums'>
+              {summary ? formatCompactNumber(summary.token_used, locale) : '—'}
+            </span>
+          )
+        },
+        enableSorting: false,
+        size: 100,
+        meta: { mobileOrder: 45 },
+      },
+      {
+        id: 'usage_requests',
+        header: t('Requests'),
+        cell: ({ row }) => {
+          const summary = row.original.usage_summary
+          return (
+            <span className='font-medium tabular-nums'>
+              {summary
+                ? formatCompactNumber(summary.request_count, locale)
+                : '—'}
+            </span>
+          )
+        },
+        enableSorting: false,
+        size: 105,
+        meta: { mobileHidden: true },
+      },
+      {
+        id: 'usage_quota',
+        header: t('Spend'),
+        cell: ({ row }) => {
+          const summary = row.original.usage_summary
+          return (
+            <span className='text-sm font-medium tabular-nums'>
+              {summary ? formatQuota(summary.consumed_quota) : '—'}
+            </span>
+          )
+        },
+        enableSorting: false,
+        size: 120,
+        meta: { mobileHidden: true },
+      },
+      {
         accessorKey: 'group',
         header: t('User Group'),
         cell: ({ row }) => {
@@ -298,6 +347,6 @@ export function useUsersColumns(): ColumnDef<User>[] {
     ],
     // formatQuota reads the currency configuration from the store.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [t, quotaUnit, currencyConfig]
+    [t, locale, quotaUnit, currencyConfig]
   )
 }

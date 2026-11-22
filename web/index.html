@@ -13,15 +13,15 @@
       content="Unified AI API gateway and admin dashboard."
     />
 
-    <meta name="theme-color" content="#fff" />
+    <meta name="theme-color" content="#081815" />
     <!-- Resolve the theme before first paint so the page never flashes light
          and one-shot detectors (e.g. Dark Reader) see the real theme.
          Keep in sync with ThemeProvider and THEME_STORAGE_KEYS.mode. -->
     <script>
       ;(function () {
-        var theme = 'system'
+        var theme = 'dark'
         try {
-          theme = localStorage.getItem('newapi:theme:v1:mode') || 'system'
+          theme = localStorage.getItem('newapi:theme:v1:mode') || 'dark'
         } catch (e) {}
         if (theme !== 'dark' && theme !== 'light') {
           theme = window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -29,13 +29,16 @@
             : 'light'
         }
         document.documentElement.classList.add(theme)
+        document
+          .querySelector('meta[name="theme-color"]')
+          ?.setAttribute('content', theme === 'dark' ? '#081815' : '#edf3ee')
       })()
     </script>
     <!--umami-->
     <!--Google Analytics-->
   </head>
 
-  <body>
+  <body class="benefit-cinematic-site">
     <div id="root" translate="no" class="notranslate"></div>
   </body>
 </html>

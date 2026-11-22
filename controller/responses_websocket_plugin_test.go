@@ -173,7 +173,7 @@ func TestResponsesWebSocketRunsRequestPlugins(t *testing.T) {
 	var errorLogs []model.Log
 	require.NoError(t, model.LOG_DB.Where("type = ?", model.LogTypeError).Find(&errorLogs).Error)
 	require.Len(t, errorLogs, 1)
-	assert.Contains(t, errorLogs[0].Content, "Blocked")
+	assert.Equal(t, "Relay request failed (status 400)", errorLogs[0].Content)
 	assert.JSONEq(t, `[{"plugin":"rp-ws","stage":"ingress","rejected":{"code":"blocked.ws"}}]`, stripRecordNames(t, gjson.Get(errorLogs[0].Other, "request_plugins").Raw))
 }
 

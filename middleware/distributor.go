@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -133,7 +134,10 @@ func Distribute() func(c *gin.Context) {
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
 		SetupContextForSelectedChannel(c, channel, modelRequest.Model)
 		c.Next()
-		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest {
+		success, checked := c.Get(relaycommon.RelaySuccessContextKey)
+		// Non-relay task handlers retain their HTTP-based contract. Relay marks
+		// its business outcome explicitly, since partial streams still have HTTP 200.
+		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest && (!checked || success == true) && !c.GetBool("relay_stream_partial_failed") {
 			service.RecordChannelAffinity(c, channel.Id)
 		}
 	}

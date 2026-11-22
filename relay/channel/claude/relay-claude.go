@@ -340,6 +340,12 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 		Usage:        &dto.Usage{},
 	}
 	var err *types.NewAPIError
+	defer func() {
+		if err != nil {
+			claudeInfo.Usage.UsageSemantic = "anthropic"
+			service.RetainPartialStreamUsage(c, info, claudeInfo.Usage, claudeInfo.ResponseText.String())
+		}
+	}()
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		err = HandleStreamResponseData(c, info, claudeInfo, data)
 		if err != nil {
@@ -348,6 +354,10 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 	})
 	info.StreamStatus.RequireTerminal()
 	if err != nil {
+		return nil, err
+	}
+	if info.StreamStatus != nil && (!info.StreamStatus.IsNormalEnd() || info.StreamStatus.HasErrors()) {
+		err = types.NewOpenAIError(fmt.Errorf("upstream Claude stream interrupted"), types.ErrorCodeBadResponse, http.StatusBadGateway)
 		return nil, err
 	}
 

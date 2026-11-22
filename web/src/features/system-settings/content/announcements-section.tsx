@@ -22,7 +22,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import * as z from 'zod'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { StaticRowActions } from '@/components/data-table/static/static-row-actions'
@@ -68,6 +67,12 @@ import { handleServerError } from '@/lib/handle-server-error'
 import { SettingsSwitchField } from '../components/settings-form-layout'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
+import {
+  announcementSchema,
+  countAnnouncementCharacters,
+  MAX_ANNOUNCEMENT_CONTENT_CHARACTERS,
+  type AnnouncementFormValues,
+} from './announcement-validation'
 
 type Announcement = {
   id: number
@@ -75,27 +80,14 @@ type Announcement = {
   publishDate: string
   type: 'default' | 'ongoing' | 'success' | 'warning' | 'error'
   extra?: string
+  popupEnabled?: boolean
+  popupFrequency?: 'once' | 'daily' | 'session'
 }
 
 type AnnouncementsSectionProps = {
   enabled: boolean
   data: string
 }
-
-const announcementSchema = z.object({
-  content: z
-    .string()
-    .min(1, 'Content is required')
-    .max(500, 'Content must be less than 500 characters'),
-  publishDate: z.string().min(1, 'Publish date is required'),
-  type: z.enum(['default', 'ongoing', 'success', 'warning', 'error']),
-  extra: z
-    .string()
-    .max(100, 'Extra must be less than 100 characters')
-    .optional(),
-})
-
-type AnnouncementFormValues = z.infer<typeof announcementSchema>
 
 const ANNOUNCEMENT_FORM_ID = 'announcement-form'
 
@@ -156,6 +148,8 @@ export function AnnouncementsSection({
       publishDate: new Date().toISOString(),
       type: 'default',
       extra: '',
+      popupEnabled: true,
+      popupFrequency: 'once',
     },
   })
 
@@ -199,6 +193,8 @@ export function AnnouncementsSection({
       publishDate: new Date().toISOString(),
       type: 'default',
       extra: '',
+      popupEnabled: true,
+      popupFrequency: 'once',
     })
     setShowDialog(true)
   }
@@ -210,6 +206,8 @@ export function AnnouncementsSection({
       publishDate: announcement.publishDate,
       type: announcement.type,
       extra: announcement.extra || '',
+      popupEnabled: announcement.popupEnabled === true,
+      popupFrequency: announcement.popupFrequency || 'once',
     })
     setShowDialog(true)
   }
@@ -366,6 +364,22 @@ export function AnnouncementsSection({
               ),
             },
             {
+              id: 'popup',
+              header: t('Popup'),
+              cell: (announcement) =>
+                announcement.popupEnabled === true ? (
+                  <StatusBadge
+                    label={t(announcement.popupFrequency || 'once')}
+                    variant='info'
+                    copyable={false}
+                  />
+                ) : (
+                  <span className='text-muted-foreground text-xs'>
+                    {t('Disabled')}
+                  </span>
+                ),
+            },
+            {
               id: 'content',
               header: t('Content'),
               cellClassName: 'max-w-xs truncate',
@@ -476,11 +490,18 @@ export function AnnouncementsSection({
                         'Enter announcement content (supports Markdown/HTML)'
                       )}
                       rows={4}
+                      maxLength={MAX_ANNOUNCEMENT_CONTENT_CHARACTERS}
                       {...field}
                     />
                   </FormControl>
                   <FormDescription>
-                    {t('Maximum 500 characters. Supports Markdown and HTML.')}
+                    {t(
+                      'Maximum 10,000 characters. Supports Markdown and HTML.'
+                    )}{' '}
+                    {t('{{count}} / {{max}} characters', {
+                      count: countAnnouncementCharacters(field.value),
+                      max: MAX_ANNOUNCEMENT_CONTENT_CHARACTERS.toLocaleString(),
+                    })}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -557,6 +578,66 @@ export function AnnouncementsSection({
                 </FormItem>
               )}
             />
+            <div className='grid gap-3 sm:grid-cols-2'>
+              <FormField
+                control={form.control}
+                name='popupEnabled'
+                render={({ field }) => (
+                  <FormItem className='flex items-center justify-between rounded-md border p-3'>
+                    <div className='space-y-1'>
+                      <FormLabel>{t('Show as popup')}</FormLabel>
+                      <FormDescription>
+                        {t('Display this announcement in a site-wide popup.')}
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        aria-label={t('Show as popup')}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name='popupFrequency'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Popup frequency')}</FormLabel>
+                    <Select
+                      items={[
+                        { value: 'once', label: t('once') },
+                        { value: 'daily', label: t('daily') },
+                        { value: 'session', label: t('session') },
+                      ]}
+                      value={field.value}
+                      onValueChange={field.onChange}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent alignItemWithTrigger={false}>
+                        <SelectGroup>
+                          <SelectItem value='once'>{t('once')}</SelectItem>
+                          <SelectItem value='daily'>{t('daily')}</SelectItem>
+                          <SelectItem value='session'>
+                            {t('session')}
+                          </SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      {t('Choose how often a user can see this popup.')}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
             <FormField
               control={form.control}
               name='extra'

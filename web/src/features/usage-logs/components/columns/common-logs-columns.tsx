@@ -65,6 +65,7 @@ import {
   logTokenName,
   renderAuditContent,
   renderLogContent,
+  getBusinessLogDetails,
 } from '../../lib/format'
 import {
   isDisplayableLogType,
@@ -138,6 +139,13 @@ function buildTypeDetailSegments(
   language: string,
   usageSchema?: BillingUsageSchema
 ): DetailSegment[] {
+  if (log.type === 8 || log.type === 9) {
+    return getBusinessLogDetails(log.type, other, t).map(
+      ({ label, value }) => ({
+        text: `${label}: ${value}`,
+      })
+    )
+  }
   // Top-up, audit, and login logs can carry a localized operation descriptor.
   if (log.type === 1 || log.type === 3 || log.type === 7) {
     const text = renderAuditContent(other, t) ?? renderLogContent(other, t)
@@ -787,6 +795,7 @@ export function useCommonLogsColumns(
           const other = parseLogOther(log.other)
           return (
             <LogCostDisplay
+              type={log.type}
               quota={quota}
               other={other}
               showBillingSource={showBillingSource}

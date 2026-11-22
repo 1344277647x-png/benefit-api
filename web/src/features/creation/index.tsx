@@ -1,0 +1,1528 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  AlertCircle,
+  Check,
+  Download,
+  ImagePlus,
+  Images,
+  Loader2,
+  MonitorPlay,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+  Upload,
+  Video,
+  WandSparkles,
+  X,
+} from 'lucide-react'
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from 'react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+
+import { Main } from '@/components/layout'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import { Progress } from '@/components/ui/progress'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
+import { formatTimestamp } from '@/lib/format'
+import { getApiErrorMessage } from '@/lib/http-client'
+import { useAuthStore } from '@/stores/auth-store'
+
+import {
+  createImage,
+  createVideo,
+  deleteCreationUpload,
+  deleteCreationJob,
+  getCreationJob,
+  getCreationJobs,
+  getCreationModels,
+  retryCreationArchive,
+  uploadCreationAsset,
+  uploadCreationAssets,
+} from './api'
+import {
+  getInitialImageAspectRatio,
+  getInitialImageResolution,
+  getResolvedImageSize,
+} from './image-options'
+import { downloadAuthenticatedAsset, useAuthenticatedAssetUrl } from './media'
+import {
+  appendReferenceImageFiles,
+  MAX_REFERENCE_IMAGE_FILES,
+  MAX_REFERENCE_IMAGE_TOTAL_BYTES,
+} from './reference-image-files'
+import { ReferenceImagePicker } from './reference-images'
+import type {
+  CreationCapabilities,
+  CreationKind,
+  CreationModel,
+  CreationModelsData,
+  CreationProtocol,
+  GenerationAsset,
+  GenerationJob,
+  GenerationJobStatus,
+} from './types'
+
+const RUNNING_STATUSES = new Set<GenerationJobStatus>([
+  'pending',
+  'queued',
+  'processing',
+  'archiving',
+])
+
+const statusClasses: Record<GenerationJobStatus, string> = {
+  pending: 'border-amber-500/30 bg-amber-500/10 text-amber-600',
+  queued: 'border-sky-500/30 bg-sky-500/10 text-sky-600',
+  processing: 'border-sky-500/30 bg-sky-500/10 text-sky-600',
+  archiving: 'border-violet-500/30 bg-violet-500/10 text-violet-600',
+  archive_failed: 'border-amber-500/30 bg-amber-500/10 text-amber-600',
+  succeeded: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600',
+  partially_completed: 'border-amber-500/30 bg-amber-500/10 text-amber-600',
+  failed: 'border-rose-500/30 bg-rose-500/10 text-rose-600',
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const index = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    units.length - 1
+  )
+  return `${(bytes / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`
+}
+
+function statusLabel(status: GenerationJobStatus, t: (key: string) => string) {
+  const labels: Record<GenerationJobStatus, string> = {
+    pending: t('Preparing'),
+    queued: t('Queued'),
+    processing: t('Generating'),
+    archiving: t('Saving result'),
+    archive_failed: t('Save failed'),
+    succeeded: t('Completed'),
+    partially_completed: t('Partially completed'),
+    failed: t('Failed'),
+  }
+  return labels[status]
+}
+
+function capabilityLabel(model: CreationModel, t: (key: string) => string) {
+  if (model.protocol === 'gemini-image') return t('Gemini native image')
+  if (model.protocol === 'imagen') return t('Imagen image')
+  if (model.protocol === 'seedream-image') {
+    return t('Doubao Seedream (OpenAI-compatible images)')
+  }
+  if (model.protocol === 'novelai-image') {
+    return t('NovelAI (OpenAI-compatible images)')
+  }
+  if (model.protocol === 'openai-video') return t('OpenAI video protocol')
+  return t('OpenAI image protocol')
+}
+
+function NativeSelect({
+  id,
+  value,
+  onChange,
+  children,
+  disabled = false,
+}: {
+  id?: string
+  value: string
+  onChange: (value: string) => void
+  children: React.ReactNode
+  disabled?: boolean
+}) {
+  return (
+    <select
+      id={id}
+      value={value}
+      disabled={disabled}
+      onChange={(event) => onChange(event.target.value)}
+      className='border-input bg-background/70 text-foreground focus-visible:border-ring focus-visible:ring-ring/50 h-8 w-full min-w-0 rounded-lg border px-2.5 text-sm transition outline-none focus-visible:ring-3 disabled:cursor-not-allowed disabled:opacity-50'
+    >
+      {children}
+    </select>
+  )
+}
+
+function JobStatusBadge({
+  status,
+  t,
+}: {
+  status: GenerationJobStatus
+  t: (key: string) => string
+}) {
+  return (
+    <Badge variant='outline' className={statusClasses[status]}>
+      {RUNNING_STATUSES.has(status) && (
+        <Loader2 className='size-3 animate-spin' />
+      )}
+      {!RUNNING_STATUSES.has(status) && status === 'succeeded' && (
+        <Check className='size-3' />
+      )}
+      {status === 'partially_completed' && <AlertCircle className='size-3' />}
+      {!RUNNING_STATUSES.has(status) && status === 'failed' && (
+        <X className='size-3' />
+      )}
+      {statusLabel(status, t)}
+    </Badge>
+  )
+}
+
+function AssetPreview({
+  asset,
+  t,
+  alt,
+  compact = false,
+}: {
+  asset: GenerationAsset
+  t: (key: string) => string
+  alt: string
+  compact?: boolean
+}) {
+  const contentUrl = asset.content_url ?? ''
+  if (!contentUrl) return null
+  return (
+    <AuthenticatedAssetPreview
+      asset={asset}
+      contentUrl={contentUrl}
+      t={t}
+      alt={alt}
+      compact={compact}
+    />
+  )
+}
+
+function AuthenticatedAssetPreview({
+  asset,
+  contentUrl,
+  t,
+  alt,
+  compact,
+}: {
+  asset: GenerationAsset
+  contentUrl: string
+  t: (key: string) => string
+  alt: string
+  compact: boolean
+}) {
+  const media = useAuthenticatedAssetUrl(contentUrl)
+  if (media.loading) {
+    return (
+      <div
+        className={
+          compact
+            ? 'bg-muted/20 text-muted-foreground flex size-16 items-center justify-center rounded-lg border text-xs'
+            : 'bg-muted/20 text-muted-foreground flex aspect-video items-center justify-center rounded-lg border text-xs'
+        }
+      >
+        {t('Loading...')}
+      </div>
+    )
+  }
+  if (media.failed || !media.url) {
+    return (
+      <div
+        className={
+          compact
+            ? 'bg-muted/20 text-muted-foreground flex size-16 items-center justify-center rounded-lg border text-xs'
+            : 'bg-muted/20 text-muted-foreground flex aspect-video items-center justify-center rounded-lg border text-xs'
+        }
+      >
+        {t('Loading failed')}
+      </div>
+    )
+  }
+  if (asset.mime_type.startsWith('video/')) {
+    return (
+      <video
+        controls
+        preload='metadata'
+        className='aspect-video w-full rounded-lg border bg-black object-contain'
+        src={media.url}
+      />
+    )
+  }
+  return (
+    <img
+      src={media.url}
+      alt={alt}
+      className={
+        compact
+          ? 'bg-muted/30 size-16 rounded-lg border object-cover'
+          : 'bg-muted/30 aspect-square w-full rounded-lg border object-contain'
+      }
+      loading='lazy'
+    />
+  )
+}
+
+function EmptyCreation({
+  message,
+  t,
+}: {
+  message: string
+  t: (key: string) => string
+}) {
+  return (
+    <div className='mx-auto flex min-h-[50vh] max-w-xl items-center justify-center px-4 py-12'>
+      <Card className='bg-card/60 w-full border-dashed text-center shadow-none'>
+        <CardContent className='flex flex-col items-center gap-3 py-10'>
+          <div className='bg-primary/10 text-primary flex size-12 items-center justify-center rounded-2xl'>
+            <WandSparkles className='size-6' />
+          </div>
+          <h1 className='text-lg font-semibold'>{t('AI Creation')}</h1>
+          <p className='text-muted-foreground max-w-md text-sm'>{message}</p>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function StorageMeter({
+  data,
+  t,
+}: {
+  data: CreationModelsData
+  t: (key: string) => string
+}) {
+  const usage = data.storage.user_bytes + data.storage.reserved_bytes
+  const percent =
+    data.storage.user_limit > 0
+      ? Math.min(100, (usage / data.storage.user_limit) * 100)
+      : 0
+  return (
+    <div className='space-y-1.5'>
+      <div className='text-muted-foreground flex items-center justify-between text-xs'>
+        <span>{t('Media storage')}</span>
+        <span className='tabular-nums'>
+          {formatBytes(usage)} / {formatBytes(data.storage.user_limit)}
+        </span>
+      </div>
+      <Progress value={percent} className='h-1.5' />
+    </div>
+  )
+}
+
+export function Creation() {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const user = useAuthStore((state) => state.auth.user)
+  const userScope = [user?.id ?? null, user?.group ?? ''] as const
+  const modelsQuery = useQuery({
+    queryKey: ['creation-models', ...userScope],
+    queryFn: getCreationModels,
+    enabled: Boolean(user?.id),
+    staleTime: 60_000,
+    retry: false,
+  })
+  const jobsQuery = useQuery({
+    queryKey: ['creation-jobs', ...userScope],
+    queryFn: () => getCreationJobs(1, 24),
+    enabled: Boolean(user?.id),
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+    retry: false,
+  })
+
+  const [kind, setKind] = useState<CreationKind>('image')
+  const [modelId, setModelId] = useState('')
+  const [group, setGroup] = useState('')
+  const [prompt, setPrompt] = useState('')
+  const [count, setCount] = useState('1')
+  const [size, setSize] = useState('')
+  const [aspectRatio, setAspectRatio] = useState('')
+  const [quality, setQuality] = useState('')
+  const [duration, setDuration] = useState('5')
+  const [imageResolution, setImageResolution] = useState('')
+  const [videoResolution, setVideoResolution] = useState('720p')
+  const [imageReferenceFiles, setImageReferenceFiles] = useState<File[]>([])
+  const [videoReferenceFile, setVideoReferenceFile] = useState<File | null>(
+    null
+  )
+  const [videoReferencePreview, setVideoReferencePreview] = useState('')
+  const [activeJobId, setActiveJobId] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const imageFileInputRef = useRef<HTMLInputElement>(null)
+  const videoFileInputRef = useRef<HTMLInputElement>(null)
+
+  const data = modelsQuery.data?.data
+  const models = useMemo(() => data?.models ?? [], [data?.models])
+  const availableModels = useMemo(
+    () => models.filter((model) => model.kind === kind),
+    [kind, models]
+  )
+  const selectedModel =
+    availableModels.find((model) => model.id === modelId) ?? availableModels[0]
+  const selectedGroups = useMemo(
+    () => selectedModel?.groups ?? [],
+    [selectedModel]
+  )
+  const selectedGroup = selectedGroups.includes(group)
+    ? group
+    : (selectedGroups[0] ?? '')
+  const capabilities = selectedModel?.capabilities
+  const activeJobQuery = useQuery({
+    queryKey: ['creation-job', activeJobId, ...userScope],
+    queryFn: () => getCreationJob(activeJobId as string),
+    enabled: Boolean(user?.id && activeJobId),
+    refetchInterval: (query) => {
+      const status = query.state.data?.data?.status
+      return status && !RUNNING_STATUSES.has(status) ? false : 2500
+    },
+    retry: false,
+  })
+  const activeJob = activeJobQuery.data?.data
+
+  useEffect(() => {
+    if (availableModels.length === 0) {
+      setModelId('')
+      setGroup('')
+      return
+    }
+    if (!availableModels.some((model) => model.id === modelId)) {
+      setModelId(availableModels[0].id)
+    }
+  }, [availableModels, modelId])
+
+  useEffect(() => {
+    if (selectedGroups.length === 0) {
+      setGroup('')
+      return
+    }
+    if (!selectedGroups.includes(group)) {
+      setGroup(selectedGroups[0])
+    }
+  }, [group, selectedGroups])
+
+  useEffect(() => {
+    if (!selectedModel) return
+    const nextCapabilities = selectedModel.capabilities
+    setSize(nextCapabilities.sizes?.[0] ?? '')
+    setAspectRatio(getInitialImageAspectRatio(nextCapabilities))
+    setImageResolution(getInitialImageResolution(nextCapabilities))
+    setQuality(nextCapabilities.qualities?.[0] ?? '')
+    setCount((current) => {
+      const max = nextCapabilities.max_count ?? 1
+      return String(Math.min(Math.max(Number(current) || 1, 1), max))
+    })
+    setDuration(String(nextCapabilities.durations?.[0] ?? 5))
+    setVideoResolution(nextCapabilities.resolutions?.[0] ?? '720p')
+  }, [selectedModel])
+
+  useEffect(() => {
+    if (kind !== 'image' || capabilities?.reference_image) return
+    setImageReferenceFiles([])
+    if (imageFileInputRef.current) imageFileInputRef.current.value = ''
+  }, [capabilities?.reference_image, kind])
+
+  useEffect(() => {
+    if (kind !== 'video' || capabilities?.reference_image) return
+    setVideoReferenceFile(null)
+    if (videoFileInputRef.current) videoFileInputRef.current.value = ''
+  }, [capabilities?.reference_image, kind])
+
+  useEffect(() => {
+    if (!videoReferenceFile) {
+      setVideoReferencePreview('')
+      return
+    }
+    const url = URL.createObjectURL(videoReferenceFile)
+    setVideoReferencePreview(url)
+    return () => URL.revokeObjectURL(url)
+  }, [videoReferenceFile])
+
+  const setVideoReference = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null
+    if (!file) return
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      toast.error(t('Please select an image file.'))
+      event.target.value = ''
+      return
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error(t('Each reference image must be 20 MB or smaller.'))
+      event.target.value = ''
+      return
+    }
+    setVideoReferenceFile(file)
+    event.target.value = ''
+  }
+
+  const maxReferenceImages = Math.min(
+    Math.max(capabilities?.max_reference_images ?? 1, 1),
+    MAX_REFERENCE_IMAGE_FILES
+  )
+  const maxReferenceTotalBytes = Math.min(
+    Math.max(
+      1,
+      capabilities?.max_reference_total_bytes ?? MAX_REFERENCE_IMAGE_TOTAL_BYTES
+    ),
+    MAX_REFERENCE_IMAGE_TOTAL_BYTES
+  )
+
+  const addImageReferences = (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = [...(event.target.files ?? [])]
+    event.target.value = ''
+    if (selectedFiles.length === 0) return
+    setImageReferenceFiles((currentFiles) => {
+      const selection = appendReferenceImageFiles(
+        currentFiles,
+        selectedFiles,
+        maxReferenceImages,
+        maxReferenceTotalBytes
+      )
+      if (selection.unsupportedCount > 0) {
+        toast.error(t('Only PNG, JPEG, and WebP reference images are allowed.'))
+      }
+      if (selection.oversizedCount > 0) {
+        toast.error(t('Each reference image must be 20 MB or smaller.'))
+      }
+      if (selection.totalSizeExceededCount > 0) {
+        toast.error(
+          t('Reference images must be {{size}} MB or smaller in total.', {
+            size: Math.round(maxReferenceTotalBytes / 1024 / 1024),
+          })
+        )
+      }
+      if (selection.overflowCount > 0) {
+        toast.error(
+          t('You can upload up to {{count}} reference images.', {
+            count: maxReferenceImages,
+          })
+        )
+      }
+      return selection.files
+    })
+  }
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!selectedModel || !selectedGroup || !prompt.trim()) {
+      toast.error(t('Choose a model and enter a prompt.'))
+      return
+    }
+    setIsSubmitting(true)
+    let uploadedReferenceAssetIds: string[] = []
+    try {
+      let referenceAssetId: string | undefined
+      let referenceAssetIds: string[] | undefined
+      if (
+        kind === 'image' &&
+        imageReferenceFiles.length > 0 &&
+        capabilities?.reference_image
+      ) {
+        const uploaded = await uploadCreationAssets(imageReferenceFiles)
+        if (!uploaded.success || !uploaded.data?.assets) {
+          throw new Error(
+            uploaded.message || t('Reference image upload failed.')
+          )
+        }
+        referenceAssetIds = uploaded.data.assets.map((asset) => asset.id)
+        uploadedReferenceAssetIds = referenceAssetIds
+      } else if (
+        kind === 'video' &&
+        videoReferenceFile &&
+        capabilities?.reference_image
+      ) {
+        const uploaded = await uploadCreationAsset(videoReferenceFile)
+        if (!uploaded.success || !uploaded.data) {
+          throw new Error(
+            uploaded.message || t('Reference image upload failed.')
+          )
+        }
+        referenceAssetId = uploaded.data.id
+        uploadedReferenceAssetIds = [referenceAssetId]
+      }
+
+      const created =
+        kind === 'image'
+          ? await createImage({
+              model: selectedModel.id,
+              protocol: selectedModel.protocol as Exclude<
+                CreationProtocol,
+                'openai-video'
+              >,
+              group: selectedGroup,
+              prompt: prompt.trim(),
+              count: Math.min(
+                Math.max(Number(count) || 1, 1),
+                capabilities?.max_count ?? 4
+              ),
+              size: size || undefined,
+              resolution: imageResolution || undefined,
+              aspect_ratio: aspectRatio || undefined,
+              quality: quality || undefined,
+              reference_asset_ids: referenceAssetIds,
+            })
+          : await createVideo({
+              model: selectedModel.id,
+              group: selectedGroup,
+              prompt: prompt.trim(),
+              duration: Number(duration) || 5,
+              resolution: videoResolution,
+              reference_asset_id: referenceAssetId,
+            })
+      if (!created.success || !created.data) {
+        throw new Error(created.message || t('Generation request failed.'))
+      }
+      setActiveJobId(created.data.id)
+      setPrompt('')
+      if (kind === 'image') {
+        setImageReferenceFiles([])
+        if (imageFileInputRef.current) imageFileInputRef.current.value = ''
+      } else {
+        setVideoReferenceFile(null)
+        if (videoFileInputRef.current) videoFileInputRef.current.value = ''
+      }
+      await queryClient.invalidateQueries({ queryKey: ['creation-jobs'] })
+      toast.success(t('Generation request submitted.'))
+    } catch (error) {
+      if (uploadedReferenceAssetIds.length > 0) {
+        await Promise.allSettled(
+          uploadedReferenceAssetIds.map(async (assetID) => {
+            const result = await deleteCreationUpload(assetID)
+            if (!result.success) {
+              throw new Error(
+                result.message || 'reference asset cleanup failed'
+              )
+            }
+          })
+        )
+      }
+      toast.error(getApiErrorMessage(error, t('Generation request failed.')))
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleDelete = async (job: GenerationJob) => {
+    try {
+      const result = await deleteCreationJob(job.id)
+      if (!result.success) {
+        throw new Error(result.message || t('Delete failed.'))
+      }
+      if (activeJobId === job.id) setActiveJobId(null)
+      await queryClient.invalidateQueries({ queryKey: ['creation-jobs'] })
+      toast.success(t('Deleted'))
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('Delete failed.')))
+    }
+  }
+
+  const handleRetryArchive = async (job: GenerationJob) => {
+    try {
+      const result = await retryCreationArchive(job.id)
+      if (!result.success || !result.data) {
+        throw new Error(result.message || t('Retry failed.'))
+      }
+      setActiveJobId(job.id)
+      await queryClient.invalidateQueries({ queryKey: ['creation-jobs'] })
+      await queryClient.invalidateQueries({
+        queryKey: ['creation-job', job.id],
+      })
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('Retry failed.')))
+    }
+  }
+
+  if (modelsQuery.isLoading) {
+    return (
+      <Main className='overflow-auto'>
+        <div className='mx-auto grid w-full max-w-6xl gap-4 p-3 sm:p-5 lg:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.15fr)]'>
+          <Skeleton className='h-[560px] rounded-xl' />
+          <Skeleton className='h-[560px] rounded-xl' />
+        </div>
+      </Main>
+    )
+  }
+
+  if (modelsQuery.isError || modelsQuery.data?.success === false) {
+    return (
+      <Main className='overflow-auto'>
+        <EmptyCreation
+          t={t}
+          message={
+            modelsQuery.data?.message ||
+            t('The AI creation center is not enabled for this account yet.')
+          }
+        />
+      </Main>
+    )
+  }
+
+  const jobs = jobsQuery.data?.data?.items ?? []
+  const hasReference =
+    kind === 'image'
+      ? imageReferenceFiles.length > 0 && Boolean(capabilities?.reference_image)
+      : Boolean(videoReferenceFile && capabilities?.reference_image)
+
+  return (
+    <Main className='overflow-auto'>
+      <div className='mx-auto w-full max-w-6xl space-y-4 p-3 sm:space-y-5 sm:p-5'>
+        <header className='benefit-feature-heading flex flex-wrap items-end justify-between gap-3'>
+          <div className='min-w-0'>
+            <div className='text-primary mb-1 flex items-center gap-2 text-xs font-medium tracking-[0.18em] uppercase'>
+              <Sparkles className='size-3.5' />
+              Benefit API
+            </div>
+            <h1 className='text-2xl font-semibold tracking-tight sm:text-3xl'>
+              {t('AI Creation')}
+            </h1>
+            <p className='text-muted-foreground mt-1 max-w-2xl text-sm'>
+              {t(
+                'Create images and videos with the models enabled for your account.'
+              )}
+            </p>
+          </div>
+          {data && (
+            <div className='w-full max-w-xs'>
+              <StorageMeter data={data} t={t} />
+            </div>
+          )}
+        </header>
+
+        <div className='grid min-w-0 gap-4 lg:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.15fr)]'>
+          <Card className='bg-card/80 min-w-0 shadow-sm'>
+            <CardHeader className='border-b'>
+              <CardTitle className='flex items-center gap-2'>
+                <WandSparkles className='text-primary size-4' />
+                {t('Create')}
+              </CardTitle>
+              <CardDescription>
+                {t(
+                  'Your request is billed using the selected model and your normal account permissions.'
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className='pt-4'>
+              <Tabs
+                value={kind}
+                onValueChange={(value) => setKind(value as CreationKind)}
+              >
+                <TabsList className='w-full'>
+                  <TabsTrigger value='image'>
+                    <Images />
+                    {t('Image')}
+                  </TabsTrigger>
+                  <TabsTrigger value='video'>
+                    <Video />
+                    {t('Video')}
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value='image' className='mt-4'>
+                  <form className='space-y-4' onSubmit={handleSubmit}>
+                    <CreationFormFields
+                      kind='image'
+                      models={availableModels}
+                      modelId={selectedModel?.id ?? ''}
+                      setModelId={setModelId}
+                      group={selectedGroup}
+                      setGroup={setGroup}
+                      groups={selectedGroups}
+                      capabilities={capabilities}
+                      prompt={prompt}
+                      setPrompt={setPrompt}
+                      count={count}
+                      setCount={setCount}
+                      size={size}
+                      setSize={setSize}
+                      aspectRatio={aspectRatio}
+                      setAspectRatio={setAspectRatio}
+                      quality={quality}
+                      setQuality={setQuality}
+                      duration={duration}
+                      setDuration={setDuration}
+                      imageResolution={imageResolution}
+                      setImageResolution={setImageResolution}
+                      videoResolution={videoResolution}
+                      setVideoResolution={setVideoResolution}
+                      t={t}
+                    />
+                    {capabilities?.reference_image && (
+                      <ReferenceImagePicker
+                        files={imageReferenceFiles}
+                        maxFiles={maxReferenceImages}
+                        maxTotalBytes={maxReferenceTotalBytes}
+                        inputRef={imageFileInputRef}
+                        onChange={addImageReferences}
+                        onRemove={(index) =>
+                          setImageReferenceFiles((currentFiles) =>
+                            currentFiles.filter(
+                              (_, currentIndex) => currentIndex !== index
+                            )
+                          )
+                        }
+                        onClear={() => {
+                          setImageReferenceFiles([])
+                          if (imageFileInputRef.current) {
+                            imageFileInputRef.current.value = ''
+                          }
+                        }}
+                        t={t}
+                      />
+                    )}
+                    <Button
+                      type='submit'
+                      className='w-full'
+                      disabled={
+                        isSubmitting ||
+                        !selectedModel ||
+                        !selectedGroup ||
+                        !prompt.trim()
+                      }
+                    >
+                      {isSubmitting ? (
+                        <Loader2 className='animate-spin' />
+                      ) : (
+                        <Sparkles />
+                      )}
+                      {isSubmitting ? t('Submitting...') : t('Generate image')}
+                    </Button>
+                  </form>
+                </TabsContent>
+                <TabsContent value='video' className='mt-4'>
+                  <form className='space-y-4' onSubmit={handleSubmit}>
+                    <CreationFormFields
+                      kind='video'
+                      models={availableModels}
+                      modelId={selectedModel?.id ?? ''}
+                      setModelId={setModelId}
+                      group={selectedGroup}
+                      setGroup={setGroup}
+                      groups={selectedGroups}
+                      capabilities={capabilities}
+                      prompt={prompt}
+                      setPrompt={setPrompt}
+                      count={count}
+                      setCount={setCount}
+                      size={size}
+                      setSize={setSize}
+                      aspectRatio={aspectRatio}
+                      setAspectRatio={setAspectRatio}
+                      quality={quality}
+                      setQuality={setQuality}
+                      duration={duration}
+                      setDuration={setDuration}
+                      imageResolution={imageResolution}
+                      setImageResolution={setImageResolution}
+                      videoResolution={videoResolution}
+                      setVideoResolution={setVideoResolution}
+                      t={t}
+                    />
+                    <ReferencePicker
+                      enabled={Boolean(capabilities?.reference_image)}
+                      file={videoReferenceFile}
+                      preview={videoReferencePreview}
+                      inputRef={videoFileInputRef}
+                      onChange={setVideoReference}
+                      onClear={() => {
+                        setVideoReferenceFile(null)
+                        if (videoFileInputRef.current) {
+                          videoFileInputRef.current.value = ''
+                        }
+                      }}
+                      t={t}
+                    />
+                    <Alert className='bg-muted/40'>
+                      <MonitorPlay />
+                      <AlertDescription>
+                        {t(
+                          'Video generation is asynchronous. You can leave this page and return to the history list.'
+                        )}
+                      </AlertDescription>
+                    </Alert>
+                    <Button
+                      type='submit'
+                      className='w-full'
+                      disabled={
+                        isSubmitting ||
+                        !selectedModel ||
+                        !selectedGroup ||
+                        !prompt.trim()
+                      }
+                    >
+                      {isSubmitting ? (
+                        <Loader2 className='animate-spin' />
+                      ) : (
+                        <Video />
+                      )}
+                      {isSubmitting ? t('Submitting...') : t('Generate video')}
+                    </Button>
+                  </form>
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+
+          <Card className='bg-card/80 min-w-0 shadow-sm'>
+            <CardHeader className='border-b'>
+              <div className='flex items-start justify-between gap-3'>
+                <div>
+                  <CardTitle className='flex items-center gap-2'>
+                    <ImagePlus className='text-primary size-4' />
+                    {t('Result')}
+                  </CardTitle>
+                  <CardDescription>
+                    {t(
+                      'Generated files stay private and expire after {{days}} days.',
+                      { days: data?.retention_days ?? 3 }
+                    )}
+                  </CardDescription>
+                </div>
+                <Button
+                  variant='ghost'
+                  size='icon-sm'
+                  onClick={() =>
+                    void queryClient.invalidateQueries({
+                      queryKey: ['creation-jobs'],
+                    })
+                  }
+                  aria-label={t('Refresh')}
+                >
+                  <RefreshCw
+                    className={jobsQuery.isFetching ? 'animate-spin' : ''}
+                  />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className='space-y-4 pt-4'>
+              {activeJob && (
+                <ActiveJobCard
+                  job={activeJob}
+                  t={t}
+                  onRetry={() => void handleRetryArchive(activeJob)}
+                />
+              )}
+              {activeJobQuery.isFetching && !activeJob && (
+                <Skeleton className='h-24 rounded-lg' />
+              )}
+              {jobs.length === 0 ? (
+                <div className='text-muted-foreground flex min-h-52 flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-6 text-center text-sm'>
+                  <Images className='size-8 opacity-50' />
+                  <span>{t('Your generated results will appear here.')}</span>
+                </div>
+              ) : (
+                <div className='space-y-3'>
+                  {jobs.map((job) => (
+                    <JobCard
+                      key={job.id}
+                      job={job}
+                      t={t}
+                      onSelect={() => setActiveJobId(job.id)}
+                      onDelete={() => void handleDelete(job)}
+                      onRetry={() => void handleRetryArchive(job)}
+                    />
+                  ))}
+                </div>
+              )}
+              {hasReference && (
+                <span className='sr-only'>{t('Reference image selected')}</span>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </Main>
+  )
+}
+
+export function CreationFormFields({
+  kind,
+  models,
+  modelId,
+  setModelId,
+  group,
+  setGroup,
+  groups,
+  capabilities,
+  prompt,
+  setPrompt,
+  count,
+  setCount,
+  size,
+  setSize,
+  aspectRatio,
+  setAspectRatio,
+  quality,
+  setQuality,
+  duration,
+  setDuration,
+  imageResolution,
+  setImageResolution,
+  videoResolution,
+  setVideoResolution,
+  t,
+}: {
+  kind: CreationKind
+  models: CreationModel[]
+  modelId: string
+  setModelId: (value: string) => void
+  group: string
+  setGroup: (value: string) => void
+  groups: string[]
+  capabilities?: CreationCapabilities
+  prompt: string
+  setPrompt: (value: string) => void
+  count: string
+  setCount: (value: string) => void
+  size: string
+  setSize: (value: string) => void
+  aspectRatio: string
+  setAspectRatio: (value: string) => void
+  quality: string
+  setQuality: (value: string) => void
+  duration: string
+  setDuration: (value: string) => void
+  imageResolution: string
+  setImageResolution: (value: string) => void
+  videoResolution: string
+  setVideoResolution: (value: string) => void
+  t: (key: string, options?: Record<string, unknown>) => string
+}) {
+  const resolvedImageSize = capabilities
+    ? getResolvedImageSize(capabilities, imageResolution, aspectRatio)
+    : ''
+  return (
+    <>
+      <div className='space-y-1.5'>
+        <Label htmlFor={`${kind}-model`}>{t('Model')}</Label>
+        <NativeSelect
+          id={`${kind}-model`}
+          value={modelId}
+          onChange={setModelId}
+          disabled={models.length === 0}
+        >
+          {models.length === 0 ? (
+            <option value=''>{t('No compatible models')}</option>
+          ) : (
+            models.map((model) => (
+              <option key={`${model.protocol}:${model.id}`} value={model.id}>
+                {model.display_name} · {capabilityLabel(model, t)}
+              </option>
+            ))
+          )}
+        </NativeSelect>
+      </div>
+      {groups.length > 0 ? (
+        <div className='space-y-1.5'>
+          <Label htmlFor={`${kind}-group`}>{t('Channel group')}</Label>
+          <NativeSelect
+            id={`${kind}-group`}
+            value={group}
+            onChange={setGroup}
+            disabled={models.length === 0}
+          >
+            {groups.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+      ) : null}
+      <div className='space-y-1.5'>
+        <Label htmlFor={`${kind}-prompt`}>{t('Prompt')}</Label>
+        <Textarea
+          id={`${kind}-prompt`}
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          placeholder={t('Describe what you want to create...')}
+          className='min-h-32 resize-y'
+          maxLength={20000}
+        />
+        <div className='text-muted-foreground text-right text-[11px] tabular-nums'>
+          {prompt.length.toLocaleString()} / 20,000
+        </div>
+      </div>
+      {kind === 'image' ? (
+        <div className='grid gap-3 sm:grid-cols-2'>
+          {capabilities?.resolution_tiers &&
+            capabilities.resolution_tiers.length > 0 && (
+              <FieldSelect
+                label={t('Resolution')}
+                value={imageResolution}
+                onChange={setImageResolution}
+                options={capabilities.resolution_tiers}
+              />
+            )}
+          {capabilities?.sizes && capabilities.sizes.length > 0 && (
+            <FieldSelect
+              label={t('Size')}
+              value={size}
+              onChange={setSize}
+              options={capabilities.sizes}
+            />
+          )}
+          {capabilities?.aspect_ratios &&
+            capabilities.aspect_ratios.length > 0 && (
+              <FieldSelect
+                label={t('Aspect ratio')}
+                value={aspectRatio}
+                onChange={setAspectRatio}
+                options={capabilities.aspect_ratios}
+                emptyOption={capabilities.sizes?.length ? t('Auto') : undefined}
+              />
+            )}
+          {capabilities?.qualities && capabilities.qualities.length > 0 && (
+            <FieldSelect
+              label={t('Quality')}
+              value={quality}
+              onChange={setQuality}
+              options={capabilities.qualities}
+            />
+          )}
+          {resolvedImageSize && (
+            <p className='text-muted-foreground text-xs sm:col-span-2'>
+              {t('Will use {{size}}', { size: resolvedImageSize })}
+            </p>
+          )}
+          <div className='space-y-1.5'>
+            <Label htmlFor='image-count'>{t('Images')}</Label>
+            <NativeSelect id='image-count' value={count} onChange={setCount}>
+              {Array.from(
+                {
+                  length: Math.min(
+                    Math.max(capabilities?.max_count ?? 1, 1),
+                    4
+                  ),
+                },
+                (_, index) => index + 1
+              ).map((value) => (
+                <option key={value} value={value}>
+                  {t('Image count: {{count}}', { count: value })}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+          <p className='text-muted-foreground text-xs sm:col-span-2'>
+            {capabilities?.max_count === 1
+              ? t('This model supports one image per request.')
+              : t(
+                  'Generate multiple images in one request. The final count depends on the model response.'
+                )}
+          </p>
+        </div>
+      ) : (
+        <div className='grid gap-3 sm:grid-cols-2'>
+          <div className='space-y-1.5'>
+            <Label htmlFor='video-duration'>{t('Duration (seconds)')}</Label>
+            <NativeSelect
+              id='video-duration'
+              value={duration}
+              onChange={setDuration}
+            >
+              {(capabilities?.durations ?? [4, 5, 6, 8, 10]).map((value) => (
+                <option key={value} value={value}>
+                  {value}s
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+          <FieldSelect
+            label={t('Resolution')}
+            value={videoResolution}
+            onChange={setVideoResolution}
+            options={capabilities?.resolutions ?? ['720p', '1080p']}
+          />
+        </div>
+      )}
+    </>
+  )
+}
+
+function FieldSelect({
+  label,
+  value,
+  onChange,
+  options,
+  emptyOption,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  options: string[]
+  emptyOption?: string
+}) {
+  const id = useId()
+  return (
+    <div className='space-y-1.5'>
+      <Label htmlFor={id}>{label}</Label>
+      <NativeSelect id={id} value={value} onChange={onChange}>
+        {emptyOption && <option value=''>{emptyOption}</option>}
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </NativeSelect>
+    </div>
+  )
+}
+
+function ReferencePicker({
+  enabled,
+  file,
+  preview,
+  inputRef,
+  onChange,
+  onClear,
+  t,
+}: {
+  enabled: boolean
+  file: File | null
+  preview: string
+  inputRef: React.RefObject<HTMLInputElement | null>
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void
+  onClear: () => void
+  t: (key: string) => string
+}) {
+  if (!enabled) return null
+  return (
+    <div className='space-y-2'>
+      <div className='flex items-center justify-between gap-2'>
+        <Label>{t('Reference image')}</Label>
+        {file && (
+          <Button
+            type='button'
+            variant='ghost'
+            size='icon-xs'
+            onClick={onClear}
+            aria-label={t('Remove')}
+          >
+            <X />
+          </Button>
+        )}
+      </div>
+      <input
+        ref={inputRef}
+        type='file'
+        accept='image/png,image/jpeg,image/webp'
+        className='sr-only'
+        onChange={onChange}
+      />
+      {file && preview ? (
+        <div className='bg-muted/30 flex items-center gap-3 rounded-lg border p-2'>
+          <img
+            src={preview}
+            alt=''
+            className='size-14 rounded-md object-cover'
+          />
+          <div className='min-w-0 flex-1'>
+            <p className='truncate text-sm font-medium'>{file.name}</p>
+            <p className='text-muted-foreground text-xs'>
+              {formatBytes(file.size)}
+            </p>
+          </div>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            onClick={() => inputRef.current?.click()}
+          >
+            <Upload />
+            {t('Replace')}
+          </Button>
+        </div>
+      ) : (
+        <Button
+          type='button'
+          variant='outline'
+          className='w-full'
+          onClick={() => inputRef.current?.click()}
+        >
+          <Upload />
+          {t('Add reference image')}
+        </Button>
+      )}
+    </div>
+  )
+}
+
+export function ActiveJobCard({
+  job,
+  t,
+  onRetry,
+}: {
+  job: GenerationJob
+  t: (key: string, options?: Record<string, unknown>) => string
+  onRetry: () => void
+}) {
+  const isRunning = RUNNING_STATUSES.has(job.status)
+  const inputAssets =
+    job.assets?.filter((asset) => asset.role === 'input') ?? []
+  const outputAssets =
+    job.assets?.filter((asset) => asset.role === 'output') ?? []
+  const resultCount = job.result_count ?? outputAssets.length
+  const requestedCount = job.requested_count ?? resultCount
+  const failedCount =
+    job.failed_count ?? Math.max(requestedCount - resultCount, 0)
+  const isPartialImageResult =
+    job.kind === 'image' &&
+    job.status === 'partially_completed' &&
+    resultCount > 0 &&
+    requestedCount > resultCount
+
+  return (
+    <div className='bg-muted/20 space-y-3 rounded-xl border p-3'>
+      <div className='flex flex-wrap items-center justify-between gap-2'>
+        <div className='min-w-0'>
+          <p className='truncate text-sm font-medium'>{job.model}</p>
+          <p className='text-muted-foreground truncate text-xs'>{job.prompt}</p>
+        </div>
+        <JobStatusBadge status={job.status} t={t} />
+      </div>
+      {inputAssets.length > 0 && (
+        <section className='space-y-2' aria-label={t('Input reference images')}>
+          <div className='flex items-center justify-between gap-2'>
+            <h3 className='text-sm font-medium'>
+              {t('Input reference images')}
+            </h3>
+            <span className='text-muted-foreground text-xs tabular-nums'>
+              {inputAssets.length}
+            </span>
+          </div>
+          <div className='grid grid-cols-2 gap-2 sm:grid-cols-4'>
+            {inputAssets.map((asset, index) => (
+              <AssetPreview
+                key={asset.id}
+                asset={asset}
+                t={t}
+                alt={t('Reference image {{number}}', { number: index + 1 })}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+      {outputAssets.length > 0 && (
+        <section className='space-y-2' aria-label={t('Generated results')}>
+          <div className='flex flex-wrap items-center justify-between gap-2'>
+            <h3 className='text-sm font-medium'>{t('Generated results')}</h3>
+            <span className='text-muted-foreground text-xs tabular-nums'>
+              {job.kind === 'image'
+                ? t('{{count}} generated images', { count: resultCount })
+                : t('Generated video')}
+            </span>
+          </div>
+          <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
+            {outputAssets.map((asset, index) => (
+              <div
+                key={asset.id}
+                className='bg-background/40 min-w-0 space-y-2 rounded-xl border p-2'
+              >
+                <AssetPreview
+                  asset={asset}
+                  t={t}
+                  alt={
+                    job.kind === 'image'
+                      ? t('Generated image {{number}}', { number: index + 1 })
+                      : t('Generated video')
+                  }
+                />
+                {asset.content_url && (
+                  <Button
+                    type='button'
+                    variant='outline'
+                    className='min-h-11 w-full'
+                    onClick={() => {
+                      void downloadAuthenticatedAsset(
+                        asset.content_url as string,
+                        asset.id
+                      ).catch(() => toast.error(t('Download failed.')))
+                    }}
+                  >
+                    <Download aria-hidden='true' />
+                    {t('Download result {{number}}', { number: index + 1 })}
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {isPartialImageResult && (
+        <Alert className='border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'>
+          <AlertCircle />
+          <AlertDescription>
+            <span className='block font-medium'>
+              {t('{{succeeded}} succeeded, {{failed}} failed', {
+                succeeded: resultCount,
+                failed: failedCount,
+              })}
+            </span>
+            <span className='mt-1 block'>
+              {t(
+                'The model returned {{actual}} of {{requested}} requested images. Billing follows actual upstream usage.',
+                { actual: resultCount, requested: requestedCount }
+              )}
+            </span>
+          </AlertDescription>
+        </Alert>
+      )}
+      {isRunning && (
+        <div className='text-muted-foreground flex items-center gap-2 text-xs'>
+          <Loader2 className='size-3.5 animate-spin' />
+          {t('Updating task status...')}
+        </div>
+      )}
+      {job.status === 'failed' && job.error_message && (
+        <Alert variant='destructive'>
+          <AlertCircle />
+          <AlertDescription>{job.error_message}</AlertDescription>
+        </Alert>
+      )}
+      {job.status === 'archive_failed' && (
+        <Button size='sm' variant='outline' onClick={onRetry}>
+          <RefreshCw />
+          {t('Retry save')}
+        </Button>
+      )}
+    </div>
+  )
+}
+
+function JobCard({
+  job,
+  t,
+  onSelect,
+  onDelete,
+  onRetry,
+}: {
+  job: GenerationJob
+  t: (key: string, options?: Record<string, unknown>) => string
+  onSelect: () => void
+  onDelete: () => void
+  onRetry: () => void
+}) {
+  const outputAssets =
+    job.assets?.filter((asset) => asset.role === 'output') ?? []
+  const resultCount = job.result_count ?? outputAssets.length
+  const requestedCount = job.requested_count ?? resultCount
+  const failedCount =
+    job.failed_count ?? Math.max(requestedCount - resultCount, 0)
+  let imageCountLabel = t('{{count}} images requested', {
+    count: requestedCount,
+  })
+  if (resultCount > 0) {
+    imageCountLabel = t('{{count}} generated images', { count: resultCount })
+  }
+  if (job.status === 'partially_completed') {
+    imageCountLabel = t(
+      '{{requested}} requested · {{succeeded}} succeeded · {{failed}} failed',
+      {
+        requested: requestedCount,
+        succeeded: resultCount,
+        failed: failedCount,
+      }
+    )
+  }
+  const previewAsset = outputAssets[0]
+  let previewContent = (
+    <Images className='text-muted-foreground size-6' aria-hidden='true' />
+  )
+  if (job.kind === 'video') {
+    previewContent = (
+      <Video className='text-muted-foreground size-6' aria-hidden='true' />
+    )
+  }
+  if (previewAsset && !previewAsset.mime_type.startsWith('video/')) {
+    previewContent = (
+      <AssetPreview
+        asset={previewAsset}
+        t={t}
+        compact
+        alt={t('Generated image')}
+      />
+    )
+  }
+  return (
+    <div className='group bg-background/40 hover:bg-muted/30 flex min-w-0 gap-3 rounded-xl border p-2.5 transition'>
+      <button
+        type='button'
+        className='flex min-h-16 min-w-0 flex-1 items-center gap-3 text-left'
+        onClick={onSelect}
+      >
+        <div className='bg-muted/30 flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border'>
+          {previewContent}
+        </div>
+        <div className='min-w-0 flex-1'>
+          <div className='flex flex-wrap items-center gap-2'>
+            <span className='text-sm font-medium'>
+              {job.kind === 'video' ? t('Video') : t('Image')}
+            </span>
+            <JobStatusBadge status={job.status} t={t} />
+            {job.kind === 'image' && requestedCount > 0 && (
+              <span className='text-muted-foreground text-xs tabular-nums'>
+                {imageCountLabel}
+              </span>
+            )}
+          </div>
+          <p className='text-muted-foreground mt-1 truncate text-xs'>
+            {job.prompt}
+          </p>
+          <p className='text-muted-foreground mt-1 text-[11px]'>
+            {formatTimestamp(job.created_at)} · {job.model}
+          </p>
+        </div>
+      </button>
+      <div className='flex shrink-0 items-center gap-1'>
+        {job.status === 'archive_failed' && (
+          <Button
+            variant='ghost'
+            size='icon-sm'
+            onClick={onRetry}
+            aria-label={t('Retry save')}
+          >
+            <RefreshCw />
+          </Button>
+        )}
+        {!RUNNING_STATUSES.has(job.status) && (
+          <Button
+            variant='ghost'
+            size='icon-sm'
+            onClick={onDelete}
+            aria-label={t('Delete')}
+          >
+            <Trash2 />
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}

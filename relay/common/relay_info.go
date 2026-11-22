@@ -56,6 +56,25 @@ type ResponsesUsageInfo struct {
 	BuiltInTools map[string]*BuildInToolInfo
 }
 
+type ImageBatchError struct {
+	Index      int    `json:"index"`
+	StatusCode int    `json:"status_code,omitempty"`
+	Code       string `json:"code,omitempty"`
+	Message    string `json:"message,omitempty"`
+}
+
+type ImageBatchInfo struct {
+	Mode           string            `json:"batch_mode"`
+	RequestedCount int               `json:"requested_count"`
+	ResultCount    int               `json:"result_count"`
+	FailedCount    int               `json:"failed_count"`
+	ReferenceCount int               `json:"reference_count"`
+	Resolution     string            `json:"resolution,omitempty"`
+	AspectRatio    string            `json:"aspect_ratio,omitempty"`
+	ResolvedSize   string            `json:"resolved_size,omitempty"`
+	Errors         []ImageBatchError `json:"-"`
+}
+
 type ChannelMeta struct {
 	ChannelType          int
 	ChannelId            int
@@ -83,6 +102,7 @@ type TokenCountMeta struct {
 
 type RelayInfo struct {
 	TokenId           int
+	TeamId            int // dedicated team credential only; never inferred from membership
 	TokenKey          string
 	TokenGroup        string
 	UserId            int
@@ -140,6 +160,11 @@ type RelayInfo struct {
 	// Billing 是计费会话，封装了预扣费/结算/退款的统一生命周期。
 	// 初始免费组可为 nil；若 auto 重试切换到付费组，会在发送前创建。
 	Billing BillingSettler
+
+	// PartialStreamUsage is evidence retained by text adaptors when a stream
+	// fails after generation. It never changes the request's failure status.
+	PartialStreamUsage       *dto.Usage
+	PartialStreamUsageSource string
 	// BillingSource indicates whether this request is billed from wallet quota or subscription.
 	// "" or "wallet" => wallet; "subscription" => subscription
 	BillingSource string
@@ -154,6 +179,11 @@ type RelayInfo struct {
 	SubscriptionPlanTitle string
 	// RequestId is used for idempotent pre-consume/refund
 	RequestId string
+	// Normalized usage snapshot persisted with a team settlement before logs.
+	TeamPromptTokens     int
+	TeamCompletionTokens int
+	// Only reviewed billing fields are persisted with the team settlement.
+	TeamBillingDetails map[string]interface{}
 	// SubscriptionAmountTotal / SubscriptionAmountUsedAfterPreConsume are used to compute remaining in logs.
 	SubscriptionAmountTotal               int64
 	SubscriptionAmountUsedAfterPreConsume int64
@@ -246,6 +276,7 @@ type RelayInfo struct {
 	*ClaudeConvertInfo
 	*RerankerInfo
 	*ResponsesUsageInfo
+	*ImageBatchInfo
 	*ChannelMeta
 	*TaskRelayInfo
 }
@@ -648,6 +679,7 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 		OriginModelName: originModelName,
 
 		TokenId:        common.GetContextKeyInt(c, constant.ContextKeyTokenId),
+		TeamId:         c.GetInt("team_id"),
 		TokenKey:       common.GetContextKeyString(c, constant.ContextKeyTokenKey),
 		TokenUnlimited: common.GetContextKeyBool(c, constant.ContextKeyTokenUnlimited),
 		TokenGroup:     tokenGroup,
@@ -674,10 +706,12 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 		info.RelayMode = c.GetInt("relay_mode")
 	}
 
-	if strings.HasPrefix(c.Request.URL.Path, "/pg") {
+	if strings.HasPrefix(c.Request.URL.Path, "/pg") || c.GetBool("is_playground") {
 		info.IsPlayground = true
-		info.RequestURLPath = strings.TrimPrefix(info.RequestURLPath, "/pg")
-		info.RequestURLPath = "/v1" + info.RequestURLPath
+		if strings.HasPrefix(c.Request.URL.Path, "/pg") {
+			info.RequestURLPath = strings.TrimPrefix(info.RequestURLPath, "/pg")
+			info.RequestURLPath = "/v1" + info.RequestURLPath
+		}
 	}
 
 	userSetting, ok := common.GetContextKeyType[dto.UserSetting](c, constant.ContextKeyUserSetting)

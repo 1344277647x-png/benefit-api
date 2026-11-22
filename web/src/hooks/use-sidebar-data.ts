@@ -21,6 +21,7 @@ import {
   Box,
   ClipboardList,
   CreditCard,
+  Dices,
   FileText,
   FlaskConical,
   Key,
@@ -34,13 +35,16 @@ import {
   ShieldCheck,
   Ticket,
   User,
+  UserRoundPlus,
   Users,
   Wallet,
+  WandSparkles,
   Workflow,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import type { SidebarBadges, SidebarData } from '@/components/layout/types'
+import { useStatus } from '@/hooks/use-status'
 import { ROLE } from '@/lib/roles'
 
 /**
@@ -51,6 +55,7 @@ import { ROLE } from '@/lib/roles'
  */
 export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
   const { t } = useTranslation()
+  const { status } = useStatus()
 
   return {
     navGroups: [
@@ -62,6 +67,11 @@ export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
             title: t('Playground'),
             url: '/playground',
             icon: FlaskConical,
+          },
+          {
+            title: t('AI Creation'),
+            url: '/creation',
+            icon: WandSparkles,
           },
           {
             title: t('Chat'),
@@ -116,6 +126,19 @@ export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
             title: t('Wallet'),
             url: '/wallet',
             icon: Wallet,
+          },
+          {
+            title: t('Lucky Draw'),
+            url: '/lottery',
+            icon: Dices,
+          },
+          ...(status?.team_subscriptions_enabled === true
+            ? [{ title: t('Team subscription'), url: '/team', icon: Users }]
+            : []),
+          {
+            title: t('Referral Center'),
+            url: '/referrals',
+            icon: UserRoundPlus,
           },
           {
             title: t('Profile'),

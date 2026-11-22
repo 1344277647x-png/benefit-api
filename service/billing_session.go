@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
@@ -50,13 +51,48 @@ func (s *BillingSession) Settle(actualQuota int) error {
 	if s.settled {
 		return nil
 	}
+	teamMeta := model.TeamSyncBillingMeta{}
+	if s.relayInfo != nil {
+		teamMeta = model.TeamSyncBillingMeta{TokenId: s.relayInfo.TokenId, Group: s.relayInfo.UsingGroup,
+			ModelName:    s.relayInfo.OriginModelName,
+			PromptTokens: s.relayInfo.TeamPromptTokens, CompletionTokens: s.relayInfo.TeamCompletionTokens,
+			IsStream: s.relayInfo.IsStream}
+		if !s.relayInfo.StartTime.IsZero() {
+			teamMeta.UseTimeSeconds = int(time.Since(s.relayInfo.StartTime).Seconds())
+		}
+		if s.relayInfo.ChannelMeta != nil {
+			teamMeta.ChannelId = s.relayInfo.ChannelId
+		}
+		if s.relayInfo.TeamId > 0 && len(s.relayInfo.TeamBillingDetails) > 0 {
+			encoded, err := common.Marshal(s.relayInfo.TeamBillingDetails)
+			if err != nil || len(encoded) > 16384 {
+				return errors.New("invalid team billing details")
+			}
+			teamMeta.BillingDetails = string(encoded)
+		}
+	}
 	delta := actualQuota - s.preConsumedQuota
+	if sub, ok := s.funding.(*SubscriptionFunding); ok {
+		sub.actualQuota, sub.hasActualQuota = actualQuota, true
+	}
 	if delta == 0 {
+		if !s.fundingSettled {
+			if team, ok := s.funding.(*TeamFunding); ok {
+				team.meta = teamMeta
+			}
+			if err := s.funding.Settle(0); err != nil {
+				return err
+			}
+			s.fundingSettled = true
+		}
 		s.settled = true
 		return nil
 	}
 	// 1) 调整资金来源（仅在尚未提交时执行，防止重复调用）
 	if !s.fundingSettled {
+		if team, ok := s.funding.(*TeamFunding); ok {
+			team.meta = teamMeta
+		}
 		if err := s.funding.Settle(delta); err != nil {
 			return err
 		}
@@ -64,7 +100,7 @@ func (s *BillingSession) Settle(actualQuota int) error {
 	}
 	// 2) 调整令牌额度
 	var tokenErr error
-	if !s.relayInfo.IsPlayground {
+	if !s.relayInfo.IsPlayground && s.relayInfo.TeamId == 0 {
 		if delta > 0 {
 			tokenErr = model.DecreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, delta)
 		} else {
@@ -91,6 +127,20 @@ func (s *BillingSession) Refund(c *gin.Context) {
 		s.mu.Unlock()
 		return
 	}
+	if team, ok := s.funding.(*TeamFunding); ok {
+		// A forwarded request can finish upstream while the client, adaptor or
+		// process fails before the final cost becomes durable. Keep its shared
+		// reservation for documented reconciliation; never credit it from this
+		// generic error path.
+		attempted, err := model.TeamUpstreamAttempted(team.requestId)
+		if err != nil || attempted {
+			s.mu.Unlock()
+			if err != nil {
+				common.SysLog("unable to verify team upstream attempt before refund: " + err.Error())
+			}
+			return
+		}
+	}
 	s.refunded = true
 	s.mu.Unlock()
 
@@ -109,7 +159,9 @@ func (s *BillingSession) Refund(c *gin.Context) {
 	subscriptionId := s.relayInfo.SubscriptionId
 	funding := s.funding
 
+	beginBillingRefund()
 	gopool.Go(func() {
+		defer finishBillingRefund()
 		// 1) 退还资金来源
 		if err := funding.Refund(); err != nil {
 			common.SysLog(common.LogText("error refunding billing source: %s", err.Error()))
@@ -145,6 +197,9 @@ func (s *BillingSession) needsRefundLocked() bool {
 	}
 	// 订阅可能在 tokenConsumed=0 时仍预扣了额度
 	if sub, ok := s.funding.(*SubscriptionFunding); ok && sub.preConsumed > 0 {
+		return true
+	}
+	if team, ok := s.funding.(*TeamFunding); ok && team.reserved > 0 {
 		return true
 	}
 	return false
@@ -190,7 +245,9 @@ func (s *BillingSession) reserve(targetQuota int, requireAvailableQuota bool) er
 	}
 
 	s.preConsumedQuota += delta
-	s.tokenConsumed += delta
+	if s.relayInfo.TeamId == 0 {
+		s.tokenConsumed += delta
+	}
 	s.extraReserved += delta
 	if requireAvailableQuota {
 		s.trusted = false
@@ -218,11 +275,13 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 	}
 
 	// ---- 1) 预扣令牌额度 ----
-	if effectiveQuota > 0 {
+	if effectiveQuota > 0 && s.relayInfo.TeamId == 0 {
 		if err := PreConsumeTokenQuota(s.relayInfo, effectiveQuota); err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodePreConsumeTokenQuotaFailed, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
-		s.tokenConsumed = effectiveQuota
+		if s.relayInfo.TeamId == 0 {
+			s.tokenConsumed = effectiveQuota
+		}
 	}
 
 	// ---- 2) 预扣资金来源 ----
@@ -244,6 +303,10 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 			return types.NewErrorWithStatusCode(
 				errors.New(i18n.T(c, i18n.MsgQuotaUserInsufficient, map[string]any{"Remaining": logger.FormatQuota(userQuota)})),
 				types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
+				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+		}
+		if s.funding.Source() == BillingSourceTeam {
+			return types.NewErrorWithStatusCode(err, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
 				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
 		errMsg := err.Error()
@@ -279,7 +342,7 @@ func (s *BillingSession) reserveFunding(delta int, requireAvailableQuota bool) e
 		// 全额无条件扣减，余额不足的部分记为欠费（余额可为负），不中断请求，
 		// 保证日志记录的预扣额度与用户余额的实际变动始终对账一致。
 		// DecreaseUserQuota 仅在数据库错误时失败。
-		if err := model.DecreaseUserQuota(funding.userId, delta, false); err != nil {
+		if err := model.DecreaseUserQuotaForBilling(funding.userId, delta, false); err != nil {
 			return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 		}
 		funding.consumed += delta
@@ -295,6 +358,13 @@ func (s *BillingSession) reserveFunding(delta int, requireAvailableQuota bool) e
 			)
 		}
 		return nil
+	case *TeamFunding:
+		if err := model.AdjustTeamUsage(funding.requestId, int64(delta), false); err != nil {
+			return types.NewErrorWithStatusCode(err, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
+				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+		}
+		funding.reserved += int64(delta)
+		return nil
 	default:
 		return types.NewError(fmt.Errorf("unsupported funding source: %s", s.funding.Source()), types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 	}
@@ -303,7 +373,7 @@ func (s *BillingSession) reserveFunding(delta int, requireAvailableQuota bool) e
 func (s *BillingSession) rollbackFundingReserve(delta int) {
 	switch funding := s.funding.(type) {
 	case *WalletFunding:
-		if err := model.IncreaseUserQuota(funding.userId, delta, false); err != nil {
+		if err := model.IncreaseUserQuotaForBilling(funding.userId, delta, false); err != nil {
 			common.SysLog(common.LogText("error rolling back wallet funding reserve: %s", err.Error()))
 		} else {
 			funding.consumed -= delta
@@ -312,11 +382,17 @@ func (s *BillingSession) rollbackFundingReserve(delta int) {
 		if err := model.PostConsumeUserSubscriptionDelta(funding.subscriptionId, -int64(delta)); err != nil {
 			common.SysLog(common.LogText("error rolling back subscription funding reserve: %s", err.Error()))
 		}
+	case *TeamFunding:
+		if err := model.AdjustTeamUsage(funding.requestId, -int64(delta), false); err != nil {
+			common.SysLog("error rolling back team funding reserve: " + err.Error())
+		} else {
+			funding.reserved -= int64(delta)
+		}
 	}
 }
 
 func (s *BillingSession) reserveToken(delta int) error {
-	if delta <= 0 || s.relayInfo.IsPlayground {
+	if delta <= 0 || s.relayInfo.IsPlayground || s.relayInfo.TeamId > 0 {
 		return nil
 	}
 	if err := PreConsumeTokenQuota(s.relayInfo, delta); err != nil {
@@ -356,6 +432,8 @@ func (s *BillingSession) shouldTrust(c *gin.Context) bool {
 		// 2. SubscriptionFunding.PreConsume 忽略参数，始终用 s.amount 预扣
 		// 3. 若信任旁路将 effectiveQuota 设为 0，会导致 preConsumedQuota 与实际订阅预扣不一致
 		return false
+	case BillingSourceTeam:
+		return false
 	default:
 		return false
 	}
@@ -390,6 +468,24 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 	if relayInfo == nil {
 		return nil, types.NewError(fmt.Errorf("relayInfo is nil"), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 	}
+	if strings.HasPrefix(relayInfo.TokenKey, "tmb_") && relayInfo.TeamId <= 0 {
+		return nil, types.NewErrorWithStatusCode(fmt.Errorf("team billing identity is missing"),
+			types.ErrorCodeInvalidRequest, http.StatusServiceUnavailable, types.ErrOptionWithSkipRetry())
+	}
+	if relayInfo.TeamId > 0 {
+		amount := preConsumedQuota
+		if amount <= 0 {
+			amount = 1
+		}
+		session := &BillingSession{relayInfo: relayInfo, funding: &TeamFunding{
+			requestId: relayInfo.RequestId, teamId: relayInfo.TeamId, userId: relayInfo.UserId,
+			tokenId: relayInfo.TokenId, async: relayInfo.ForcePreConsume,
+		}}
+		if apiErr := session.preConsume(c, amount); apiErr != nil {
+			return nil, apiErr
+		}
+		return session, nil
+	}
 
 	pref := common.NormalizeBillingPreference(relayInfo.UserSetting.BillingPreference)
 
@@ -415,7 +511,7 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 
 		session := &BillingSession{
 			relayInfo: relayInfo,
-			funding:   &WalletFunding{userId: relayInfo.UserId},
+			funding:   &WalletFunding{userId: relayInfo.UserId, requestId: relayInfo.RequestId},
 			lang:      i18n.StatedLang(c),
 		}
 		if apiErr := session.preConsume(c, preConsumedQuota); apiErr != nil {

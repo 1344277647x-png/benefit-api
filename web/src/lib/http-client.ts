@@ -46,6 +46,78 @@ declare module 'axios' {
 
 export type ApiRequestConfig = AxiosRequestConfig
 
+type ApiErrorRecord = Record<string, unknown>
+
+function isApiErrorRecord(value: unknown): value is ApiErrorRecord {
+  return typeof value === 'object' && value !== null
+}
+
+function messageFromApiPayload(payload: unknown): string | undefined {
+  if (typeof payload === 'string') {
+    const message = payload.trim()
+    return message && !message.startsWith('<') ? message : undefined
+  }
+  if (!isApiErrorRecord(payload)) return undefined
+
+  if (typeof payload.message === 'string' && payload.message.trim()) {
+    return payload.message.trim()
+  }
+  if (typeof payload.error === 'string' && payload.error.trim()) {
+    return payload.error.trim()
+  }
+  if (isApiErrorRecord(payload.error)) {
+    const nested = messageFromApiPayload(payload.error)
+    if (nested) return nested
+  }
+  if (isApiErrorRecord(payload.data)) {
+    return messageFromApiPayload(payload.data)
+  }
+  return undefined
+}
+
+export function getApiErrorMessage(
+  error: unknown,
+  fallback = t('Request failed')
+): string {
+  if (!isApiErrorRecord(error)) return fallback
+
+  const response = isApiErrorRecord(error.response) ? error.response : null
+  if (response) {
+    const message = messageFromApiPayload(response.data)
+    if (message) return message
+  }
+  const payloadMessage = messageFromApiPayload(error)
+  if (payloadMessage) return payloadMessage
+  if (typeof error.message === 'string' && error.message.trim()) {
+    return error.message.trim()
+  }
+  return fallback
+}
+
+export function getRetryAfterSeconds(error: unknown): number | null {
+  if (!isApiErrorRecord(error)) return null
+
+  const response = isApiErrorRecord(error.response) ? error.response : null
+  if (response?.status !== 429 || !isApiErrorRecord(response.headers)) {
+    return null
+  }
+
+  const retryAfter =
+    response.headers['retry-after'] ?? response.headers['Retry-After']
+  let parsed = Number.NaN
+  if (typeof retryAfter === 'number') {
+    parsed = retryAfter
+  } else if (
+    typeof retryAfter === 'string' &&
+    /^\d+$/.test(retryAfter.trim())
+  ) {
+    parsed = Number.parseInt(retryAfter, 10)
+  }
+
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) return null
+  return parsed
+}
+
 export const api = axios.create({
   baseURL: '',
   withCredentials: true,

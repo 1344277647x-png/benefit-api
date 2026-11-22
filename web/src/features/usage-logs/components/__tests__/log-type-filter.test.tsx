@@ -36,6 +36,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { CommonLogsFilterBar } from '../common-logs-filter-bar'
 import { UsageLogsProvider } from '../usage-logs-provider'
@@ -54,10 +55,14 @@ function FilterFixture() {
 }
 
 async function renderFilter() {
+  useAuthStore.getState().auth.setUser({ id: 1, username: 'admin', role: 10 })
   vi.spyOn(api, 'get').mockImplementation(async (url) => ({
     data: {
       success: true,
-      data: url === '/api/user/self/groups' ? {} : { quota: 0, rpm: 0, tpm: 0 },
+      data:
+        url === '/api/user/self/groups' || url === '/api/group/'
+          ? []
+          : { quota: 0, rpm: 0, tpm: 0 },
     },
   }))
   const root = createRootRoute()
@@ -86,6 +91,7 @@ async function renderFilter() {
 
 afterEach(() => {
   cleanup()
+  useAuthStore.getState().auth.reset()
   vi.restoreAllMocks()
 })
 
@@ -106,6 +112,9 @@ it('marks only retired log types as deprecated while keeping historical filters 
     'System',
     'Error',
     'Refund',
+    'Referral',
+    'Lottery',
+    'Team',
   ]) {
     expect(
       within(screen.getByRole('option', { name: label })).queryByText(

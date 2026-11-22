@@ -25,6 +25,7 @@ import {
   ChevronDown,
   ChevronUp,
   Circle,
+  Clipboard,
   Copy,
   CreditCard,
   FileText,
@@ -46,7 +47,7 @@ import {
   CardStaggerContainer,
   CardStaggerItem,
 } from '@/components/page-transition'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
 import { fetchTokenKey, getApiKeys } from '@/features/keys/api'
 import type { ApiKey } from '@/features/keys/types'
@@ -54,6 +55,11 @@ import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { getUserModels } from '@/lib/api'
 import { handleServerError } from '@/lib/handle-server-error'
 import { MOTION_TRANSITION } from '@/lib/motion'
+import {
+  markOnboardingFlag,
+  ONBOARDING_STORAGE_KEYS,
+  readOnboardingFlag,
+} from '@/lib/onboarding'
 import { ROLE } from '@/lib/roles'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
@@ -66,6 +72,7 @@ import {
 import { AnnouncementsPanel } from './announcements-panel'
 import { ApiInfoPanel } from './api-info-panel'
 import { FAQPanel } from './faq-panel'
+import { OpsAlertsPanel } from './ops-alerts-panel'
 import { PerformanceHealthPanel } from './performance-health-panel'
 import { SummaryCards } from './summary-cards'
 import { UptimePanel } from './uptime-panel'
@@ -91,6 +98,7 @@ type DashboardActionPath =
   | '/channels'
   | '/usage-logs'
   | '/pricing'
+  | '/docs'
 
 interface StartStep {
   title: string
@@ -251,6 +259,13 @@ function StartStepItem(props: {
 
       <Link
         to={props.step.to}
+        onClick={() => {
+          if (props.step.to === '/usage-logs') {
+            // The destination is the usage-log page, so count the step when
+            // the user intentionally opens it from the guide.
+            markOnboardingFlag(ONBOARDING_STORAGE_KEYS.logsViewed)
+          }
+        }}
         className='bg-background/70 hover:bg-muted/50 focus-visible:ring-ring flex min-w-0 flex-1 items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left shadow-xs transition-colors outline-none focus-visible:ring-2'
       >
         <span className='flex min-w-0 items-start gap-2.5'>
@@ -367,9 +382,12 @@ function RequestPreview(props: {
             {isCopying ? t('Loading') : t('Copy')}
           </Button>
         ) : (
-          <Button size='sm' variant='outline' render={<Link to='/keys' />}>
+          <Link
+            to='/keys'
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          >
             {t('Create API Key')}
-          </Button>
+          </Link>
         )}
       </div>
 
@@ -424,10 +442,12 @@ function QuickActionItem(props: { action: QuickAction }) {
   const Icon = props.action.icon
 
   return (
-    <Button
-      variant='outline'
-      className='h-auto justify-start rounded-xl px-3 py-3 text-left'
-      render={<Link to={props.action.to} />}
+    <Link
+      to={props.action.to}
+      className={buttonVariants({
+        variant: 'outline',
+        className: 'h-auto justify-start rounded-xl px-3 py-3 text-left',
+      })}
     >
       <span className='bg-muted flex size-9 shrink-0 items-center justify-center rounded-lg'>
         <Icon className='size-4' aria-hidden='true' />
@@ -440,7 +460,7 @@ function QuickActionItem(props: { action: QuickAction }) {
           {props.action.description}
         </span>
       </span>
-    </Button>
+    </Link>
   )
 }
 
@@ -448,15 +468,17 @@ function CompactQuickAction(props: { action: QuickAction }) {
   const Icon = props.action.icon
 
   return (
-    <Button
-      variant='outline'
-      size='sm'
-      className='bg-background/70 h-8 min-w-24 gap-1.5 px-2.5'
-      render={<Link to={props.action.to} />}
+    <Link
+      to={props.action.to}
+      className={buttonVariants({
+        variant: 'outline',
+        size: 'sm',
+        className: 'bg-background/70 h-8 min-w-24 gap-1.5 px-2.5',
+      })}
     >
       <Icon data-icon='inline-start' />
       <span>{props.action.title}</span>
-    </Button>
+    </Link>
   )
 }
 
@@ -480,9 +502,20 @@ export function OverviewDashboard() {
   const remainQuota = Number(user?.quota ?? 0)
   const usedQuota = Number(user?.used_quota ?? 0)
   const isAdmin = Boolean(user?.role && user.role >= ROLE.ADMIN)
+  const apiUrlCopied = readOnboardingFlag(ONBOARDING_STORAGE_KEYS.apiUrlCopied)
+  const modelSelected = readOnboardingFlag(
+    ONBOARDING_STORAGE_KEYS.modelSelected
+  )
+  const logsViewed = readOnboardingFlag(ONBOARDING_STORAGE_KEYS.logsViewed)
 
   const apiKeysQuery = useQuery({
-    queryKey: ['dashboard', 'overview', 'api-keys'],
+    queryKey: [
+      'dashboard',
+      'overview',
+      'api-keys',
+      user?.id ?? null,
+      user?.group ?? '',
+    ],
     queryFn: async () => {
       const result = requireServerSuccess(await getApiKeys({ p: 1, size: 10 }))
       return result.success ? (result.data?.items ?? []) : []
@@ -491,7 +524,13 @@ export function OverviewDashboard() {
   })
 
   const modelsQuery = useQuery({
-    queryKey: ['dashboard', 'overview', 'user-models'],
+    queryKey: [
+      'dashboard',
+      'overview',
+      'user-models',
+      user?.id ?? null,
+      user?.group ?? '',
+    ],
     queryFn: async () => {
       const result = requireServerSuccess(await getUserModels())
       return result.success ? (result.data ?? []) : []
@@ -514,6 +553,20 @@ export function OverviewDashboard() {
         completed: Boolean(preferredKey),
       },
       {
+        title: t('Copy API URL'),
+        description: t('Use the current endpoint in your client configuration'),
+        to: '/docs',
+        icon: Clipboard,
+        completed: apiUrlCopied,
+      },
+      {
+        title: t('Choose a model'),
+        description: t('Review compatibility and pricing before you call'),
+        to: '/pricing',
+        icon: BookOpen,
+        completed: modelSelected,
+      },
+      {
         title: t('Add credits'),
         description: t('Keep enough balance before production traffic'),
         to: '/wallet',
@@ -527,8 +580,24 @@ export function OverviewDashboard() {
         icon: TerminalSquare,
         completed: requestCount > 0,
       },
+      {
+        title: t('Review usage logs'),
+        description: t('Confirm response, latency, and billing details'),
+        to: '/usage-logs',
+        icon: FileText,
+        completed: logsViewed,
+      },
     ],
-    [preferredKey, remainQuota, requestCount, t, usedQuota]
+    [
+      apiUrlCopied,
+      logsViewed,
+      modelSelected,
+      preferredKey,
+      remainQuota,
+      requestCount,
+      t,
+      usedQuota,
+    ]
   )
 
   const quickActions = useMemo<QuickAction[]>(
@@ -557,6 +626,12 @@ export function OverviewDashboard() {
         description: t('Review model rates before scaling traffic'),
         to: '/pricing',
         icon: BookOpen,
+      },
+      {
+        title: t('Docs'),
+        description: t('Copy a ready-to-use client configuration'),
+        to: '/docs',
+        icon: Clipboard,
       },
     ],
     [t]
@@ -650,7 +725,7 @@ export function OverviewDashboard() {
           <div id={setupGuideId} hidden={!setupGuideExpanded}>
             {setupGuideExpanded && (
               <CardStaggerContainer className='grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]'>
-                <CardStaggerItem className='bg-card h-full overflow-hidden rounded-2xl border shadow-xs'>
+                <CardStaggerItem className='benefit-cinema-panel bg-card h-full overflow-hidden rounded-2xl border shadow-xs'>
                   <div className='relative h-full overflow-hidden p-4 sm:p-5'>
                     <SetupGuideBackdrop />
                     <div className='relative grid gap-5 lg:grid-cols-[minmax(0,1fr)_21rem]'>
@@ -684,10 +759,13 @@ export function OverviewDashboard() {
                               <ChevronUp data-icon='inline-start' />
                               {t('Hide setup guide')}
                             </Button>
-                            <Button size='sm' render={<Link to='/keys' />}>
+                            <Link
+                              to='/keys'
+                              className={buttonVariants({ size: 'sm' })}
+                            >
                               <KeyRound data-icon='inline-start' />
                               {t('Create API Key')}
-                            </Button>
+                            </Link>
                           </div>
                         </div>
 
@@ -809,9 +887,14 @@ export function OverviewDashboard() {
                   )}
                 >
                   {isAdmin && (
-                    <CardStaggerItem className='lg:col-span-2'>
-                      <PerformanceHealthPanel />
-                    </CardStaggerItem>
+                    <>
+                      <CardStaggerItem className='lg:col-span-2'>
+                        <OpsAlertsPanel />
+                      </CardStaggerItem>
+                      <CardStaggerItem className='lg:col-span-2'>
+                        <PerformanceHealthPanel />
+                      </CardStaggerItem>
+                    </>
                   )}
                   {showApiInfoPanel && (
                     <CardStaggerItem>

@@ -161,24 +161,18 @@ export function ModelMappingEditor(props: ModelMappingEditorProps) {
         const mapped = entries.map(([from, to], index) => {
           const toString = String(to)
           const existingIndex = remainingRows.findIndex(
-            (row) =>
-              row.from === from ||
-              (row.from === from && row.to === toString) ||
-              previousRows[index]?.id === row.id
+            (row) => row.from === from
           )
-          if (existingIndex >= 0) {
-            const [existing] = remainingRows.splice(existingIndex, 1)
-            return {
-              id: existing.id,
-              from,
-              to: toString,
-            }
-          }
-          return {
-            id: createRowId(),
-            from,
-            to: toString,
-          }
+          const reuseIndex =
+            existingIndex >= 0
+              ? existingIndex
+              : remainingRows.findIndex(
+                  (row) =>
+                    previousRows[index]?.id === row.id && !(row.from in parsed)
+                )
+          const existing =
+            reuseIndex >= 0 ? remainingRows.splice(reuseIndex, 1)[0] : undefined
+          return { id: existing?.id ?? createRowId(), from, to: toString }
         })
         // Rows without a request name are not serialized yet; keep them so a
         // draft survives edits to other rows.

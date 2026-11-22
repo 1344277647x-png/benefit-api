@@ -19,6 +19,7 @@ services:
     image: calciumion/new-api:latest
     container_name: new-api
     restart: always
+    stop_grace_period: 150s
     command: --log-dir /app/logs
     ports:
       - "3000:3000"

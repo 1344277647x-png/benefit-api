@@ -39,7 +39,7 @@ import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { handleServerError } from '@/lib/handle-server-error'
-import { requireServerSuccess } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { getUserGroups, getUserModels } from '../api'
 import {
@@ -69,6 +69,8 @@ export function usePlaygroundOptions({
   updateConfig,
 }: UsePlaygroundOptionsParams) {
   const { t } = useTranslation()
+  const user = useAuthStore((state) => state.auth.user)
+  const userScope = [user?.id ?? null, user?.group ?? ''] as const
 
   const {
     data: modelsData,
@@ -76,10 +78,9 @@ export function usePlaygroundOptions({
     isError: isModelsError,
     isLoading: isLoadingModels,
   } = useQuery({
-    queryKey: ['playground-models', currentGroup],
-    queryFn: async () =>
-      requireServerSuccess(await getUserModels(currentGroup)),
-    enabled: currentGroup !== '',
+    queryKey: ['playground-models', ...userScope, currentGroup],
+    queryFn: () => getUserModels(currentGroup),
+    enabled: Boolean(user?.id) && currentGroup !== '',
   })
 
   const {
@@ -87,8 +88,9 @@ export function usePlaygroundOptions({
     error: groupsError,
     isError: isGroupsError,
   } = useQuery({
-    queryKey: ['playground-groups'],
-    queryFn: async () => requireServerSuccess(await getUserGroups()),
+    queryKey: ['playground-groups', ...userScope],
+    queryFn: getUserGroups,
+    enabled: Boolean(user?.id),
   })
 
   useEffect(() => {

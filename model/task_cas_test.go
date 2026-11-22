@@ -51,11 +51,22 @@ func TestMain(m *testing.M) {
 		&QuotaData{},
 		&Ability{},
 		&TopUp{},
+		&ReferralReward{},
+		&LotteryAccount{},
+		&LotteryGrant{},
+		&LotteryDraw{},
+		&LotteryRule{},
+		&BusinessEvent{},
+		&BusinessEventLogReceipt{},
+		&ContentAuditRecord{},
+		&Option{},
 		&SubscriptionPlan{},
 		&SubscriptionOrder{},
 		&UserSubscription{},
 		&UserOAuthBinding{},
 		&PerfMetric{},
+		&ChannelHealthSnapshot{},
+		&ChannelHealthBucket{},
 		&SystemInstance{},
 		&SystemTask{},
 		&SystemTaskLock{},
@@ -63,6 +74,7 @@ func TestMain(m *testing.M) {
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
+	InitOptionMap()
 
 	os.Exit(m.Run())
 }
@@ -86,10 +98,21 @@ func truncateTables(t *testing.T) {
 		DB.Exec("DELETE FROM quota_data")
 		DB.Exec("DELETE FROM abilities")
 		DB.Exec("DELETE FROM top_ups")
+		DB.Exec("DELETE FROM referral_rewards")
+		DB.Exec("DELETE FROM lottery_draws")
+		DB.Exec("DELETE FROM lottery_grants")
+		DB.Exec("DELETE FROM lottery_accounts")
+		DB.Exec("DELETE FROM lottery_rules")
+		DB.Exec("DELETE FROM business_events")
+		DB.Exec("DELETE FROM business_event_log_receipts")
+		DB.Exec("DELETE FROM content_audit_records")
+		DB.Exec("DELETE FROM options")
 		DB.Exec("DELETE FROM subscription_orders")
 		DB.Exec("DELETE FROM subscription_plans")
 		DB.Exec("DELETE FROM user_subscriptions")
 		DB.Exec("DELETE FROM perf_metrics")
+		DB.Exec("DELETE FROM channel_health_buckets")
+		DB.Exec("DELETE FROM channel_health_snapshots")
 		DB.Exec("DELETE FROM system_instances")
 		DB.Exec("DELETE FROM system_task_locks")
 		DB.Exec("DELETE FROM system_tasks")

@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import { requestWaffoPancakePayment, isApiSuccess } from '../api'
+import { rememberPendingPayment } from '../constants'
 import { getPaymentErrorTranslation } from '../lib'
 
 function getCheckoutUrl(data: unknown): string | null {
@@ -91,6 +92,7 @@ export function useWaffoPancakePayment() {
               toast.error(i18next.t('Invalid payment redirect URL'))
               return false
             }
+            rememberPendingPayment()
             toast.success(i18next.t('Redirecting to payment page...'))
             window.location.href = checkoutUrl
             return true

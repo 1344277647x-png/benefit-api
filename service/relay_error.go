@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -20,6 +21,9 @@ import (
 func DecideRelayRetry(c *gin.Context, err *types.NewAPIError, retryTimes int) PolicyDecision {
 	if err == nil {
 		return PolicyDecision{Action: "stop", Reason: "request_completed", Source: "system"}
+	}
+	if err.GetErrorClass() == types.ErrorClassUpstreamQuotaExhausted {
+		return PolicyDecision{Action: "stop", Reason: "upstream_quota_exhausted", Source: "system"}
 	}
 	if ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		source := RequestPolicy(c).SessionModeSource
@@ -93,8 +97,13 @@ func RecordRelayErrorLog(c *gin.Context, channelId int, err *types.NewAPIError, 
 	}
 	other.SetPublic("error_type", err.GetErrorType())
 	other.SetPublic("error_code", err.GetErrorCode())
+	other.SetPublic("error_class", err.GetErrorClass())
+	other.SetPublic("partial_failed", c.GetBool("relay_stream_partial_failed"))
 	other.SetPublic("status_code", err.StatusCode)
 	AppendRelayLogAdminInfo(c, relayInfo, other)
+	if relayInfo != nil {
+		AppendImageBatchLogInfo(other, relayInfo.ImageBatchInfo)
+	}
 	appendRequestPluginRecord(relayInfo, other)
 	AppendResponseModelLogInfo(relayInfo, other)
 	AppendTaskPluginContextAuditInfo(c, other)
@@ -103,5 +112,5 @@ func RecordRelayErrorLog(c *gin.Context, channelId int, err *types.NewAPIError, 
 		startTime = time.Now()
 	}
 	useTimeSeconds := int(time.Since(startTime).Seconds())
-	model.RecordErrorLog(c, userId, channelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(common.UpstreamAddresses(c)...), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
+	model.RecordErrorLog(c, userId, channelId, modelName, tokenName, fmt.Sprintf("Relay request failed (status %d)", err.StatusCode), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
 }

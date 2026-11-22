@@ -124,6 +124,8 @@ export interface ChannelSettings {
   http_protocol?: 'auto' | 'http1' | string
   http2_connection_shards?: number
   tls_insecure_skip_verify?: boolean
+  image_batch_mode?: 'native' | 'fanout' | string
+  image_batch_model_modes?: Record<string, 'native' | 'fanout' | string>
 }
 
 export interface ChannelOtherSettings {
@@ -230,11 +232,30 @@ export interface ChannelOpsResponse {
   }
 }
 
+export type ChannelProtocolCheckMode = 'responses_stream' | 'image_endpoint'
+
+export interface ChannelProtocolCheckItem {
+  name: string
+  passed: boolean
+  detail: string
+}
+
+export interface ChannelProtocolCheckReport {
+  mode: ChannelProtocolCheckMode
+  passed: boolean
+  image_format?: string
+  events_seen?: string[]
+  checks: ChannelProtocolCheckItem[]
+  summary: string
+}
+
 export interface ChannelTestResponse {
   success: boolean
   message?: string
   error_code?: string
   time?: number
+  group?: string
+  protocol_check?: ChannelProtocolCheckReport
   data?: {
     response_time?: number
     error?: string
@@ -344,6 +365,7 @@ export interface SearchChannelsParams {
 
 export interface ChannelTestParams {
   test_model?: string
+  group?: string
 }
 
 export interface CopyChannelParams {

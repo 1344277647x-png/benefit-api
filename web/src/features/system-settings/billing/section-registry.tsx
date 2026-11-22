@@ -25,6 +25,8 @@ import { PaymentSettingsSection } from '../integrations/payment-settings-section
 import { RatioSettingsCard } from '../models/ratio-settings-card'
 import type { BillingSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { LotterySettingsSection } from './lottery-settings-section'
+import { ReferralSettingsSection } from './referral-settings-section'
 
 const getModelDefaults = (settings: BillingSettings) => ({
   ModelPrice: settings.ModelPrice,
@@ -144,6 +146,11 @@ const BILLING_SECTIONS = [
             settings['payment_setting.epay_platform_public_key'],
           Price: settings.Price,
           MinTopUp: settings.MinTopUp,
+          AlipayEnabled: settings.AlipayEnabled,
+          AlipayAppId: settings.AlipayAppId,
+          AlipayPrivateKey: settings.AlipayPrivateKey,
+          AlipayPublicKey: settings.AlipayPublicKey,
+          AlipaySandbox: settings.AlipaySandbox,
           CustomCallbackAddress: settings.CustomCallbackAddress,
           PayMethods: settings.PayMethods,
           AmountOptions: settings['payment_setting.amount_options'],
@@ -203,6 +210,49 @@ const BILLING_SECTIONS = [
           minQuota: settings['checkin_setting.min_quota'],
           maxQuota: settings['checkin_setting.max_quota'],
         }}
+      />
+    ),
+  },
+  {
+    id: 'referral',
+    titleKey: 'Referral Settings',
+    build: (settings: BillingSettings) => (
+      <ReferralSettingsSection
+        defaultValues={{
+          enabled: settings['referral_setting.enabled'],
+          minimumTopupQuota: settings['referral_setting.minimum_topup_quota'],
+          rewardRateBasisPoints:
+            settings['referral_setting.reward_rate_basis_points'],
+          inviteeBonusQuota: settings['referral_setting.invitee_bonus_quota'],
+          perInviteeCapQuota:
+            settings['referral_setting.per_invitee_cap_quota'],
+          monthlyCapQuota: settings['referral_setting.monthly_cap_quota'],
+          settlementDelayHours:
+            settings['referral_setting.settlement_delay_hours'],
+        }}
+        complianceConfirmed={
+          (settings['payment_setting.compliance_confirmed'] ?? false) &&
+          settings['payment_setting.compliance_terms_version'] === 'v1'
+        }
+      />
+    ),
+  },
+  {
+    id: 'lottery',
+    titleKey: 'Lottery Settings',
+    build: (settings: BillingSettings) => (
+      <LotterySettingsSection
+        defaultValues={{
+          enabled: settings['lottery_setting.enabled'],
+          startAt: settings['lottery_setting.start_at'],
+          endAt: settings['lottery_setting.end_at'],
+          regularWeights: settings['lottery_setting.regular_weights'],
+          jackpotWeights: settings['lottery_setting.jackpot_weights'],
+        }}
+        complianceConfirmed={
+          (settings['payment_setting.compliance_confirmed'] ?? false) &&
+          settings['payment_setting.compliance_terms_version'] === 'v1'
+        }
       />
     ),
   },

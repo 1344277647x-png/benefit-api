@@ -379,7 +379,7 @@ test.each([
 ])(
   'task expression $tier shows its recorded unit price',
   ({ expression, tier, expected }) => {
-    client.setQueryData(['pricing'], {
+    client.setQueryData(['pricing', null, ''], {
       data: [
         {
           model_name: 'wan2.5-i2v-preview',
@@ -408,7 +408,7 @@ test.each([
 )
 
 test('task log prices use localized unit labels from pricing metadata', async () => {
-  client.setQueryData(['pricing'], {
+  client.setQueryData(['pricing', null, ''], {
     data: [
       {
         model_name: 'wan2.5-i2v-preview',
@@ -437,7 +437,7 @@ test('task log prices use localized unit labels from pricing metadata', async ()
 })
 
 test('task log prices select the executing provider’s schema', () => {
-  client.setQueryData(['pricing'], {
+  client.setQueryData(['pricing', null, ''], {
     data: [
       {
         model_name: 'wan2.5-i2v-preview',
@@ -476,7 +476,7 @@ test.each(['missing schema', 'unsupported expression', 'unknown tier'])(
   'task pricing with %s preserves the saved tier without guessing prices',
   (scenario) => {
     if (scenario !== 'missing schema') {
-      client.setQueryData(['pricing'], {
+      client.setQueryData(['pricing', null, ''], {
         data: [
           {
             model_name: 'wan2.5-i2v-preview',

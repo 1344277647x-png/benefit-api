@@ -34,7 +34,7 @@ import {
 type Theme = 'dark' | 'light' | 'system'
 type ResolvedTheme = Exclude<Theme, 'system'>
 
-const DEFAULT_THEME = 'system'
+const DEFAULT_THEME = 'dark'
 const THEMES = new Set<Theme>(['dark', 'light', 'system'])
 
 type ThemeProviderProps = {
@@ -53,7 +53,7 @@ type ThemeProviderState = {
 
 const initialState: ThemeProviderState = {
   defaultTheme: DEFAULT_THEME,
-  resolvedTheme: 'light',
+  resolvedTheme: 'dark',
   theme: DEFAULT_THEME,
   setTheme: () => null,
   resetTheme: () => null,
@@ -93,6 +93,13 @@ export function ThemeProvider({
       const nextResolvedTheme = theme === 'system' ? getSystemTheme() : theme
       root.classList.remove('light', 'dark')
       root.classList.add(nextResolvedTheme)
+      const themeColor = window.document.querySelector<HTMLMetaElement>(
+        'meta[name="theme-color"]'
+      )
+      themeColor?.setAttribute(
+        'content',
+        nextResolvedTheme === 'dark' ? '#081815' : '#edf3ee'
+      )
       setResolvedTheme(nextResolvedTheme)
     }
 

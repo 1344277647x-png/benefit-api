@@ -63,6 +63,7 @@ Transitive dependencies should be audited before a final external release.
 | backend  | production  | Go        | `github.com/samber/lo`                                  | `v1.53.0`                            | MIT                     |
 | backend  | production  | Go        | `github.com/shirou/gopsutil`                            | `v3.21.11+incompatible`              | BSD-3-Clause            |
 | backend  | production  | Go        | `github.com/shopspring/decimal`                         | `v1.4.0`                             | MIT                     |
+| backend  | production  | Go        | `github.com/smartwalle/alipay/v3`                       | `v3.2.30`                            | MIT                     |
 | backend  | test        | Go        | `github.com/stretchr/testify`                           | `v1.12.1`                            | MIT                     |
 | backend  | production  | Go        | `github.com/stripe/stripe-go/v81`                       | `v81.4.0`                            | MIT                     |
 | backend  | production  | Go        | `github.com/tcolgate/mp3`                               | `v0.0.0-20170426193717-e79c5a46d300` | MIT                     |
@@ -137,6 +138,7 @@ Transitive dependencies should be audited before a final external release.
 | web      | production  | npm       | `stream-markdown-parser`                                | `1.2.18`                             | MIT                     |
 | web      | production  | npm       | `tailwind-merge`                                        | `3.6.0`                              | MIT                     |
 | web      | production  | npm       | `tailwindcss`                                           | `4.3.3`                              | MIT                     |
+| web      | production  | npm       | `three`                                                 | `0.185.1`                            | MIT                     |
 | web      | production  | npm       | `tokenlens`                                             | `1.3.1`                              | MIT                     |
 | web      | production  | npm       | `tw-animate-css`                                        | `1.4.0`                              | MIT                     |
 | web      | production  | npm       | `use-stick-to-bottom`                                   | `1.1.6`                              | MIT                     |
@@ -158,6 +160,7 @@ Transitive dependencies should be audited before a final external release.
 | web      | development | npm       | `@types/node-forge`                                     | `1.3.14`                             | MIT                     |
 | web      | development | npm       | `@types/react`                                          | `19.2.17`                            | MIT                     |
 | web      | development | npm       | `@types/react-dom`                                      | `19.2.3`                             | MIT                     |
+| web      | development | npm       | `@types/three`                                          | `0.185.4`                            | MIT                     |
 | web      | development | npm       | `@xyflow/react`                                         | `12.11.2`                            | MIT                     |
 | web      | development | npm       | `embla-carousel-react`                                  | `8.6.0`                              | MIT                     |
 | web      | development | npm       | `jsdom`                                                 | `29.1.1`                             | MIT                     |

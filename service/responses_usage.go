@@ -29,6 +29,12 @@ func NewResponsesUsageAccumulator(info *relaycommon.RelayInfo) *ResponsesUsageAc
 	return &ResponsesUsageAccumulator{info: info, usage: &dto.Usage{}}
 }
 
+// PartialUsage reports observed provider usage before Finish estimates the
+// prompt. Lifecycle events alone do not create a charge.
+func (a *ResponsesUsageAccumulator) PartialUsage() *dto.Usage { return a.usage }
+
+func (a *ResponsesUsageAccumulator) GeneratedText() string { return a.outputText.String() }
+
 // Observe feeds one decoded stream event. raw is the same event's wire bytes;
 // the vendor tool-usage reader runs on it once, at the terminal event.
 func (a *ResponsesUsageAccumulator) Observe(event *dto.ResponsesStreamResponse, raw []byte) {
@@ -85,17 +91,31 @@ func (a *ResponsesUsageAccumulator) Observe(event *dto.ResponsesStreamResponse, 
 	}
 }
 
-func (a *ResponsesUsageAccumulator) Finish() *dto.Usage {
-	if a.finished {
-		return a.usage
-	}
-	a.finished = true
+// CommitObservedImages retains images observed before a stream stops, without
+// estimating token usage on an otherwise empty stream.
+func (a *ResponsesUsageAccumulator) CommitObservedImages() {
 	// A final image item can already have reached the client before the stream
 	// disconnects, so completed tool usage is retained even without a terminal.
 	if !a.imageCommitted {
 		a.imageCounter.Commit(a.info)
 		a.imageCommitted = true
 	}
+}
+
+// DiscardObservedImages keeps a non-completed Responses terminal from
+// charging for images while leaving separately reported token usage intact.
+func (a *ResponsesUsageAccumulator) DiscardObservedImages() {
+	a.imageCounter = relaycommon.ImageGenerationCallCounter{}
+	a.imageCounter.Commit(a.info)
+	a.imageCommitted = true
+}
+
+func (a *ResponsesUsageAccumulator) Finish() *dto.Usage {
+	if a.finished {
+		return a.usage
+	}
+	a.finished = true
+	a.CommitObservedImages()
 	if a.usage.CompletionTokens == 0 {
 		if output := a.outputText.String(); output != "" {
 			a.usage.CompletionTokens = tokenkit.Count(a.info.GetUpstreamModelName(), output)
@@ -144,7 +164,8 @@ func ObserveResponsesOutcome(info *relaycommon.RelayInfo, event *dto.ResponsesSt
 			reason = event.Response.IncompleteDetails.Reason
 		}
 		info.StreamStatus.MarkIncomplete(reason)
-	case event.Type == "response.cancelled" || event.Type == "response.canceled" || responseStatus == "cancelled":
+	case event.Type == "response.cancelled" || event.Type == "response.canceled" ||
+		responseStatus == "cancelled" || responseStatus == "canceled":
 		info.StreamStatus.MarkCancelled()
 	case event.Type == "response.completed" || event.Type == "response.done" || responseStatus == "completed":
 		info.StreamStatus.MarkCompleted()

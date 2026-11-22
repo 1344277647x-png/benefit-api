@@ -190,6 +190,7 @@ func main() {
 	// switch are enforced inside the runner and each handler's Enabled().
 	controller.RegisterScheduledSystemTasks()
 	service.StartSystemTaskRunner()
+	controller.StartGenerationMaintenance()
 
 	if os.Getenv("BATCH_UPDATE_ENABLED") == "true" {
 		common.BatchUpdateEnabled = true
@@ -200,7 +201,7 @@ func main() {
 	host := os.Getenv("HOST")
 	if os.Getenv("ENABLE_PPROF") == "true" {
 		gopool.Go(func() {
-			log.Println(http.ListenAndServe(net.JoinHostPort(host, "8005"), nil))
+			log.Println(http.ListenAndServe("127.0.0.1:8005", nil))
 		})
 		go common.Monitor()
 		common.SysLog(common.LogText("pprof enabled"))
@@ -238,8 +239,11 @@ func main() {
 	}
 
 	srv := &http.Server{
-		Addr:    net.JoinHostPort(host, port),
-		Handler: server,
+		Addr:              net.JoinHostPort(host, port),
+		Handler:           server,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	go func() {
@@ -263,6 +267,14 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		common.SysError(common.LogText("server forced to shutdown: %v", err))
+	}
+	refundCtx, refundCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	if err := service.WaitForBillingRefunds(refundCtx); err != nil {
+		common.SysError("shutdown timed out waiting for billing refunds")
+	}
+	refundCancel()
+	if err := model.FlushBatchUpdates(); err != nil {
+		common.SysError("shutdown batch accounting flush failed; pending increments retained in memory")
 	}
 	// 内存中的看板数据保存入库，避免重启丢失未落库数据 (issue #5679)
 	if common.DataExportEnabled {
@@ -383,6 +395,10 @@ func InitResources() error {
 	err = common.InitRedisClient()
 	if err != nil {
 		return err
+	}
+	if common.IsMasterNode {
+		service.StartBusinessEventDelivery()
+		service.StartOperationsProjection()
 	}
 
 	perfmetrics.Init()

@@ -152,6 +152,14 @@ type ChatCompletionsStreamResponse struct {
 	SystemFingerprint *string                               `json:"system_fingerprint"`
 	Choices           []ChatCompletionsStreamResponseChoice `json:"choices"`
 	Usage             *Usage                                `json:"usage"`
+	Error             any                                   `json:"error,omitempty"`
+}
+
+func (c *ChatCompletionsStreamResponse) GetOpenAIError() *types.OpenAIError {
+	if c == nil {
+		return nil
+	}
+	return GetOpenAIError(c.Error)
 }
 
 func (c *ChatCompletionsStreamResponse) IsFinished() bool {
@@ -608,6 +616,7 @@ const (
 type ResponsesStreamResponse struct {
 	Type            string                   `json:"type"`
 	Response        *OpenAIResponsesResponse `json:"response,omitempty"`
+	Error    any                      `json:"error,omitempty"`
 	Code            string                   `json:"code,omitempty"`
 	Message         string                   `json:"message,omitempty"`
 	Param           string                   `json:"param,omitempty"`
@@ -630,6 +639,16 @@ type ResponsesStreamResponse struct {
 	SummaryIndex *int                           `json:"summary_index,omitempty"`
 	ItemID       string                         `json:"item_id,omitempty"`
 	Part         *ResponsesReasoningSummaryPart `json:"part,omitempty"`
+}
+
+// GetOpenAIError extracts an error carried directly by a Responses stream
+// event. Providers are inconsistent about whether the error is nested under
+// response or emitted at the event root, so callers must check both shapes.
+func (s *ResponsesStreamResponse) GetOpenAIError() *types.OpenAIError {
+	if s == nil {
+		return nil
+	}
+	return GetOpenAIError(s.Error)
 }
 
 // GetOpenAIError 从动态错误类型中提取OpenAIError结构
@@ -672,4 +691,12 @@ func GetOpenAIError(errorField any) *types.OpenAIError {
 			Message: fmt.Sprintf("%v", err),
 		}
 	}
+}
+
+// HasOpenAIError reports whether a decoded error object contains any useful
+// error signal. Some compatible providers omit type and send only message or
+// code; those events must still terminate a stream instead of being billed as
+// a successful response.
+func HasOpenAIError(err *types.OpenAIError) bool {
+	return err != nil && (err.Type != "" || err.Message != "" || err.Code != nil)
 }

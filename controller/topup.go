@@ -6,6 +6,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -23,13 +24,45 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+var epayWalletOrder = regexp.MustCompile(`^USR[0-9]{1,20}NO[0-9A-Za-z]{6}[0-9]{10}$`)
+
+// EpayReturn drops provider query parameters before showing the wallet.
+// Only the asynchronous notification can credit an order.
+func EpayReturn(c *gin.Context) {
+	target := "/wallet?pay=pending&show_history=true"
+	if order := c.Query("order"); epayWalletOrder.MatchString(order) {
+		target += "&order=" + url.QueryEscape(order)
+	}
+	c.Header("Referrer-Policy", "no-referrer")
+	c.Redirect(http.StatusSeeOther, paymentReturnPath(target))
+}
+
 func GetTopUpInfo(c *gin.Context) {
 	complianceConfirmed := operation_setting.IsPaymentComplianceConfirmed()
 
-	// 获取支付方式
-	payMethods := operation_setting.PayMethods
-	if !complianceConfirmed {
-		payMethods = []map[string]string{}
+	// Only expose Epay methods when the Epay gateway is fully configured.
+	payMethods := make([]map[string]string, 0, len(operation_setting.PayMethods)+4)
+	epayMethods := make([]map[string]string, 0)
+	if complianceConfirmed && isEpayTopUpEnabled() {
+		epayMethods = append(epayMethods, operation_setting.PayMethods...)
+		payMethods = append(payMethods, epayMethods...)
+	}
+
+	if isAlipayTopUpEnabled() {
+		payMethods = append(payMethods, map[string]string{
+			"name":      "支付宝",
+			"icon":      "SiAlipay",
+			"type":      model.PaymentMethodAlipayNative,
+			"min_topup": strconv.FormatInt(getMinTopup(), 10),
+		})
+	}
+
+	enableQixiang := qixiangCheckoutGateway() != nil
+	if enableQixiang {
+		payMethods = append(payMethods, map[string]string{
+			"name": "WeChat Pay", "type": model.PaymentMethodQixiangWeChat,
+			"min_topup": strconv.FormatInt(getMinTopup(), 10),
+		})
 	}
 
 	// 如果启用了 Stripe 支付，添加到支付方法列表
@@ -99,6 +132,8 @@ func GetTopUpInfo(c *gin.Context) {
 
 	data := gin.H{
 		"enable_online_topup":              isEpayTopUpEnabled(),
+		"enable_alipay_topup":              isAlipayTopUpEnabled(),
+		"enable_qixiang_topup":             enableQixiang,
 		"enable_stripe_topup":              isStripeTopUpEnabled(),
 		"enable_creem_topup":               isCreemTopUpEnabled(),
 		"enable_waffo_topup":               enableWaffo,
@@ -114,6 +149,7 @@ func GetTopUpInfo(c *gin.Context) {
 		}(),
 		"creem_products":          setting.CreemProducts,
 		"pay_methods":             payMethods,
+		"epay_pay_methods":        epayMethods,
 		"min_topup":               operation_setting.MinTopUp,
 		"stripe_min_topup":        setting.StripeMinTopUp,
 		"waffo_min_topup":         setting.WaffoMinTopUp,
@@ -321,10 +357,10 @@ func RequestEpay(c *gin.Context) {
 	}
 
 	callBackAddress := service.GetCallbackAddress()
-	returnUrl, _ := url.Parse(paymentReturnPath("/usage-logs"))
 	notifyUrl, _ := url.Parse(callBackAddress + "/api/user/epay/notify")
 	tradeNo := fmt.Sprintf("%s%d", common.GetRandomString(6), time.Now().Unix())
 	tradeNo = fmt.Sprintf("USR%dNO%s", id, tradeNo)
+	returnUrl, _ := url.Parse(paymentReturnPath("/api/user/epay/return?order=" + url.QueryEscape(tradeNo)))
 	client := GetEpayClient()
 	if client == nil {
 		paymentError(c, common.NewMessage("Payment information has not been configured by administrator"))
@@ -457,13 +493,13 @@ func EpayNotify(c *gin.Context) {
 	}
 	verifyInfo, err := client.Verify(params)
 	if err != nil || !verifyInfo.VerifyStatus {
-		if _, writeErr := c.Writer.Write([]byte("fail")); writeErr != nil {
-			logger.LogError(c.Request.Context(), common.LogText("Epay webhook failed to write response path=%q client_ip=%s error=%q", c.Request.RequestURI, c.ClientIP(), writeErr.Error()))
-		}
 		if err != nil {
 			logger.LogWarn(c.Request.Context(), common.LogText("Epay webhook signature verification failed path=%q client_ip=%s verify_error=%q", c.Request.RequestURI, c.ClientIP(), err.Error()))
 		} else {
 			logger.LogWarn(c.Request.Context(), common.LogText("Epay webhook signature verification failed path=%q client_ip=%s verify_status=false", c.Request.RequestURI, c.ClientIP()))
+		}
+		if _, writeErr := c.Writer.Write([]byte("fail")); writeErr != nil {
+			logger.LogError(c.Request.Context(), fmt.Sprintf("易支付 webhook 响应写入失败 path=%q client_ip=%s error=%q", c.Request.RequestURI, c.ClientIP(), writeErr.Error()))
 		}
 		return
 	}
@@ -598,6 +634,30 @@ func AdminCompleteTopUp(c *gin.Context) {
 	// 订单级互斥，防止并发补单
 	LockOrder(req.TradeNo)
 	defer UnlockOrder(req.TradeNo)
+
+	order := model.GetTopUpByTradeNo(req.TradeNo)
+	if order != nil && order.PaymentProvider == model.PaymentProviderQixiang {
+		if order.Status == common.TopUpStatusSuccess {
+			common.ApiSuccess(c, nil)
+			return
+		}
+		gateway := service.ConfiguredQixiangGateway()
+		if gateway == nil {
+			common.ApiErrorMsg(c, "七相商户配置缺失，无法查单")
+			return
+		}
+		paid, err := gateway.QueryPaidWeChatOrder(c.Request.Context(), order.TradeNo)
+		if err != nil {
+			common.ApiErrorMsg(c, "暂未查到七相支付成功记录，请在商户后台核对")
+			return
+		}
+		if err := model.CompleteQixiangTopUp(order.TradeNo, paid.Money, c.ClientIP()); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		common.ApiSuccess(c, nil)
+		return
+	}
 
 	if err := model.ManualCompleteTopUp(req.TradeNo, c.ClientIP()); err != nil {
 		common.ApiError(c, err)

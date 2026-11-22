@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next'
 
 import { PublicLayout } from '@/components/layout'
 import { PageTransition } from '@/components/page-transition'
+import { markOnboardingFlag, ONBOARDING_STORAGE_KEYS } from '@/lib/onboarding'
 
 import {
   LoadingSkeleton,
@@ -84,6 +85,7 @@ export function Pricing() {
   } = useFilters(models || [])
 
   const handleModelClick = useCallback((modelName: string) => {
+    markOnboardingFlag(ONBOARDING_STORAGE_KEYS.modelSelected)
     setSelectedModelName(modelName)
   }, [])
 

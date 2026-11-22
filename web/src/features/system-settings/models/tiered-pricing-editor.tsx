@@ -105,6 +105,23 @@ import { DraftNumberInput } from './draft-number-input'
 import { RequestSimulation } from './request-simulation'
 import { VisualBillingDocumentEditor } from './visual-billing-document-editor'
 
+const stableObjectKeys = new WeakMap<object, string>()
+let stableObjectKeySeq = 0
+
+function getStableObjectKey(item: object, prefix: string): string {
+  const existing = stableObjectKeys.get(item)
+  if (existing) return existing
+  stableObjectKeySeq += 1
+  const key = `${prefix}-${stableObjectKeySeq}`
+  stableObjectKeys.set(item, key)
+  return key
+}
+
+function keepRowKey<T extends object>(previous: T, next: T): T {
+  stableObjectKeys.set(next, getStableObjectKey(previous, 'pricing-row'))
+  return next
+}
+
 type Preset = {
   key: string
   label: string
@@ -567,7 +584,7 @@ function RuleGroupCard({
     next: RequestCondition
   ) => {
     const conditions = [...group.conditions]
-    conditions[conditionIndex] = next
+    conditions[conditionIndex] = keepRowKey(conditions[conditionIndex], next)
     onChange({ ...group, conditions })
   }
 
@@ -600,8 +617,7 @@ function RuleGroupCard({
       <div className='space-y-2'>
         {group.conditions.map((condition, conditionIndex) => (
           <RuleConditionRow
-            // eslint-disable-next-line react/no-array-index-key -- Parsed editor rows have no IDs; preserve input identity while their editable labels and values change.
-            key={conditionIndex}
+            key={getStableObjectKey(condition, 'rule-cond')}
             condition={condition}
             onChange={(next) => handleConditionChange(conditionIndex, next)}
             onRemove={() =>
@@ -1274,13 +1290,12 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
               <>
                 {requestRuleGroups.map((group, groupIndex) => (
                   <RuleGroupCard
-                    // eslint-disable-next-line react/no-array-index-key -- Parsed editor rows have no IDs; preserve input identity while their editable labels and values change.
-                    key={groupIndex}
+                    key={getStableObjectKey(group, 'rule-group')}
                     group={group}
                     index={groupIndex}
                     onChange={(next) => {
                       const updated = [...requestRuleGroups]
-                      updated[groupIndex] = next
+                      updated[groupIndex] = keepRowKey(group, next)
                       handleRuleGroupsChange(updated)
                     }}
                     onRemove={() =>

@@ -43,6 +43,9 @@ func IsOpenAIResponseOnlyModel(modelName string) bool {
 
 func IsImageGenerationModel(modelName string) bool {
 	modelName = strings.ToLower(modelName)
+	if IsGPTImageGenerationModel(modelName) || IsSeedreamImageGenerationModel(modelName) || IsNovelAIImageGenerationModel(modelName) {
+		return true
+	}
 	for _, m := range ImageGenerationModels {
 		if prefix, ok := strings.CutPrefix(m, "prefix:"); ok {
 			if strings.HasPrefix(modelName, prefix) {
@@ -51,6 +54,39 @@ func IsImageGenerationModel(modelName string) bool {
 			continue
 		}
 		if strings.Contains(modelName, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsGPTImageGenerationModel recognizes the whole GPT Image family, including
+// provider aliases such as "4K gpt-image-2".
+func IsGPTImageGenerationModel(modelName string) bool {
+	return strings.Contains(strings.ToLower(strings.TrimSpace(modelName)), "gpt-image-")
+}
+
+func IsSeedreamImageGenerationModel(modelName string) bool {
+	return strings.Contains(strings.ToLower(strings.TrimSpace(modelName)), "seedream-")
+}
+
+func IsNovelAIImageGenerationModel(modelName string) bool {
+	name := strings.ToLower(strings.TrimSpace(modelName))
+	return strings.Contains(name, "novelai-v") || strings.HasPrefix(name, "nai-diffusion-")
+}
+
+func IsGeminiImageGenerationModel(modelName string) bool {
+	modelName = strings.ToLower(strings.TrimSpace(modelName))
+	if !strings.Contains(modelName, "gemini") {
+		return false
+	}
+	return strings.Contains(modelName, "image") || strings.Contains(modelName, "banana")
+}
+
+func IsVideoGenerationModel(modelName string) bool {
+	modelName = strings.ToLower(strings.TrimSpace(modelName))
+	for _, marker := range []string{"veo-", "seedance-", "sora-"} {
+		if strings.Contains(modelName, marker) {
 			return true
 		}
 	}

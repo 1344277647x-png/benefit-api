@@ -70,6 +70,20 @@ var accessTokenExemptRoutes = []string{
 	// API key authentication (TokenAuthReadOnly).
 	"GET /api/usage/token/",
 	"GET /api/log/token",
+
+	// Public Benefit routes, signed payment callbacks and an asset ticket route.
+	"GET /api/alipay/return",
+	"GET /api/channel-health/public",
+	"GET /api/creation/assets/:id/content",
+	"GET /api/docs",
+	"GET /api/qixiang/notify",
+	"GET /api/qixiang/return",
+	"GET /api/team/epay/notify",
+	"GET /api/team/epay/return",
+	"GET /api/user/epay/return",
+	"POST /api/alipay/notify",
+	"POST /api/team/epay/notify",
+	"POST /api/team/epay/return",
 }
 
 // accessTokenHelperRoutes are declared through handlePermissionRoute outside

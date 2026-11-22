@@ -30,6 +30,7 @@ import { useEffect } from 'react'
 import { NavigationProgress } from '@/components/navigation-progress'
 import { Toaster } from '@/components/ui/sonner'
 import { ThemeCustomizationProvider } from '@/context/theme-customization-provider'
+import { AnnouncementPopup } from '@/features/announcements/announcement-popup'
 import { saveAffiliateCode } from '@/features/auth/lib/storage'
 import { GeneralError } from '@/features/errors/general-error'
 import { NotFoundError } from '@/features/errors/not-found-error'
@@ -63,9 +64,18 @@ function RootComponent() {
       useAuthStore.subscribe((state, previousState) => {
         const sid = state.auth.session?.sid
         const previousSID = previousState.auth.session?.sid
-        if (sid !== previousSID) {
-          queryClient.clear()
-        }
+        const user = state.auth.user
+        const previousUser = previousState.auth.user
+        const authScope = user
+          ? `${sid ?? ''}:${user.id}:${user.group ?? ''}`
+          : 'anonymous'
+        const previousAuthScope = previousUser
+          ? `${previousSID ?? ''}:${previousUser.id}:${previousUser.group ?? ''}`
+          : 'anonymous'
+        if (authScope === previousAuthScope) return
+
+        void queryClient.cancelQueries()
+        queryClient.clear()
       }),
     [queryClient]
   )
@@ -96,6 +106,7 @@ function RootComponent() {
     <ThemeCustomizationProvider>
       <NavigationProgress />
       <Outlet />
+      <AnnouncementPopup />
       <Toaster closeButton duration={5000} position='top-center' richColors />
       {import.meta.env.MODE === 'development' && (
         <>

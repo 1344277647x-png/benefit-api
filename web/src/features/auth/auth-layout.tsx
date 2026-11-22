@@ -17,8 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Link } from '@tanstack/react-router'
+import { CircleDollarSign, Gauge, Layers3 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { LanguageSwitcher } from '@/components/language-switcher'
+import { ThemeSwitch } from '@/components/theme-switch'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSystemConfig } from '@/hooks/use-system-config'
 
@@ -31,31 +34,78 @@ export function AuthLayout({ children }: AuthLayoutProps) {
   const { systemName, logo, loading } = useSystemConfig()
 
   return (
-    <div className='relative grid h-svh max-w-none'>
+    <div className='benefit-auth-stage relative min-h-svh overflow-hidden'>
+      <div
+        aria-hidden='true'
+        className='border-border/35 pointer-events-none absolute inset-y-0 left-1/2 w-full max-w-6xl -translate-x-1/2 border-x'
+      />
+      <div
+        aria-hidden='true'
+        className='border-border/25 pointer-events-none absolute inset-x-0 top-[28%] border-t'
+      />
       <Link
         to='/'
-        className='absolute top-4 left-4 z-10 flex items-center gap-2 transition-opacity hover:opacity-80 sm:top-8 sm:left-8'
+        className='benefit-liquid-glass benefit-public-nav absolute top-4 left-4 z-10 flex min-h-11 items-center gap-2.5 rounded-full px-3 transition-opacity hover:opacity-85 sm:top-6 sm:left-6'
       >
-        <div className='relative h-8 w-8'>
+        <div className='relative size-8'>
           {loading ? (
-            <Skeleton className='absolute inset-0 rounded-full' />
+            <Skeleton className='absolute inset-0 rounded-lg' />
           ) : (
             <img
               src={logo}
-              alt={t('Logo')}
-              className='h-8 w-8 rounded-full object-cover'
+              alt={systemName || t('Logo')}
+              className='size-8 rounded-lg object-contain'
             />
           )}
         </div>
         {loading ? (
           <Skeleton className='h-6 w-24' />
         ) : (
-          <h1 className='text-xl font-medium'>{systemName}</h1>
+          <h1 className='text-base font-semibold'>{systemName}</h1>
         )}
       </Link>
-      <div className='container flex items-center pt-16 sm:pt-0'>
-        <div className='mx-auto flex w-full flex-col justify-center space-y-2 px-4 py-8 sm:w-[480px] sm:p-8'>
-          {children}
+      <div className='benefit-liquid-glass benefit-public-nav absolute top-4 right-4 z-10 flex min-h-11 items-center gap-0.5 rounded-full px-1.5 sm:top-6 sm:right-6'>
+        <LanguageSwitcher />
+        <ThemeSwitch />
+      </div>
+      <div className='relative flex min-h-svh items-center px-4 pt-24 pb-8 sm:px-6 sm:pt-20 lg:px-10'>
+        <div className='mx-auto grid w-full max-w-6xl items-center gap-12 lg:grid-cols-[minmax(0,1fr)_460px] xl:gap-20'>
+          <aside className='benefit-auth-story hidden min-w-0 flex-col justify-center lg:flex'>
+            <p className='text-primary text-sm font-semibold'>
+              {t('Unified AI access, ready for production')}
+            </p>
+            <h2 className='mt-4 max-w-xl text-4xl leading-tight font-semibold xl:text-5xl'>
+              {t('More models. Lower access cost.')}
+            </h2>
+            <p className='text-muted-foreground mt-5 max-w-xl text-base leading-7'>
+              {t(
+                'One OpenAI-compatible address connects leading models. Pay by actual usage, with balance and billing always visible.'
+              )}
+            </p>
+            <ul className='mt-8 grid max-w-xl gap-3'>
+              {[
+                { icon: Layers3, label: t('One endpoint, many models') },
+                { icon: CircleDollarSign, label: t('Pay only for usage') },
+                { icon: Gauge, label: t('Usage and balance stay visible') },
+              ].map((item) => {
+                const Icon = item.icon
+                return (
+                  <li
+                    key={item.label}
+                    className='border-border/60 flex min-h-12 items-center gap-3 border-b py-3 last:border-b-0'
+                  >
+                    <span className='bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-[8px]'>
+                      <Icon className='size-4' aria-hidden='true' />
+                    </span>
+                    <span className='text-sm font-medium'>{item.label}</span>
+                  </li>
+                )
+              })}
+            </ul>
+          </aside>
+          <div className='benefit-auth-panel mx-auto flex w-full max-w-[460px] min-w-0 flex-col justify-center space-y-2 px-5 py-8 sm:px-9 sm:py-10 lg:mx-0'>
+            {children}
+          </div>
         </div>
       </div>
     </div>

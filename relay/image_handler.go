@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relay/requestplugin"
@@ -20,6 +22,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/model_setting"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/sjson"
 )
 
 // outboundImageCounter is an image adaptor whose upstream body carries the
@@ -49,6 +52,8 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		return types.NewError(err, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
 	}
 
+	applyCreationImageReferenceSemantics(request, info, getCreationImageExecutionState(c))
+
 	adaptor := GetAdaptor(info.ApiType)
 	if adaptor == nil {
 		return types.NewError(fmt.Errorf("invalid api type: %d", info.ApiType), types.ErrorCodeInvalidApiType, types.ErrOptionWithSkipRetry())
@@ -59,6 +64,56 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		return types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 	}
 
+	batch := newCreationImageBatchInfo(c, info, imageCount)
+	if getCreationImageExecutionState(c) != nil && batch.Mode == dto.ImageBatchModeFanout && imageCount > 1 {
+		return runOpenAIImageFanout(c, info, request, adaptor, batch)
+	}
+
+	usage, newAPIError := executeOpenAIImageRequest(c, info, request, adaptor, false)
+	if newAPIError != nil {
+		if getCreationImageExecutionState(c) != nil {
+			appendCreationImageBatchError(batch, 1, newAPIError)
+			batch.FailedCount = batch.RequestedCount
+			storeCreationImageExecutionResult(c, info, nil, nil, batch)
+		}
+		return newAPIError
+	}
+	normalizeCreationImageUsage(usage)
+
+	quality := request.Quality
+	if quality == "" {
+		quality = "standard"
+	}
+
+	logContent := make([]*common.Message, 0, 3)
+	if len(request.Size) > 0 {
+		logContent = append(logContent, common.NewMessage("Size {{size}}", map[string]any{"size": request.Size}))
+	}
+	if len(quality) > 0 {
+		logContent = append(logContent, common.NewMessage("Quality {{quality}}", map[string]any{"quality": quality}))
+	}
+	imageN := info.RequestedImageCount()
+	if info.BillingImageCount != nil {
+		imageN = *info.BillingImageCount
+	}
+	if imageN > 0 {
+		logContent = append(logContent, common.NewMessage("Image count {{count}}", map[string]any{"count": imageN}))
+	}
+
+	if getCreationImageExecutionState(c) != nil {
+		storeCreationImageExecutionResult(c, info, usage, logContent, batch)
+		return nil
+	}
+	service.PostTextConsumeQuota(c, info, usage, logContent)
+	return nil
+}
+
+func executeOpenAIImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.ImageRequest, adaptor channel.Adaptor, forceConvert bool) (*dto.Usage, *types.NewAPIError) {
+	imageCount, err := request.ImageCount(false)
+	if err != nil {
+		return nil, types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+	}
+	var apiErr *types.NewAPIError
 	var requestBody io.Reader
 	var jsonData []byte
 	var outbound struct {
@@ -66,13 +121,13 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	}
 	validateQuantity := false
 
-	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled {
+	if !forceConvert && (model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled) {
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
-			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+			return nil, types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
-		if newAPIError = requestplugin.PassThrough(c, info, storage); newAPIError != nil {
-			return newAPIError
+		if apiErr = requestplugin.PassThrough(c, info, storage); apiErr != nil {
+			return nil, apiErr
 		}
 		if !strings.Contains(c.Request.Header.Get("Content-Type"), "multipart/form-data") {
 			counter, countsOwnMember := adaptor.(outboundImageCounter)
@@ -91,7 +146,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 			case storage.IsDisk():
 				reader, readErr := storage.NewReader()
 				if readErr != nil {
-					return types.NewErrorWithStatusCode(readErr, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+					return nil, types.NewErrorWithStatusCode(readErr, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 				}
 				err = common.DecodeJsonBody(reader, &outbound)
 				_ = reader.Close()
@@ -103,7 +158,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 				}
 			}
 			if err != nil {
-				return types.NewErrorWithStatusCode(fmt.Errorf("invalid image billing parameters: %w", err), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+				return nil, types.NewErrorWithStatusCode(fmt.Errorf("invalid image billing parameters: %w", err), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 			}
 			validateQuantity = true
 			if common.DebugEnabled {
@@ -121,36 +176,42 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 			// downgraded to a retryable conversion failure.
 			var apiErr *types.NewAPIError
 			if errors.As(err, &apiErr) {
-				return apiErr
+				return nil, apiErr
 			}
-			return types.NewError(err, types.ErrorCodeConvertRequestFailed)
+			return nil, types.NewError(err, types.ErrorCodeConvertRequestFailed)
 		}
 		relaycommon.AppendRequestConversionFromRequest(info, convertedRequest)
 
 		switch convertedRequest.(type) {
 		case *bytes.Buffer:
-			if newAPIError = requestplugin.PassThrough(c, info, nil); newAPIError != nil {
-				return newAPIError
+			if apiErr = requestplugin.PassThrough(c, info, nil); apiErr != nil {
+				return nil, apiErr
 			}
 			requestBody = convertedRequest.(io.Reader)
 		default:
 			jsonData, err = common.Marshal(convertedRequest)
 			if err != nil {
-				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+				return nil, types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 			}
 
-			if jsonData, newAPIError = requestplugin.Outbound(c, info, jsonData); newAPIError != nil {
-				return newAPIError
+			if jsonData, apiErr = requestplugin.Outbound(c, info, jsonData); apiErr != nil {
+				return nil, apiErr
 			}
 			// apply param override
 			if len(info.ParamOverride) > 0 {
 				jsonData, err = relaycommon.ApplyParamOverrideWithRelayInfo(jsonData, info)
 				if err != nil {
-					return newAPIErrorFromParamOverride(err)
+					return nil, newAPIErrorFromParamOverride(err)
 				}
 			}
-			if newAPIError = requestplugin.Egress(c, info, jsonData); newAPIError != nil {
-				return newAPIError
+			if forceConvert {
+				jsonData, err = sjson.SetBytes(jsonData, "n", 1)
+				if err != nil {
+					return nil, types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+				}
+			}
+			if apiErr = requestplugin.Egress(c, info, jsonData); apiErr != nil {
+				return nil, apiErr
 			}
 
 		}
@@ -164,7 +225,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 			outbound.N, err = counter.OutboundImageCount(jsonData)
 		}
 		if err != nil {
-			return types.NewErrorWithStatusCode(fmt.Errorf("invalid image billing parameters: %w", err), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+			return nil, types.NewErrorWithStatusCode(fmt.Errorf("invalid image billing parameters: %w", err), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
 		validateQuantity = true
 	}
@@ -176,28 +237,33 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		}
 		imageCount, err = quantityRequest.ImageCount(false)
 		if err != nil {
-			return types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+			return nil, types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
+	}
+	if forceConvert && imageCount != 1 {
+		return nil, types.NewErrorWithStatusCode(errors.New("image fanout requires one output per attempt"), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 	}
 	if jsonData != nil {
 		logger.LogDebug(c, "image request body: %s", jsonData)
 		body, closer, err := relaycommon.NewOutboundJSONBody(jsonData)
 		if err != nil {
-			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			return nil, types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 		}
 		defer closer.Close()
 		requestBody = body
 	}
 
-	if billingErr := service.PrepareImageBillingForRequest(c, info, imageCount); billingErr != nil {
-		return billingErr
+	if !forceConvert {
+		if billingErr := service.PrepareImageBillingForRequest(c, info, imageCount); billingErr != nil {
+			return nil, billingErr
+		}
 	}
 
 	statusCodeMappingStr := c.GetString("status_code_mapping")
 
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
-		return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
+		return nil, types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
 	}
 	var httpResp *http.Response
 	if resp != nil {
@@ -208,10 +274,10 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 				// replicate channel returns 201 Created when using Prefer: wait, treat it as success.
 				httpResp.StatusCode = http.StatusOK
 			} else {
-				newAPIError = service.RelayErrorHandler(c.Request.Context(), httpResp, false)
+				newAPIError := service.RelayErrorHandler(c.Request.Context(), httpResp, false)
 				// reset status code 重置状态码
 				service.ResetStatusCode(newAPIError, statusCodeMappingStr)
-				return newAPIError
+				return nil, newAPIError
 			}
 		}
 	}
@@ -220,42 +286,121 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	if newAPIError != nil {
 		// reset status code 重置状态码
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
-		return newAPIError
+		return nil, newAPIError
+	}
+	return usage.(*dto.Usage), nil
+}
+
+func runOpenAIImageFanout(c *gin.Context, info *relaycommon.RelayInfo, request *dto.ImageRequest, adaptor channel.Adaptor, batch *relaycommon.ImageBatchInfo) *types.NewAPIError {
+	requestedCount := batch.RequestedCount
+	if billingErr := service.PrepareImageBillingForRequest(c, info, requestedCount); billingErr != nil {
+		return billingErr
+	}
+	request.N = common.GetPointer(uint(1))
+	aggregatedResponse := dto.ImageResponse{}
+	aggregatedUsage := &dto.Usage{}
+	var lastError *types.NewAPIError
+
+	for index := 1; index <= requestedCount && len(aggregatedResponse.Data) < requestedCount; index++ {
+		if err := c.Request.Context().Err(); err != nil {
+			lastError = types.NewErrorWithStatusCode(err, types.ErrorCodeDoRequestFailed, http.StatusRequestTimeout, types.ErrOptionWithSkipRetry())
+			appendCreationImageBatchError(batch, index, lastError)
+			break
+		}
+		attemptContext := c.Copy()
+		attemptContext.Request = c.Request.Clone(c.Request.Context())
+		attemptWriter := newCreationImageResponseWriter(c.Writer)
+		attemptContext.Writer = attemptWriter
+		attemptRequest, err := common.DeepCopy(request)
+		if err != nil {
+			lastError = types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusInternalServerError, types.ErrOptionWithSkipRetry())
+			appendCreationImageBatchError(batch, index, lastError)
+			break
+		}
+		usage, apiErr := executeOpenAIImageRequest(attemptContext, info, attemptRequest, adaptor, true)
+		if apiErr != nil {
+			lastError = apiErr
+			appendCreationImageBatchError(batch, index, apiErr)
+			if shouldStopCreationImageFanout(apiErr) {
+				break
+			}
+			continue
+		}
+
+		var response dto.ImageResponse
+		if err := common.Unmarshal(attemptWriter.body.Bytes(), &response); err != nil {
+			lastError = types.NewErrorWithStatusCode(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+			appendCreationImageBatchError(batch, index, lastError)
+			continue
+		}
+		response.Data = slices.DeleteFunc(response.Data, func(image dto.ImageData) bool {
+			return image.Url == "" && image.B64Json == ""
+		})
+		if len(response.Data) == 0 {
+			lastError = creationImageEmptyResponseError()
+			appendCreationImageBatchError(batch, index, lastError)
+			continue
+		}
+		remaining := requestedCount - len(aggregatedResponse.Data)
+		if len(response.Data) > remaining {
+			response.Data = response.Data[:remaining]
+		}
+		if aggregatedResponse.Created == 0 {
+			aggregatedResponse.Created = response.Created
+			aggregatedResponse.Metadata = response.Metadata
+		}
+		aggregatedResponse.Data = append(aggregatedResponse.Data, response.Data...)
+		mergeCreationImageUsage(aggregatedUsage, usage)
 	}
 
-	// The log content shows the settled count: the count the handler derived
-	// from the upstream response when it did, otherwise the reserved quantity.
-	imageN := info.RequestedImageCount()
-	if info.BillingImageCount != nil {
-		imageN = *info.BillingImageCount
-	} else if count, ok := info.PriceData.OtherRatios()["n"]; ok && info.PriceData.UsePrice && count >= 1 && count <= dto.MaxImageN {
-		imageN = common.QuotaRound(count)
+	batch.ResultCount = len(aggregatedResponse.Data)
+	batch.FailedCount = requestedCount - batch.ResultCount
+	logContent := []*common.Message{common.NewMessage("Image count {{count}}", map[string]any{"count": batch.ResultCount})}
+	if batch.ResultCount == 0 {
+		storeCreationImageExecutionResult(c, info, nil, logContent, batch)
+		if lastError == nil {
+			lastError = creationImageEmptyResponseError()
+		}
+		return types.NewErrorWithStatusCode(lastError, lastError.GetErrorCode(), http.StatusBadGateway, types.ErrOptionWithSkipRetry())
 	}
+	normalizeCreationImageUsage(aggregatedUsage)
+	storeCreationImageExecutionResult(c, info, aggregatedUsage, logContent, batch)
 
-	if usage.(*dto.Usage).TotalTokens == 0 {
-		usage.(*dto.Usage).TotalTokens = 1
+	body, err := common.Marshal(aggregatedResponse)
+	if err != nil {
+		return types.NewError(err, types.ErrorCodeBadResponseBody, types.ErrOptionWithSkipRetry())
 	}
-	if usage.(*dto.Usage).PromptTokens == 0 {
-		usage.(*dto.Usage).PromptTokens = 1
-	}
+	c.Header("Content-Type", "application/json")
+	return writeCreationImageResponse(c, body)
+}
 
-	quality := request.Quality
-	if quality == "" {
-		quality = "standard"
+func normalizeCreationImageUsage(usage *dto.Usage) {
+	if usage == nil {
+		return
 	}
+	if usage.TotalTokens == 0 {
+		usage.TotalTokens = 1
+	}
+	if usage.PromptTokens == 0 {
+		usage.PromptTokens = 1
+	}
+}
 
-	var logContent []*common.Message
+func supportsHighInputFidelity(modelName string) bool {
+	switch strings.ToLower(strings.TrimSpace(modelName)) {
+	case "gpt-image-1", "gpt-image-1.5", "gpt-image-2":
+		return true
+	default:
+		return false
+	}
+}
 
-	if len(request.Size) > 0 {
-		logContent = append(logContent, common.NewMessage("Size {{size}}", map[string]any{"size": request.Size}))
+func applyCreationImageReferenceSemantics(request *dto.ImageRequest, info *relaycommon.RelayInfo, state *creationImageExecutionState) {
+	if request == nil || info == nil || state == nil || state.ReferenceCount <= 0 {
+		return
 	}
-	if len(quality) > 0 {
-		logContent = append(logContent, common.NewMessage("Quality {{quality}}", map[string]any{"quality": quality}))
+	request.Prompt += "\n\nUse all reference images in their upload order when producing the result."
+	if supportsHighInputFidelity(info.UpstreamModelName) {
+		request.InputFidelity = []byte(`"high"`)
 	}
-	if imageN > 0 {
-		logContent = append(logContent, common.NewMessage("Image count {{count}}", map[string]any{"count": imageN}))
-	}
-
-	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), logContent)
-	return nil
 }

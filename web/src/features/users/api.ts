@@ -32,6 +32,8 @@ import type {
   ManageUserAction,
   ManageUserQuotaPayload,
   ApiResponse,
+  UserUsageSummary,
+  UserUsageRangeParams,
 } from './types'
 
 // A step-up proof is single-use, so the request carrying it must never be
@@ -54,13 +56,24 @@ function securityProofConfig(proofToken?: string): AxiosRequestConfig {
 export async function getUsers(
   params: GetUsersParams = {}
 ): Promise<GetUsersResponse> {
-  const { p = 1, page_size = 10, sort_by, sort_order } = params
+  const {
+    p = 1,
+    page_size = 10,
+    sort_by,
+    sort_order,
+    usage_start,
+    usage_end,
+    include_usage,
+  } = params
   const res = await api.get('/api/user/', {
     params: {
       p,
       page_size,
       sort_by,
       sort_order,
+      usage_start,
+      usage_end,
+      include_usage,
     },
   })
   return res.data
@@ -74,24 +87,46 @@ export async function searchUsers(
 ): Promise<GetUsersResponse> {
   const {
     keyword = '',
+    exact_field,
     group = '',
     role = '',
     status = '',
     p = 1,
     page_size = 10,
+    usage_start,
+    usage_end,
+    include_usage,
     sort_by,
     sort_order,
   } = params
   const queryParams = new URLSearchParams()
   queryParams.set('keyword', keyword)
+  if (exact_field) queryParams.set('exact_field', exact_field)
+  if (include_usage != null) {
+    queryParams.set('include_usage', String(include_usage))
+  }
   queryParams.set('group', group)
   if (role) queryParams.set('role', role)
   if (status) queryParams.set('status', status)
   queryParams.set('p', String(p))
   queryParams.set('page_size', String(page_size))
+  if (usage_start != null) queryParams.set('usage_start', String(usage_start))
+  if (usage_end != null) queryParams.set('usage_end', String(usage_end))
   if (sort_by) queryParams.set('sort_by', sort_by)
   if (sort_order) queryParams.set('sort_order', sort_order)
   const res = await api.get(`/api/user/search?${queryParams.toString()}`)
+  return res.data
+}
+
+export async function getUserListUsage(
+  ids: number[],
+  range: UserUsageRangeParams,
+  signal: AbortSignal
+): Promise<ApiResponse<Record<number, UserUsageSummary>>> {
+  const res = await api.get('/api/user/usage-summary', {
+    params: { ids: ids.join(','), ...range },
+    signal,
+  })
   return res.data
 }
 

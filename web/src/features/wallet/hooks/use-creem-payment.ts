@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import { requestCreemPayment, isApiSuccess } from '../api'
+import { rememberPendingPayment } from '../constants'
 
 /**
  * Hook for handling Creem payment processing
@@ -39,6 +40,7 @@ export function useCreemPayment() {
       })
 
       if (isApiSuccess(response) && response.data?.checkout_url) {
+        rememberPendingPayment()
         window.open(response.data.checkout_url, '_blank')
         toast.success(i18next.t('Redirecting to Creem checkout...'))
         return true

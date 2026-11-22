@@ -232,6 +232,7 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 			if parameters := formData.Get("parameters"); parameters != "" {
 				imageRequest.Extra = map[string]json.RawMessage{"parameters": json.RawMessage(parameters)}
 			}
+			imageRequest.AspectRatio = formData.Get("aspect_ratio")
 			if streamValue := strings.TrimSpace(formData.Get("stream")); streamValue != "" {
 				stream, err := strconv.ParseBool(streamValue)
 				if err != nil {
@@ -243,7 +244,7 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 				imageRequest.Image, _ = common.Marshal(imageValue)
 			}
 
-			if imageRequest.Model == "gpt-image-1" {
+			if common.IsGPTImageGenerationModel(imageRequest.Model) {
 				if imageRequest.Quality == "" {
 					imageRequest.Quality = "standard"
 				}
@@ -281,7 +282,7 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 		if err := imageRequest.NormalizeLegacyDalleImageRequest(); err != nil {
 			return nil, err
 		}
-		if imageRequest.Model == "gpt-image-1" {
+		if common.IsGPTImageGenerationModel(imageRequest.Model) {
 			if imageRequest.Quality == "" {
 				imageRequest.Quality = "auto"
 			}

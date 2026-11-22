@@ -147,6 +147,7 @@ export type SiteSettings = {
   Footer: string
   About: string
   HomePageContent: string
+  DocsContent: string
   ServerAddress: string
   TaskPublicAddress: string
   'general_setting.docs_link': string
@@ -311,6 +312,11 @@ export type BillingSettings = {
   EpayKey: string
   Price: number
   MinTopUp: number
+  AlipayEnabled: boolean
+  AlipayAppId: string
+  AlipayPrivateKey: string
+  AlipayPublicKey: string
+  AlipaySandbox: boolean
   CustomCallbackAddress: string
   PayMethods: string
   'payment_setting.amount_options': string
@@ -358,6 +364,37 @@ export type BillingSettings = {
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number
+  'referral_setting.enabled': boolean
+  'referral_setting.minimum_topup_quota': number
+  'referral_setting.reward_rate_basis_points': number
+  'referral_setting.invitee_bonus_quota': number
+  'referral_setting.per_invitee_cap_quota': number
+  'referral_setting.monthly_cap_quota': number
+  'referral_setting.settlement_delay_hours': number
+  'lottery_setting.enabled': boolean
+  'lottery_setting.start_at': number
+  'lottery_setting.end_at': number
+  'lottery_setting.rule_version': string
+  'lottery_setting.regular_weights': number[]
+  'lottery_setting.jackpot_weights': number[]
+}
+
+export type ReferralOptionsUpdateRequest = {
+  enabled: boolean
+  minimum_topup_quota: number
+  reward_rate_basis_points: number
+  invitee_bonus_quota: number
+  per_invitee_cap_quota: number
+  monthly_cap_quota: number
+  settlement_delay_hours: number
+}
+
+export type LotteryOptionsUpdateRequest = {
+  enabled: boolean
+  start_at: number
+  end_at: number
+  regular_weights: number[]
+  jackpot_weights: number[]
 }
 
 export type OperationsSettings = {
@@ -386,6 +423,8 @@ export type OperationsSettings = {
   'log_setting.user_export_enabled': boolean
   'log_setting.max_range_days': number
   'system_task_setting.retention_days': number
+  'content_audit.enabled': boolean
+  'content_audit.privacy_ready': boolean
   'performance_setting.disk_cache_enabled': boolean
   'performance_setting.disk_cache_threshold_mb': number
   'performance_setting.disk_cache_max_size_mb': number
@@ -398,6 +437,22 @@ export type OperationsSettings = {
   'perf_metrics_setting.flush_interval': number
   'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min'
   'perf_metrics_setting.retention_days': number
+  'creation_setting.enabled': boolean
+  'creation_setting.retention_days': number
+  'creation_setting.max_image_mb': number
+  'creation_setting.max_video_mb': number
+  'creation_setting.max_user_storage_mb': number
+  'creation_setting.max_system_storage_mb': number
+  'creation_setting.max_pending_video_jobs': number
+  'channel_health_setting.enabled': boolean
+  'channel_health_setting.refresh_interval_seconds': number
+  'channel_health_setting.window_minutes': number
+  'channel_health_setting.delayed_threshold_ms': number
+  'channel_health_setting.failure_streak_threshold': number
+  'channel_health_setting.minimum_samples': number
+  'channel_health_setting.unavailable_error_rate_percent': number
+  'channel_health_setting.stale_after_minutes': number
+  'channel_health_setting.retention_days': number
 }
 
 export type SecuritySettings = {

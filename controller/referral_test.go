@@ -1,0 +1,56 @@
+package controller
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"testing"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
+)
+
+func TestTransferAffQuotaRequiresPaymentCompliance(t *testing.T) {
+	payment := operation_setting.GetPaymentSetting()
+	original := *payment
+	payment.ComplianceConfirmed = false
+	payment.ComplianceTermsVersion = ""
+	t.Cleanup(func() { *payment = original })
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/user/referral/transfer", bytes.NewBufferString(`{"quota":100}`))
+	context.Request.Header.Set("Content-Type", "application/json")
+	context.Set("id", 901)
+
+	TransferAffQuota(context)
+
+	var response struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.False(t, response.Success)
+}
+
+func TestValidateReferralOptionRejectsUnsafeValues(t *testing.T) {
+	require.Error(t, validateReferralOption("referral_setting.minimum_topup_quota", "-1"))
+	require.Error(t, validateReferralOption("referral_setting.reward_rate_basis_points", "10001"))
+	require.Error(t, validateReferralOption("referral_setting.settlement_delay_hours", "721"))
+	require.NoError(t, validateReferralOption("referral_setting.reward_rate_basis_points", "300"))
+	require.NoError(t, validateReferralOption("referral_setting.monthly_cap_quota", strconv.Itoa(common.MaxQuota+1)))
+	require.Error(t, validateReferralOption("referral_setting.monthly_cap_quota", strconv.FormatInt(int64(common.MaxWalletQuota)+1, 10)))
+}
+
+func TestValidateLotteryOptionRejectsUnsafeValues(t *testing.T) {
+	require.NoError(t, validateLotteryOption("lottery_setting.enabled", "true"))
+	require.NoError(t, validateLotteryOption("lottery_setting.start_at", "0"))
+	require.NoError(t, validateLotteryOption("lottery_setting.end_at", "1893456000"))
+	require.Error(t, validateLotteryOption("lottery_setting.enabled", "yes"))
+	require.Error(t, validateLotteryOption("lottery_setting.start_at", "-1"))
+	require.Error(t, validateLotteryOption("lottery_setting.end_at", "later"))
+}

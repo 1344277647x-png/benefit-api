@@ -242,3 +242,32 @@ func TestLogFormattingPreservesLargeIntegerLexemes(t *testing.T) {
 		assert.Equal(t, unprivileged, adminLogs[0].Other)
 	})
 }
+
+func TestFormatUserLogsStripsImageBatchErrorsButKeepsCounts(t *testing.T) {
+	other := common.MapToJsonStr(map[string]any{
+		"batch_mode":      "fanout",
+		"requested_count": 4,
+		"result_count":    2,
+		"failed_count":    2,
+		"reference_count": 3,
+		"admin_info": map[string]any{
+			"image_batch_errors": []map[string]any{{
+				"index":       2,
+				"status_code": 502,
+				"code":        "bad_response",
+				"message":     "sanitized summary",
+			}},
+		},
+	})
+	logs := []*Log{{Other: other}}
+
+	formatUserLogs(logs, 0)
+
+	parsed, err := common.StrToMap(logs[0].Other)
+	require.NoError(t, err)
+	require.NotContains(t, parsed, "admin_info")
+	require.Equal(t, "fanout", parsed["batch_mode"])
+	require.Equal(t, float64(4), parsed["requested_count"])
+	require.Equal(t, float64(2), parsed["result_count"])
+	require.Equal(t, float64(2), parsed["failed_count"])
+}

@@ -2,6 +2,8 @@ package model
 
 import (
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/shopspring/decimal"
@@ -59,6 +61,22 @@ func AdjustUserQuota(userID, operatorRole int, mode string, value int) (*UserQuo
 		// An unchanged override is a successful operation, including on MySQL
 		// configurations that count only changed rows in RowsAffected.
 		if after != user.Quota {
+			if operationsAvailable(tx) {
+				delta := int64(after) - int64(user.Quota)
+				key := fmt.Sprintf("admin-adjustment:%d:%d", userID, time.Now().UnixNano())
+				fact := operationsFact{PoolKey: OperationsWalletKey(userID), UserId: userID, Opening: int64(user.Quota), Kind: "adjustment"}
+				switch mode {
+				case "add":
+					fact.Action, fact.Quota, fact.Gift = "credit", delta, true
+				case "subtract":
+					fact.Action, fact.Quota = "adjustment", -delta
+				case "override":
+					fact.Action, fact.Quota = "override", int64(after)
+				}
+				if err := enqueueOperationsTx(tx, key, "", fact); err != nil {
+					return err
+				}
+			}
 			result := tx.Model(&User{}).Where("id = ?", userID).Update("quota", after)
 			if result.Error != nil {
 				return result.Error
