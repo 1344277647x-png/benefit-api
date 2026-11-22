@@ -29,20 +29,11 @@ import (
 )
 
 func TestOperationsHourlyRollupExactParityAndHybridWindow(t *testing.T) {
-	truncateTables(t)
-	require.NoError(t, DB.AutoMigrate(
-		&OperationsState{},
-		&OperationsPool{},
-		&OperationsEntry{},
-		&OperationsEvent{},
-		&ChannelCostVersion{},
-		&OperationsRollupBucket{},
-		&OperationsHourlyRollup{},
-	))
-	require.NoError(t, LOG_DB.AutoMigrate(&Log{}, &OperationsRollupDirtyHour{}))
-	require.NoError(t, LOG_DB.Where("hour_bucket > ?", 0).Delete(&OperationsRollupDirtyHour{}).Error)
-	require.NoError(t, DB.Where("hour_bucket > ?", 0).Delete(&OperationsRollupBucket{}).Error)
-	require.NoError(t, DB.Where("hour_bucket > ?", 0).Delete(&OperationsHourlyRollup{}).Error)
+	db := operationsTestDB(t)
+	oldDB, oldLogDB := DB, LOG_DB
+	DB, LOG_DB = db, db
+	t.Cleanup(func() { DB, LOG_DB = oldDB, oldLogDB })
+	require.NoError(t, db.AutoMigrate(&OperationsState{}, &OperationsRollupBucket{}, &OperationsHourlyRollup{}, &Log{}, &OperationsRollupDirtyHour{}))
 
 	oldQuotaPerUnit := common.QuotaPerUnit
 	common.QuotaPerUnit = 500000

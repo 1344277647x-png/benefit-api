@@ -30,8 +30,10 @@ import (
 )
 
 func TestGetBillingReconciliationAndOpsQueueSummary(t *testing.T) {
-	truncateTables(t)
-	require.NoError(t, DB.AutoMigrate(&User{}, &BusinessEvent{}, &SubscriptionPreConsumeRecord{}, &OperationsEvent{}))
+	db := accountingIsolationDB(t)
+	oldLog := LOG_DB
+	LOG_DB = db
+	t.Cleanup(func() { LOG_DB = oldLog })
 	require.NoError(t, LOG_DB.AutoMigrate(&Log{}))
 
 	oldQuotaPerUnit := common.QuotaPerUnit
