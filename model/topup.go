@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -288,11 +290,27 @@ func completeGatewayTopUp(tradeNo, totalAmount, callerIp, provider, method, labe
 	return nil
 }
 
-// RechargeEpay 原子完成易支付订单：订单行锁、状态校验、成功更新与用户额度增加
+func epayPaymentAmountMatches(paid string, ordered float64) bool {
+	paid = strings.TrimSpace(paid)
+	if paid == "" || len(paid) > 32 || strings.IndexFunc(paid, func(r rune) bool {
+		return (r < '0' || r > '9') && r != '.'
+	}) >= 0 {
+		return false
+	}
+	paidAmount, err := decimal.NewFromString(paid)
+	if err != nil || !paidAmount.IsPositive() {
+		return false
+	}
+	// Match the two-decimal amount sent to Epay when the order was created.
+	orderedAmount, err := decimal.NewFromString(strconv.FormatFloat(ordered, 'f', 2, 64))
+	return err == nil && paidAmount.Equal(orderedAmount)
+}
+
+// RechargeEpay 原子完成易支付订单：订单行锁、金额和状态校验、成功更新与用户额度增加
 // 在同一个事务内完成，因此同一订单的并发/重复回调（包括多实例部署下）最多充值一次。
 // alreadyDone=true 表示订单此前已完成，本次为幂等重复回调。
 // 进程内的 LockOrder 只是优化，正确性由本函数的数据库行锁保证。
-func RechargeEpay(tradeNo string, actualPaymentMethod string, callerIp string) (alreadyDone bool, err error) {
+func RechargeEpay(tradeNo, paidAmount, actualPaymentMethod, callerIp string) (alreadyDone bool, err error) {
 	if tradeNo == "" {
 		return false, errors.New("payment order number not provided")
 	}
@@ -309,6 +327,9 @@ func RechargeEpay(tradeNo string, actualPaymentMethod string, callerIp string) (
 		}
 		if topUp.PaymentProvider != PaymentProviderEpay {
 			return ErrPaymentMethodMismatch
+		}
+		if !epayPaymentAmountMatches(paidAmount, topUp.Money) {
+			return ErrPaymentAmountMismatch
 		}
 		if topUp.Status == common.TopUpStatusSuccess {
 			alreadyDone = true
@@ -338,7 +359,8 @@ func RechargeEpay(tradeNo string, actualPaymentMethod string, callerIp string) (
 		return createFirstTopupReferralReward(tx, topUp, quotaToAdd)
 	})
 	if err != nil {
-		if !errors.Is(err, ErrTopUpNotFound) && !errors.Is(err, ErrPaymentMethodMismatch) && !errors.Is(err, ErrTopUpStatusInvalid) {
+		if !errors.Is(err, ErrTopUpNotFound) && !errors.Is(err, ErrPaymentMethodMismatch) &&
+			!errors.Is(err, ErrPaymentAmountMismatch) && !errors.Is(err, ErrTopUpStatusInvalid) {
 			common.SysError(common.LogText("epay topup failed: %s", err.Error()))
 		}
 		return false, err
@@ -353,8 +375,8 @@ func RechargeEpay(tradeNo string, actualPaymentMethod string, callerIp string) (
 	return false, nil
 }
 
-func CompleteEpayTopUp(tradeNo string, paymentMethod string, callerIp string) error {
-	_, err := RechargeEpay(tradeNo, paymentMethod, callerIp)
+func CompleteEpayTopUp(tradeNo, paidAmount, paymentMethod, callerIp string) error {
+	_, err := RechargeEpay(tradeNo, paidAmount, paymentMethod, callerIp)
 	return err
 }
 

@@ -352,6 +352,64 @@ func TestLegacyVideoArtifactContentUsesGetResultURL(t *testing.T) {
 	assert.Equal(t, "bytes 0-3/4", recorder.Header().Get("Content-Range"))
 }
 
+func TestLegacyVertexVideoReadsStoredVideoFromEitherEndpoint(t *testing.T) {
+	task := setupGenericTaskTest(t)
+	require.NoError(t, model.DB.Model(&model.Channel{}).Where("id = ?", task.ChannelId).
+		Update("type", constant.ChannelTypeVertexAi).Error)
+	const video = "stored vertex video"
+	videoPath := "/v1/videos/" + task.TaskID + "/content"
+	task.Action = "textGenerate"
+	task.PrivateData.ResultURL = "https://preview.example.invalid" + videoPath
+	encoded := base64.StdEncoding.EncodeToString([]byte(video))
+	endpoints := []struct {
+		name   string
+		path   string
+		params gin.Params
+		handle gin.HandlerFunc
+	}{
+		{"video", videoPath, gin.Params{{Key: "task_id", Value: task.TaskID}}, VideoProxy},
+		{"artifact", "/v1/tasks/" + task.TaskID + "/artifacts/video/content",
+			gin.Params{{Key: "key", Value: task.TaskID}, {Key: "artifact_key", Value: "video"}}, TaskArtifactContent},
+	}
+	for _, stored := range []struct {
+		name      string
+		mediaType string
+		response  map[string]any
+	}{
+		{"nested bytes", "video/webm", map[string]any{"videos": []map[string]string{{
+			"bytesBase64Encoded": encoded,
+			"mimeType":           "video/webm",
+		}}}},
+		{"data URL", "video/mp4", map[string]any{"bytesBase64Encoded": "data:video/mp4;base64," + encoded}},
+	} {
+		t.Run(stored.name, func(t *testing.T) {
+			task.SetData(map[string]any{"response": stored.response})
+			require.NoError(t, model.DB.Save(task).Error)
+			for _, endpoint := range endpoints {
+				for _, method := range []string{http.MethodGet, http.MethodHead} {
+					t.Run(endpoint.name+"/"+method, func(t *testing.T) {
+						recorder := httptest.NewRecorder()
+						c, _ := gin.CreateTestContext(recorder)
+						c.Set("id", task.UserId)
+						c.Params = endpoint.params
+						c.Request = httptest.NewRequest(method, endpoint.path, nil)
+						endpoint.handle(c)
+
+						require.Equal(t, http.StatusOK, recorder.Code)
+						assert.Equal(t, stored.mediaType, recorder.Header().Get("Content-Type"))
+						assert.Equal(t, "private, no-store", recorder.Header().Get("Cache-Control"))
+						if method == http.MethodHead {
+							assert.Empty(t, recorder.Body.String())
+						} else {
+							assert.Equal(t, video, recorder.Body.String())
+						}
+					})
+				}
+			}
+		})
+	}
+}
+
 func TestDisabledArtifactStorePreservesPluginUpstreamContent(t *testing.T) {
 	task := setupGenericTaskTest(t)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

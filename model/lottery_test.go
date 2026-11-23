@@ -99,7 +99,7 @@ func TestLotteryGrantAccumulatesOnlySuccessfulWalletTopUps(t *testing.T) {
 	insertLotteryTopUp(t, 1201, "lottery-30", 30, PaymentProviderEpay, "alipay")
 
 	require.NoError(t, CompleteAlipayTopUp("lottery-20", "20.00", "127.0.0.1"))
-	_, err := RechargeEpay("lottery-30", "alipay", "127.0.0.1")
+	_, err := RechargeEpay("lottery-30", "30.00", "alipay", "127.0.0.1")
 	require.NoError(t, err)
 
 	status, err := GetLotteryStatus(1201)
@@ -108,7 +108,7 @@ func TestLotteryGrantAccumulatesOnlySuccessfulWalletTopUps(t *testing.T) {
 	assert.Zero(t, status.RechargeRemainderCents)
 	assert.Equal(t, int64(5000), status.TotalEligibleRechargeCents)
 
-	alreadyDone, err := RechargeEpay("lottery-30", "alipay", "127.0.0.1")
+	alreadyDone, err := RechargeEpay("lottery-30", "30.00", "alipay", "127.0.0.1")
 	require.NoError(t, err)
 	assert.True(t, alreadyDone)
 	status, err = GetLotteryStatus(1201)

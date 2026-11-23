@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -84,6 +85,13 @@ func VideoProxy(c *gin.Context) {
 			fmt.Sprintf("Task is not completed yet, current status: %s", task.Status))
 		return
 	}
+	if !task.ResultRetrievable() {
+		writeTaskMediaProxyError(c, &taskMediaProxyError{
+			status: http.StatusGone, code: "artifact_gone",
+			message: "Artifact content is no longer available",
+		})
+		return
+	}
 
 	descriptor, err := resolveTaskPluginVideo(c.Request.Context(), task, relaychannel.TaskArtifactClientRequest{
 		Method:  c.Request.Method,
@@ -94,7 +102,7 @@ func VideoProxy(c *gin.Context) {
 		descriptor = nil
 	}
 	if descriptor == nil {
-		resultURL := task.GetResultURL()
+		resultURL := legacyVideoResultURL(task)
 		if isTaskMediaFallbackLoop(resultURL, task.TaskID) {
 			writeTaskMediaProxyError(c, &taskMediaProxyError{
 				status: http.StatusGone, code: "artifact_gone",
@@ -111,6 +119,45 @@ func VideoProxy(c *gin.Context) {
 	if err := proxyTaskMedia(c, task, descriptor); err != nil {
 		writeTaskMediaProxyError(c, err)
 	}
+}
+
+// Some old Vertex jobs stored the video in the task and used the gateway's
+// content endpoint as the result URL. Resolve that URL without following it.
+func legacyVideoResultURL(task *model.Task) string {
+	resultURL := task.GetResultURL()
+	if taskHasPluginExecution(task) || !isTaskMediaFallbackLoop(resultURL, task.TaskID) ||
+		len(task.Data) == 0 || len(task.Data) > taskMediaDataURLMaxEncodedBytes+(1<<20) {
+		return resultURL
+	}
+	channel, err := model.CacheGetChannel(task.ChannelId)
+	if err == nil && channel.Type == constant.ChannelTypeVertexAi {
+		if storedURL := storedVertexVideoURL(task.Data); storedURL != "" {
+			return storedURL
+		}
+	}
+	return resultURL
+}
+
+func storedVertexVideoURL(data []byte) string {
+	for _, path := range []string{"response.videos.0.bytesBase64Encoded", "response.bytesBase64Encoded", "response.video"} {
+		payload := strings.TrimSpace(ojson.GetBytesNoCopy(data, path).Str)
+		if payload == "" {
+			continue
+		}
+		if strings.HasPrefix(payload, "data:") ||
+			strings.HasPrefix(payload, "http://") || strings.HasPrefix(payload, "https://") {
+			return payload
+		}
+		mediaType := "video/mp4"
+		if path == "response.videos.0.bytesBase64Encoded" {
+			if reported, _, err := mime.ParseMediaType(ojson.GetBytesNoCopy(data, "response.videos.0.mimeType").Str); err == nil &&
+				strings.HasPrefix(reported, "video/") {
+				mediaType = reported
+			}
+		}
+		return "data:" + mediaType + ";base64," + payload
+	}
+	return ""
 }
 
 func resolveTaskPluginVideo(ctx context.Context, task *model.Task, request relaychannel.TaskArtifactClientRequest) (*relaychannel.TaskContentRequest, error) {

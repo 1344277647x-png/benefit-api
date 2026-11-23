@@ -275,7 +275,7 @@ func TestReferralRewardRunsThroughEveryTopupCompletionPath(t *testing.T) {
 			return CompleteAlipayTopUp(tradeNo, "10.00", "127.0.0.1")
 		}},
 		{name: "epay", provider: PaymentProviderEpay, method: "alipay", amount: 10, money: 10, complete: func(tradeNo string) error {
-			return CompleteEpayTopUp(tradeNo, "alipay", "127.0.0.1")
+			return CompleteEpayTopUp(tradeNo, "10.00", "alipay", "127.0.0.1")
 		}},
 		{name: "stripe", provider: PaymentProviderStripe, method: PaymentMethodStripe, amount: 10, money: 10, complete: func(tradeNo string) error {
 			return Recharge(tradeNo, "cus_referral", "127.0.0.1")

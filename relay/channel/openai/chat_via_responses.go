@@ -55,6 +55,17 @@ func OaiResponsesToChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	return usage, nil
 }
 
+func responsesChatOutputLimitReached(event *dto.ResponsesStreamResponse) bool {
+	response := event.Response
+	if event.Type != "response.incomplete" || response == nil || response.IncompleteDetails == nil ||
+		response.IncompleteDetails.Reason != "max_output_tokens" {
+		return false
+	}
+	status, valid := responsesReportedStatus(response)
+	return valid && status == "incomplete" &&
+		!dto.HasOpenAIError(event.GetOpenAIError()) && !dto.HasOpenAIError(response.GetOpenAIError())
+}
+
 func OaiResponsesToChatBufferedStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	if resp == nil || resp.Body == nil {
 		return nil, types.NewOpenAIError(fmt.Errorf("invalid response"), types.ErrorCodeBadResponse, http.StatusInternalServerError)
@@ -106,7 +117,11 @@ func OaiResponsesToChatBufferedStreamHandler(c *gin.Context, info *relaycommon.R
 				streamErr = types.NewOpenAIError(fmt.Errorf("invalid upstream Responses terminal status"), types.ErrorCodeBadResponse, http.StatusBadGateway)
 			}
 		case "response.incomplete", "response.cancelled", "response.canceled":
-			streamErr = types.NewOpenAIError(fmt.Errorf("responses stream ended with %s", streamResp.Type), types.ErrorCodeBadResponse, http.StatusBadGateway)
+			if responsesChatOutputLimitReached(&streamResp) {
+				finalResponse = streamResp.Response
+			} else {
+				streamErr = types.NewOpenAIError(fmt.Errorf("responses stream ended with %s", streamResp.Type), types.ErrorCodeBadResponse, http.StatusBadGateway)
+			}
 		case "response.failed", "response.error":
 			if streamResp.Response != nil {
 				if oaiErr := streamResp.Response.GetOpenAIError(); dto.HasOpenAIError(oaiErr) {
@@ -304,7 +319,8 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			stopStream(sr, streamErr)
 			return
 		}
-		if streamResp.Type == "response.incomplete" || streamResp.Type == "response.cancelled" || streamResp.Type == "response.canceled" {
+		outputLimit := responsesChatOutputLimitReached(&streamResp)
+		if !outputLimit && (streamResp.Type == "response.incomplete" || streamResp.Type == "response.cancelled" || streamResp.Type == "response.canceled") {
 			streamErr = types.NewOpenAIError(fmt.Errorf("responses stream ended with %s", streamResp.Type), types.ErrorCodeBadResponse, http.StatusBadGateway)
 			sr.Stop(streamErr)
 			return
@@ -314,6 +330,9 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			streamErr = types.NewOpenAIError(fmt.Errorf("invalid upstream Responses terminal status"), types.ErrorCodeBadResponse, http.StatusBadGateway)
 			sr.Stop(streamErr)
 			return
+		}
+		if outputLimit {
+			service.ObserveResponsesOutcome(info, &streamResp)
 		}
 
 		results, err := service.ConvertStreamResponseChunk(c, info, state, &streamResp)
@@ -328,7 +347,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 				return
 			}
 		}
-		if terminal {
+		if terminal || outputLimit {
 			completed = true
 			sr.Done()
 		}

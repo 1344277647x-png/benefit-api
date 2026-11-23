@@ -90,6 +90,72 @@ func TestOaiResponsesToChatStreamHandlerConvertsSSEOrderAndUsage(t *testing.T) {
 	)
 }
 
+func TestOaiResponsesToChatAcceptsMaxOutputTokens(t *testing.T) {
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+
+	for _, tt := range []struct {
+		name     string
+		terminal string
+		wantOK   bool
+	}{
+		{
+			name:     "output limit",
+			terminal: `{"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":7,"output_tokens":11,"total_tokens":18}}}`,
+			wantOK:   true,
+		},
+		{
+			name:     "cancelled",
+			terminal: `{"type":"response.cancelled","response":{"status":"cancelled"}}`,
+		},
+		{
+			name:     "contradictory status",
+			terminal: `{"type":"response.incomplete","response":{"status":"failed","incomplete_details":{"reason":"max_output_tokens"}}}`,
+		},
+		{
+			name:     "reports an error",
+			terminal: `{"type":"response.incomplete","error":{"type":"upstream_error","message":"upstream error"},"response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}}`,
+		},
+	} {
+		for _, mode := range []struct {
+			name   string
+			stream bool
+			handle func(*gin.Context, *relaycommon.RelayInfo, *http.Response) (*dto.Usage, *types.NewAPIError)
+		}{
+			{"buffered", false, OaiResponsesToChatBufferedStreamHandler},
+			{"streaming", true, OaiResponsesToChatStreamHandler},
+		} {
+			t.Run(tt.name+"/"+mode.name, func(t *testing.T) {
+				body := strings.Join([]string{
+					`data: {"type":"response.created","response":{"id":"resp_limit","model":"gpt-test"}}`,
+					`data: {"type":"response.output_text.delta","delta":"partial answer"}`,
+					"data: " + tt.terminal,
+					"",
+				}, "\n")
+				c, recorder, resp, info := newResponsesChatTestContext(t, body, mode.stream)
+				usage, err := mode.handle(c, info, resp)
+				if !tt.wantOK {
+					require.NotNil(t, err)
+					assert.NotContains(t, recorder.Body.String(), `"finish_reason":"length"`)
+					return
+				}
+				require.Nil(t, err)
+				require.NotNil(t, usage)
+				assert.Equal(t, 7, usage.PromptTokens)
+				assert.Equal(t, 11, usage.CompletionTokens)
+				assert.Equal(t, 18, usage.TotalTokens)
+				assert.Contains(t, recorder.Body.String(), `"content":"partial answer"`)
+				assert.Contains(t, recorder.Body.String(), `"finish_reason":"length"`)
+				assert.Contains(t, recorder.Body.String(), `"total_tokens":18`)
+				if mode.stream {
+					assert.Contains(t, recorder.Body.String(), "data: [DONE]")
+				}
+			})
+		}
+	}
+}
+
 func TestOaiResponsesToChatStreamHandlerConvertsClaudeSSETerminalsAndUsage(t *testing.T) {
 	oldMode := gin.Mode()
 	gin.SetMode(gin.TestMode)

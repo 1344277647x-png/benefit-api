@@ -243,15 +243,7 @@ func legacyCreationVideoContent(task *model.Task, channel *model.Channel) *relay
 		}
 	case constant.ChannelTypeVertexAi:
 		if videoURL == "" {
-			for _, path := range []string{"response.videos.0.bytesBase64Encoded", "response.bytesBase64Encoded", "response.video"} {
-				if candidate := strings.TrimSpace(ojson.GetBytes(task.Data, path).Str); candidate != "" {
-					videoURL = candidate
-					if !strings.HasPrefix(candidate, "data:") && !strings.Contains(candidate, "://") {
-						videoURL = "data:video/mp4;base64," + candidate
-					}
-					break
-				}
-			}
+			videoURL = storedVertexVideoURL(task.Data)
 		}
 	case constant.ChannelTypeOpenAI, constant.ChannelTypeSora:
 		if !taskHasPluginExecution(task) && baseURL != "" && task.GetUpstreamTaskID() != "" {

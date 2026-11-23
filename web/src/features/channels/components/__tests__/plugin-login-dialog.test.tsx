@@ -17,7 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 
@@ -310,13 +317,20 @@ test('the redirect step finishes when the callback tab reports this channel', as
 
   const sender = new BroadcastChannel(PLUGIN_LOGIN_BROADCAST_CHANNEL)
   try {
-    sender.postMessage({ channel_id: 8, step: done })
+    sender.postMessage({
+      channel_id: 8,
+      step: {
+        ...done,
+        credential: { ...done.credential, label: 'other@example.com' },
+      },
+    })
     sender.postMessage({ channel_id: 7, step: done })
-    expect(await within(dialog).findByText('Logged in')).toBeVisible()
+    expect(await within(dialog).findByText('user@example.com')).toBeVisible()
+    expect(within(dialog).getByText('Logged in')).toBeVisible()
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1))
   } finally {
     sender.close()
   }
-  expect(onDone).toHaveBeenCalledTimes(1)
 })
 
 test('a callback the server rejects ends the login and offers a new one', async () => {

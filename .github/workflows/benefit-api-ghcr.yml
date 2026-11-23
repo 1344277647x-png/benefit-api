@@ -136,10 +136,10 @@ jobs:
             src/features/auth/sign-in/index.tsx \
             src/features/auth/sign-up/components/sign-up-form.tsx \
             src/features/auth/sign-up/index.tsx \
-            src/features/profile/components/dialogs/email-bind-dialog.tsx \
-            src/features/profile/components/passkey-card.tsx \
-            src/features/profile/components/tabs/account-bindings-tab.tsx \
-            src/features/profile/components/two-fa-card.tsx \
+            src/features/security/components/dialogs/email-bind-dialog.tsx \
+            src/features/security/components/passkey-card.tsx \
+            src/features/security/components/account-bindings.tsx \
+            src/features/security/components/two-fa-card.tsx \
             src/features/profile/components/sidebar-modules-card.tsx \
             src/features/referrals \
             src/routes/_authenticated/referrals \
@@ -214,10 +214,10 @@ jobs:
             src/features/auth/sign-in/index.tsx \
             src/features/auth/sign-up/components/sign-up-form.tsx \
             src/features/auth/sign-up/index.tsx \
-            src/features/profile/components/dialogs/email-bind-dialog.tsx \
-            src/features/profile/components/passkey-card.tsx \
-            src/features/profile/components/tabs/account-bindings-tab.tsx \
-            src/features/profile/components/two-fa-card.tsx \
+            src/features/security/components/dialogs/email-bind-dialog.tsx \
+            src/features/security/components/passkey-card.tsx \
+            src/features/security/components/account-bindings.tsx \
+            src/features/security/components/two-fa-card.tsx \
             src/features/profile/components/sidebar-modules-card.tsx \
             src/features/referrals \
             src/routes/_authenticated/referrals \
