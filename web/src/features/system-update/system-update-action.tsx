@@ -98,15 +98,9 @@ function AdminSystemUpdateAction(props: SystemUpdateActionProps) {
       <>
         <HugeiconsIcon
           icon={update.shouldNotify ? ArrowUp01Icon : InformationCircleIcon}
-          className={cn(
-            '@min-[22rem]/system-brand:hidden',
-            update.shouldNotify && 'text-primary'
-          )}
+          className={cn(update.shouldNotify && 'text-primary')}
           aria-hidden='true'
         />
-        <span className='hidden max-w-32 truncate font-mono text-xs @min-[22rem]/system-brand:inline'>
-          {version}
-        </span>
         {update.shouldNotify && (
           <Badge
             variant='secondary'
@@ -135,8 +129,7 @@ function AdminSystemUpdateAction(props: SystemUpdateActionProps) {
           aria-busy={update.checking}
           className={cn(
             'relative',
-            versionPresentation &&
-              'text-muted-foreground size-8 px-0 @min-[22rem]/system-brand:h-7 @min-[22rem]/system-brand:w-auto @min-[22rem]/system-brand:gap-1.5 @min-[22rem]/system-brand:px-1.5',
+            versionPresentation && 'text-muted-foreground size-8 px-0',
             !versionPresentation &&
               compact &&
               'size-8 px-0 lg:w-auto lg:gap-1.5 lg:px-2.5',
