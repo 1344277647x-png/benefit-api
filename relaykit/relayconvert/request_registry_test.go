@@ -405,6 +405,102 @@ func TestConvertRequestClaudeToResponsesDropsIncompatibleContextManagement(t *te
 	assert.Empty(t, responsesReq.ContextManagement)
 }
 
+func TestNativeClaudeThinkingCompatibility(t *testing.T) {
+	for _, tc := range []struct {
+		model, effort, wantEffort string
+		budget                    *int
+	}{
+		{model: "claude-opus-5-5", effort: "medium", budget: lo.ToPtr(1024), wantEffort: "medium"},
+		{model: "claude-sonnet-5-5", effort: "low", budget: lo.ToPtr(8192), wantEffort: "low"},
+		{model: "claude-fable-5-1", budget: lo.ToPtr(1024), wantEffort: "low"},
+		{model: "claude-fable-5-2", wantEffort: "high"},
+		{model: "claude-opus-4-8", budget: lo.ToPtr(8192), wantEffort: "medium"},
+	} {
+		t.Run(tc.model, func(t *testing.T) {
+			output := map[string]any{"format": map[string]any{"type": "json_schema", "schema": map[string]any{"type": "object"}}}
+			if tc.effort != "" {
+				output["effort"] = tc.effort
+			}
+			history := []dto.ClaudeMessage{{Role: "assistant", Content: []dto.ClaudeMediaMessage{{
+				Type: "thinking", Thinking: lo.ToPtr("previous reasoning"), Signature: "preserved-signature",
+			}}}, {Role: "user", Content: "Continue."}}
+			req := &dto.ClaudeRequest{
+				Model: tc.model, MaxTokens: lo.ToPtr(uint(2048)), Messages: history,
+				Temperature: lo.ToPtr(0.7), TopP: lo.ToPtr(0.9), TopK: lo.ToPtr(20),
+				Thinking: &dto.Thinking{
+					Type: "enabled", BudgetTokens: tc.budget, Display: "omitted",
+					BlockBinding: json.RawMessage(`{"prefix_mismatch_behavior":"drop_block"}`),
+					Extra:        map[string]json.RawMessage{"future_control": json.RawMessage(`{"keep":true}`)},
+				},
+				OutputConfig: mustRawMessage(t, output),
+			}
+			info := &convmeta.Values{OriginModelName: tc.model, UpstreamModelName: tc.model, ChannelMetaAttached: true}
+			require.NoError(t, ApplyClaudeThinkingModel(req, info))
+			require.NotNil(t, req.Thinking)
+			assert.Equal(t, "adaptive", req.Thinking.Type)
+			assert.Nil(t, req.Thinking.BudgetTokens)
+			assert.Equal(t, "omitted", req.Thinking.Display)
+			assert.JSONEq(t, `{"prefix_mismatch_behavior":"drop_block"}`, string(req.Thinking.BlockBinding))
+			assert.JSONEq(t, `{"keep":true}`, string(req.Thinking.Extra["future_control"]))
+			output["effort"] = tc.wantEffort
+			assert.JSONEq(t, string(mustRawMessage(t, output)), string(req.OutputConfig))
+			assert.Equal(t, tc.wantEffort, info.GetReasoningEffort())
+			assert.Equal(t, history, req.Messages)
+			assert.Equal(t, tc.model, req.Model)
+			require.NotNil(t, req.MaxTokens)
+			assert.Equal(t, uint(2048), *req.MaxTokens)
+			assert.Nil(t, req.Temperature)
+			assert.Nil(t, req.TopP)
+			assert.Nil(t, req.TopK)
+			before, err := kitutil.Marshal(req)
+			require.NoError(t, err)
+			var wire struct {
+				Thinking map[string]json.RawMessage `json:"thinking"`
+			}
+			require.NoError(t, kitutil.Unmarshal(before, &wire))
+			assert.NotContains(t, wire.Thinking, "budget_tokens")
+			assert.JSONEq(t, `{"keep":true}`, string(wire.Thinking["future_control"]))
+			require.NoError(t, ApplyClaudeThinkingModel(req, info))
+			after, err := kitutil.Marshal(req)
+			require.NoError(t, err)
+			assert.JSONEq(t, string(before), string(after), "repeated adaptation must be idempotent")
+		})
+	}
+
+	t.Run("preserve host output default", func(t *testing.T) {
+		req := &dto.ClaudeRequest{Model: "claude-opus-5-5", Thinking: &dto.Thinking{Type: "enabled"}}
+		require.NoError(t, ApplyClaudeThinkingModel(req, nil))
+		assert.Equal(t, "adaptive", req.Thinking.Type)
+		assert.Nil(t, req.MaxTokens, "native compatibility must not introduce an output cap")
+	})
+	for _, tc := range []struct {
+		name, model, thinkingType string
+	}{
+		{"legacy manual model", "claude-sonnet-4-6", "enabled"},
+		{"unknown proxy target", "vendor-model", "enabled"},
+		{"already adaptive", "claude-opus-5-5", "adaptive"},
+		{"explicit disabled", "claude-opus-5-5", "disabled"},
+		{"other native mode", "claude-sonnet-5-5", "between_tools"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &dto.ClaudeRequest{
+				Model: tc.model, MaxTokens: lo.ToPtr(uint(2048)), Temperature: lo.ToPtr(0.5),
+				Thinking:     &dto.Thinking{Type: tc.thinkingType, BudgetTokens: lo.ToPtr(1024)},
+				OutputConfig: json.RawMessage(`{"effort":"low"}`),
+			}
+			before, err := kitutil.Marshal(req)
+			require.NoError(t, err)
+			// A familiar display name must not impose Claude rules on an
+			// unknown mapped upstream model.
+			info := &convmeta.Values{OriginModelName: "claude-opus-5-5", UpstreamModelName: tc.model, ChannelMetaAttached: true}
+			require.NoError(t, ApplyClaudeThinkingModel(req, info))
+			after, err := kitutil.Marshal(req)
+			require.NoError(t, err)
+			assert.JSONEq(t, string(before), string(after))
+		})
+	}
+}
+
 func TestConvertRequestClaudeAdaptiveThinkingPreservesEffort(t *testing.T) {
 	tests := []struct {
 		name         string

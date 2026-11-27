@@ -147,12 +147,27 @@ func FormatRootLogs(logs []*Log) {
 	}
 }
 
+// userVisibleLogs must run before counting, pagination or export. Historical
+// manual quota adjustments were written as recipient topups as well as operator
+// audits. Keep those rows for administrators, without exposing them as payments.
+// Use portable text predicates: legacy other may be empty or malformed JSON.
+func userVisibleLogs(tx *gorm.DB) *gorm.DB {
+	return tx.Where("logs.type <> ?", LogTypeError).
+		Where(`(logs.type NOT IN ? OR (
+			COALESCE(logs.other, '') NOT LIKE ? AND
+			COALESCE(logs.content, '') NOT LIKE ? AND
+			COALESCE(logs.content, '') NOT LIKE ? AND
+			COALESCE(logs.content, '') NOT LIKE ?))`,
+			[]int{LogTypeTopup, LogTypeManage}, `%"user.quota%`,
+			"Increased user quota by %", "Decreased user quota by %", "Overrode user quota from %")
+}
+
 func GetLogByTokenId(tokenId int) (logs []*Log, err error) {
 	order := "id desc"
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		order = clickHouseLogOrder("")
 	}
-	err = LOG_DB.Model(&Log{}).Where("token_id = ? AND type <> ?", tokenId, LogTypeError).Order(order).Limit(common.MaxRecentItems).Find(&logs).Error
+	err = userVisibleLogs(LOG_DB.Model(&Log{})).Where("token_id = ?", tokenId).Order(order).Limit(common.MaxRecentItems).Find(&logs).Error
 	formatUserLogs(logs, 0)
 	return logs, err
 }
@@ -608,7 +623,7 @@ func GetAllLogs(filter LogFilter, startIdx int, num int) (logs []*Log, total int
 const logSearchCountLimit = 10000
 
 func GetUserLogs(userId int, filter LogFilter, startIdx int, num int) (logs []*Log, total int64, err error) {
-	tx, err := filter.apply(LOG_DB.Where("logs.user_id = ? AND logs.type <> ?", userId, LogTypeError))
+	tx, err := filter.apply(userVisibleLogs(LOG_DB).Where("logs.user_id = ?", userId))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -663,7 +678,7 @@ func StreamAllLogs(ctx context.Context, filter LogFilter, role int, fn func(*Log
 // StreamUserLogs is StreamAllLogs for one user's own logs, shaped like the
 // user log list.
 func StreamUserLogs(ctx context.Context, userId int, filter LogFilter, fn func(*Log) error) error {
-	tx, err := filter.apply(LOG_DB.WithContext(ctx).Where("logs.user_id = ? AND logs.type <> ?", userId, LogTypeError))
+	tx, err := filter.apply(userVisibleLogs(LOG_DB.WithContext(ctx)).Where("logs.user_id = ?", userId))
 	if err != nil {
 		return err
 	}

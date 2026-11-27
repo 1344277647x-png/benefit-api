@@ -29,12 +29,17 @@ func ApplyReasoning(ctx context.Context, req *dto.ClaudeRequest, info convmeta.M
 	if preserveSuffix {
 		suffix = reasoning.Intent{}
 	}
+	normalizeNativeThinking := !crossProtocol && source.IsEmpty() && suffix.IsEmpty() &&
+		req.Thinking != nil && req.Thinking.Type == "enabled" &&
+		reasoning.ClaudeRequiresAdaptiveThinking(capabilityModel)
 	// A native Claude request without a host modifier is already in the target
 	// protocol, including Claude-compatible proxies that keep native controls
 	// instead of applying Anthropic model rules. Read portable effort for
 	// accounting metadata, but do not run the capability renderer or rewrite
-	// provider-native controls.
-	if !crossProtocol && source.IsEmpty() && suffix.IsEmpty() {
+	// provider-native controls, except legacy enabled thinking on a known model
+	// that explicitly rejects it. That incompatibility must not require a
+	// separate parameter override on every channel.
+	if !crossProtocol && source.IsEmpty() && suffix.IsEmpty() && !normalizeNativeThinking {
 		if info != nil {
 			effort := req.GetEfforts()
 			if effort == "" && req.Thinking != nil {
@@ -57,6 +62,15 @@ func ApplyReasoning(ctx context.Context, req *dto.ClaudeRequest, info convmeta.M
 		return err
 	}
 	convdiag.Add(ctx, diagnostics...)
+	if normalizeNativeThinking {
+		convdiag.Add(ctx, types.ConversionDiagnostic{
+			Code:     "claude_native_thinking_to_adaptive",
+			Path:     "thinking.type",
+			Message:  fmt.Sprintf("model %q rejects legacy enabled thinking; using adaptive thinking", capabilityModel),
+			Severity: types.ConversionDiagnosticWarning,
+			To:       types.RelayFormatClaude,
+		})
+	}
 	explicit, diagnostics, err := reasoning.MergeExplicit(native, source, req.Model)
 	if err != nil {
 		return err
@@ -91,7 +105,8 @@ func ApplyReasoning(ctx context.Context, req *dto.ClaudeRequest, info convmeta.M
 		// rendered for the thinking-off state rather than left unchecked.
 		intent.Effort = requestEffort
 	}
-	if req.MaxTokens == nil && intent.HasStrength() {
+	// A native compatibility rewrite leaves output defaults to the host adaptor.
+	if req.MaxTokens == nil && intent.HasStrength() && !normalizeNativeThinking {
 		// Adapter-provided defaults may be raised to accommodate an exact
 		// cross-protocol budget. Values too small for manual thinking are
 		// raised again by the renderer, which reports the change.
@@ -125,7 +140,16 @@ func ApplyReasoning(ctx context.Context, req *dto.ClaudeRequest, info convmeta.M
 		req.MaxTokens = rendered.MaxTokens
 	}
 	if rendered.Thinking != nil {
-		req.Thinking = rendered.Thinking
+		if normalizeNativeThinking {
+			// Change only incompatible reasoning controls. Signed conversation
+			// binding, display and future native extensions remain intact.
+			thinking := *req.Thinking
+			thinking.Type = rendered.Thinking.Type
+			thinking.BudgetTokens = rendered.Thinking.BudgetTokens
+			req.Thinking = &thinking
+		} else {
+			req.Thinking = rendered.Thinking
+		}
 	}
 	outputEffort := rendered.OutputEffort
 	// An effort the request still carries reaches a known model only at a

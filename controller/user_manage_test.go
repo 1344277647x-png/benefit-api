@@ -238,7 +238,7 @@ func createQuotaTestOperator(t *testing.T, db *gorm.DB, role int) model.User {
 	return operator
 }
 
-func TestManageUserQuotaRecordsTopupAndAudit(t *testing.T) {
+func TestManageUserQuotaRecordsOnlyOperatorAudit(t *testing.T) {
 	for _, tc := range []struct {
 		name, mode, action, content string
 		value, wantQuota            int
@@ -265,52 +265,44 @@ func TestManageUserQuotaRecordsTopupAndAudit(t *testing.T) {
 
 			logs, total, err := model.GetAllLogs(model.LogFilter{Type: model.LogTypeTopup}, 0, 20)
 			require.NoError(t, err)
-			assert.EqualValues(t, 1, total)
-			require.Len(t, logs, 1)
-			assert.Equal(t, user.Id, logs[0].UserId)
-			assert.Equal(t, user.Username, logs[0].Username)
-			assert.Equal(t, tc.content, logs[0].Content)
-			model.FormatAdminLogs(logs)
-			var other model.AuditOther
-			require.NoError(t, common.UnmarshalJsonStr(logs[0].Other, &other))
-			assert.Equal(t, &model.AuditAdminInfo{AdminID: 9999, AdminUsername: "root-operator", AdminRole: common.RoleRootUser, AuthMethod: "session"}, other.AdminInfo)
+			assert.Zero(t, total, "a manual adjustment is not a user-visible payment")
+			assert.Empty(t, logs)
 
 			logs, total, err = model.GetUserLogs(user.Id, model.LogFilter{Type: model.LogTypeTopup}, 0, 20)
 			require.NoError(t, err)
-			assert.EqualValues(t, 1, total)
-			require.Len(t, logs, 1)
-			other = model.AuditOther{}
-			require.NoError(t, common.UnmarshalJsonStr(logs[0].Other, &other))
-			assert.Nil(t, other.AdminInfo)
-			require.NotNil(t, other.Op)
-			assert.Equal(t, tc.action, other.Op.Action)
-			params, err := common.Marshal(other.Op.Params)
-			require.NoError(t, err)
+			assert.Zero(t, total)
+			assert.Empty(t, logs)
 			expectedParams := model.AuditFields{"target_user_id": user.Id, "target_username": user.Username, "mode": tc.mode, "requested_quota": tc.value, "from": 1000, "to": tc.wantQuota}
 			if tc.mode != "override" {
 				expectedParams["quota"] = tc.value
 			}
 			expected, err := common.Marshal(expectedParams)
 			require.NoError(t, err)
-			assert.JSONEq(t, string(expected), string(params))
-			assert.Equal(t, "quota-test-request", logs[0].RequestId)
-			assert.Empty(t, logs[0].Ip, "recipient logs must not disclose the administrator IP")
 
 			logs, total, err = model.GetUserLogs(9999, model.LogFilter{Type: model.LogTypeTopup}, 0, 20)
 			require.NoError(t, err)
 			assert.Zero(t, total)
 			assert.Empty(t, logs)
-			var audits []model.AuditLog
-			require.NoError(t, model.LOG_DB.Find(&audits).Error)
+			audits, total, err := model.GetAuditLogs(model.AuditLogFilter{}, 0, 20, common.RoleRootUser)
+			require.NoError(t, err)
+			assert.EqualValues(t, 1, total)
 			require.Len(t, audits, 1)
 			assert.Equal(t, 9999, audits[0].UserId)
 			assert.Equal(t, "root-operator", audits[0].Username)
 			assert.Equal(t, tc.action, audits[0].Action)
+			assert.Equal(t, tc.content, audits[0].Content)
+			assert.Equal(t, &model.AuditAdminInfo{AdminID: 9999, AdminUsername: "root-operator", AdminRole: common.RoleRootUser, AuthMethod: "session"}, audits[0].Other.AdminInfo)
 			assert.True(t, audits[0].Success)
-			params, err = common.Marshal(audits[0].Other.Op.Params)
+			params, err := common.Marshal(audits[0].Other.Op.Params)
 			require.NoError(t, err)
 			assert.JSONEq(t, string(expected), string(params))
 			assert.Equal(t, "quota-test-request", audits[0].RequestId)
+			for _, selfID := range []int{user.Id, 9999} {
+				audits, total, err = model.GetAuditLogs(model.AuditLogFilter{SelfView: true, UserId: selfID}, 0, 20, common.RoleRootUser)
+				require.NoError(t, err)
+				assert.Zero(t, total, "quota changes must not appear through personal audit history")
+				assert.Empty(t, audits)
+			}
 		})
 	}
 }
@@ -391,7 +383,7 @@ func TestManageUserQuotaLogFailureKeepsSuccessfulAdjustment(t *testing.T) {
 				assert.Zero(t, logCount)
 				assert.EqualValues(t, 1, auditCount)
 			} else {
-				assert.EqualValues(t, 1, logCount)
+				assert.Zero(t, logCount, "an audit failure must not fall back to a user-visible topup")
 				assert.Zero(t, auditCount)
 			}
 		})
@@ -467,9 +459,9 @@ func TestManageUserQuotaTargetsAndWalletBounds(t *testing.T) {
 
 func TestManageUserQuotaMiddlewareKeepsOneOperationPerRequest(t *testing.T) {
 	db := setupManageUserTestDB(t)
-	pat := "quota-middleware-test-token"
-	operator := model.User{Id: 9999, Username: "root-operator", Role: common.RoleRootUser, Status: common.UserStatusEnabled, AuthVersion: 1, AccessToken: &pat, Quota: 1000}
+	operator := model.User{Id: 9999, Username: "root-operator", Role: common.RoleRootUser, Status: common.UserStatusEnabled, AuthVersion: 1, Quota: 1000}
 	require.NoError(t, db.Create(&operator).Error)
+	pat, _ := createScopedAccessToken(t, operator.Id, 0, "user:write")
 	router := gin.New()
 	router.Use(middleware.RequestId(), middleware.AccessTokenAudit())
 	router.POST("/api/user/manage", middleware.AdminAuth(), ManageUser)
@@ -511,11 +503,7 @@ func TestManageUserQuotaMiddlewareKeepsOneOperationPerRequest(t *testing.T) {
 		}
 		var count int64
 		require.NoError(t, model.LOG_DB.Model(&model.Log{}).Where("request_id = ?", requestID).Count(&count).Error)
-		if tc.success {
-			assert.EqualValues(t, 1, count)
-		} else {
-			assert.Zero(t, count)
-		}
+		assert.Zero(t, count, "only the operator audit may describe manual quota adjustments")
 	}
 	require.NoError(t, db.First(&operator, operator.Id).Error)
 	assert.Equal(t, 1100, operator.Quota)

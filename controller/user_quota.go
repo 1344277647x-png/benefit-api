@@ -76,8 +76,7 @@ func manageUserQuota(c *gin.Context, req ManageRequest) {
 		params["quota"] = req.Value
 	}
 	success = true
-	operation := model.AuditOperation{Action: action, Params: params}
-	model.RecordLogWithAdminInfo(adjustment.UserID, model.LogTypeTopup,
-		auditContentEN(action, params), auditOperatorInfo(c), &operation, c)
+	// The deferred operator audit is the sole record of a manual adjustment.
+	// Do not publish an additional recipient topup in the user's usage logs.
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 }

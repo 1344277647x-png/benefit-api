@@ -413,6 +413,13 @@ func ClaudeUsesManualThinking(model string, intent Intent) bool {
 	return capabilities.supportsManual && intent.BudgetTokens != nil && intent.Mode != ModeAdaptive
 }
 
+// ClaudeRequiresAdaptiveThinking reports known models that reject legacy
+// enabled thinking. Unknown Claude-compatible models retain native controls.
+func ClaudeRequiresAdaptiveThinking(model string) bool {
+	capabilities := claudeCapabilitiesFor(model)
+	return capabilities.adaptive && !capabilities.supportsManual
+}
+
 func IsKnownClaudeModel(model string) bool {
 	return isKnownClaudeModel(model)
 }

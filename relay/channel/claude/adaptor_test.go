@@ -45,7 +45,7 @@ func TestConvertClaudeRequestPreservesNativeClaudeCodeThinking(t *testing.T) {
 	temperature := 0.7
 	topP := 0.9
 	req := &dto.ClaudeRequest{
-		Model:        "claude-opus-4-8",
+		Model:        "claude-sonnet-4-6",
 		MaxTokens:    &maxTokens,
 		Temperature:  &temperature,
 		TopP:         &topP,
